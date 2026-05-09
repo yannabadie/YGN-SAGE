@@ -959,6 +959,171 @@ def _parse_jsonl_frames(text: str) -> list[dict[str, Any]]:
     return [json.loads(line) for line in text.splitlines() if line.strip()]
 
 
+def test_main_prompt_command_starts_run_from_stdin_first_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A first stdin JSONL ``prompt`` command starts the run in command mode."""
+    calls: list[dict[str, Any]] = []
+
+    async def _fake_run_jsonl_async(
+        task: str,
+        *,
+        budget_usd: float | None = None,
+        system_hint: int | None = None,
+        stdin: Any = None,
+        **_kwargs: Any,
+    ) -> int:
+        calls.append(
+            {
+                "task": task,
+                "budget_usd": budget_usd,
+                "system_hint": system_hint,
+                "stdin": stdin,
+            }
+        )
+        return 17
+
+    stdin = io.StringIO(
+        json.dumps(
+            {
+                "command": "prompt",
+                "args": {"task": "hello", "budget_usd": 1.25, "system_hint": 2},
+            }
+        )
+        + "\n"
+    )
+    monkeypatch.setattr("sys.stdin", stdin)
+    monkeypatch.setattr(cli_run, "run_jsonl_async", _fake_run_jsonl_async)
+
+    rc = cli_run.main(["--jsonl"])
+
+    assert rc == 17
+    assert calls == [
+        {
+            "task": "hello",
+            "budget_usd": 1.25,
+            "system_hint": 2,
+            "stdin": stdin,
+        }
+    ]
+
+
+def test_main_plain_stdin_batch_mode_preserved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-command stdin remains the legacy one-shot task text mode."""
+    calls: list[dict[str, Any]] = []
+
+    async def _fake_run_jsonl_async(
+        task: str,
+        *,
+        budget_usd: float | None = None,
+        system_hint: int | None = None,
+        **_kwargs: Any,
+    ) -> int:
+        calls.append(
+            {"task": task, "budget_usd": budget_usd, "system_hint": system_hint}
+        )
+        return 0
+
+    monkeypatch.setattr("sys.stdin", io.StringIO("first line\nsecond line\n"))
+    monkeypatch.setattr(cli_run, "run_jsonl_async", _fake_run_jsonl_async)
+
+    rc = cli_run.main(["--jsonl"])
+
+    assert rc == 0
+    assert calls == [
+        {"task": "first line\nsecond line", "budget_usd": None, "system_hint": None}
+    ]
+
+
+def test_main_first_stdin_command_must_be_prompt(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Command-mode stdin starts only with ``prompt``."""
+    called = False
+
+    async def _fake_run_jsonl_async(*_args: Any, **_kwargs: Any) -> int:
+        nonlocal called
+        called = True
+        return 0
+
+    monkeypatch.setattr(
+        "sys.stdin", io.StringIO(json.dumps({"command": "cancel"}) + "\n")
+    )
+    monkeypatch.setattr(cli_run, "run_jsonl_async", _fake_run_jsonl_async)
+
+    rc = cli_run.main(["--jsonl"])
+    captured = capsys.readouterr()
+
+    assert rc == 2
+    assert called is False
+    assert "first stdin command must be prompt" in captured.err
+
+
+def test_main_prompt_command_requires_non_empty_task(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Initial ``prompt`` must carry a non-empty task string."""
+    called = False
+
+    async def _fake_run_jsonl_async(*_args: Any, **_kwargs: Any) -> int:
+        nonlocal called
+        called = True
+        return 0
+
+    monkeypatch.setattr(
+        "sys.stdin",
+        io.StringIO(
+            json.dumps({"command": "prompt", "args": {"task": ""}}) + "\n"
+        ),
+    )
+    monkeypatch.setattr(cli_run, "run_jsonl_async", _fake_run_jsonl_async)
+
+    rc = cli_run.main(["--jsonl"])
+    captured = capsys.readouterr()
+
+    assert rc == 2
+    assert called is False
+    assert "prompt task must be a non-empty string" in captured.err
+
+
+def test_main_prompt_command_rejects_argv_budget_loosen(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stdin prompt cannot loosen a process-level budget cap."""
+    called = False
+
+    async def _fake_run_jsonl_async(*_args: Any, **_kwargs: Any) -> int:
+        nonlocal called
+        called = True
+        return 0
+
+    monkeypatch.setattr(
+        "sys.stdin",
+        io.StringIO(
+            json.dumps(
+                {
+                    "command": "prompt",
+                    "args": {"task": "hello", "budget_usd": 2.0},
+                }
+            )
+            + "\n"
+        ),
+    )
+    monkeypatch.setattr(cli_run, "run_jsonl_async", _fake_run_jsonl_async)
+
+    rc = cli_run.main(["--jsonl", "--budget-usd", "1.0"])
+    captured = capsys.readouterr()
+
+    assert rc == 2
+    assert called is False
+    assert "prompt budget_usd cannot exceed --budget-usd" in captured.err
+
+
 @pytest.mark.asyncio
 async def test_cancel_emits_failure_then_terminal_complete(
     monkeypatch: pytest.MonkeyPatch,
@@ -1083,6 +1248,114 @@ async def test_cancel_stops_progress_before_terminal(
         i for i, f in enumerate(frames) if f["event_type"] == "cli_complete"
     )
     assert cli_complete_idx == len(frames) - 1, "cli_complete is not the last frame"
+
+
+@pytest.mark.asyncio
+async def test_run_jsonl_rejects_subsequent_prompt_with_nonterminal_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A post-start ``prompt`` is rejected without becoming a second run."""
+    exit_code, stdout, _ = await _drive_cancel_run(
+        monkeypatch,
+        stdin_lines=[
+            json.dumps({"command": "prompt", "args": {"task": "second"}}) + "\n",
+            json.dumps({"command": "cancel"}) + "\n",
+        ],
+    )
+
+    assert exit_code == 130
+    frames = _parse_jsonl_frames(stdout)
+    prompt_failures = [
+        f for f in frames
+        if f["event_type"] == "failure"
+        and f.get("kind") == "cli_command"
+        and f.get("error_type") == "prompt_already_started"
+    ]
+    assert len(prompt_failures) == 1
+    assert frames[-1]["event_type"] == "cli_complete"
+
+
+@pytest.mark.asyncio
+async def test_run_jsonl_unknown_command_emits_nonterminal_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unknown commands are protocol-visible non-terminal failures."""
+    exit_code, stdout, _ = await _drive_cancel_run(
+        monkeypatch,
+        stdin_lines=[
+            json.dumps({"command": "bogus"}) + "\n",
+            json.dumps({"command": "cancel"}) + "\n",
+        ],
+    )
+
+    assert exit_code == 130
+    frames = _parse_jsonl_frames(stdout)
+    unknown_failures = [
+        f for f in frames
+        if f["event_type"] == "failure"
+        and f.get("kind") == "cli_command"
+        and f.get("error_type") == "unknown_command"
+    ]
+    assert len(unknown_failures) == 1
+    assert frames[-1]["event_type"] == "cli_complete"
+
+
+def test_prompt_mode_cli_started_first_and_cli_complete_last(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Prompt command mode still preserves terminal stream invariants."""
+
+    class _FastPipeline:
+        last_context = None
+
+        async def run(
+            self,
+            task: str,
+            budget_usd: float | None = None,
+            system_hint: int | None = None,
+        ) -> str:
+            assert task == "prompt task"
+            assert budget_usd == 1.0
+            assert system_hint == 2
+            return "ok"
+
+    class _FastSystem:
+        pipeline = _FastPipeline()
+
+    def _fake_boot(*_args: Any, **_kwargs: Any) -> _FastSystem:
+        return _FastSystem()
+
+    monkeypatch.setattr("sage.boot.boot_agent_system", _fake_boot)
+    monkeypatch.setenv("SAGE_BOOT_BYPASS_EPOCH_GUARD", "1")
+    monkeypatch.setenv("SAGE_BOOT_BYPASS_REASON", "cli prompt test")
+    monkeypatch.setenv("SAGE_OPERATOR_ID", "test")
+    monkeypatch.setattr(
+        "sys.stdin",
+        io.StringIO(
+            json.dumps(
+                {
+                    "command": "prompt",
+                    "args": {
+                        "task": "prompt task",
+                        "budget_usd": 1.0,
+                        "system_hint": 2,
+                    },
+                }
+            )
+            + "\n"
+        ),
+    )
+
+    rc = cli_run.main(["--jsonl"])
+    captured = capsys.readouterr()
+
+    assert rc == 0
+    frames = _parse_jsonl_frames(captured.out)
+    assert frames[0]["event_type"] == "cli_started"
+    assert frames[0]["seq"] == 0
+    assert frames[0]["payload"]["task"] == "prompt task"
+    assert frames[-1]["event_type"] == "cli_complete"
 
 
 def test_set_cli_progress_stage_helper_no_op_without_state() -> None:

@@ -40,6 +40,7 @@ import argparse
 import asyncio
 import json
 import logging
+import math
 import os
 import sys
 import tempfile
@@ -84,6 +85,13 @@ class _CliProgressState:
     started_at: float = 0.0
     last_non_progress_frame_at: float = 0.0
     last_progress_frame_at: float = 0.0
+
+
+@dataclass(frozen=True)
+class _InitialPromptCommand:
+    task: str
+    budget_usd: float | None
+    system_hint: int | None
 
 
 def _maybe_emit_cli_progress(
@@ -627,6 +635,79 @@ def _set_cli_progress_stage(pipeline: Any, stage: str) -> None:
 # ────────────────────────────────────────────────────────────────────────
 
 
+def _looks_like_stdin_command(line: str) -> bool:
+    try:
+        parsed = json.loads(line)
+    except (TypeError, ValueError):
+        return False
+    return isinstance(parsed, dict) and "command" in parsed
+
+
+def _parse_initial_prompt_command(line: str) -> _InitialPromptCommand:
+    try:
+        parsed = json.loads(line)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("first stdin command must be valid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("first stdin command must be a JSON object")
+    if parsed.get("command") != "prompt":
+        raise ValueError("first stdin command must be prompt")
+
+    args = parsed.get("args")
+    if not isinstance(args, Mapping):
+        raise ValueError("prompt args must be an object")
+
+    task = args.get("task")
+    if not isinstance(task, str) or not task.strip():
+        raise ValueError("prompt task must be a non-empty string")
+
+    budget_usd: float | None = None
+    if "budget_usd" in args:
+        raw_budget = args["budget_usd"]
+        if not isinstance(raw_budget, (int, float)) or isinstance(raw_budget, bool):
+            raise ValueError("prompt budget_usd must be a finite positive number")
+        budget_usd = float(raw_budget)
+        if not math.isfinite(budget_usd) or budget_usd <= 0.0:
+            raise ValueError("prompt budget_usd must be a finite positive number")
+
+    system_hint: int | None = None
+    if "system_hint" in args:
+        raw_hint = args["system_hint"]
+        if not isinstance(raw_hint, int) or isinstance(raw_hint, bool):
+            raise ValueError("prompt system_hint must be one of 1, 2, 3")
+        if raw_hint not in (1, 2, 3):
+            raise ValueError("prompt system_hint must be one of 1, 2, 3")
+        system_hint = raw_hint
+
+    return _InitialPromptCommand(
+        task=task.strip(), budget_usd=budget_usd, system_hint=system_hint,
+    )
+
+
+def _resolve_prompt_budget(
+    *, argv_budget_usd: float | None, prompt_budget_usd: float | None,
+) -> float | None:
+    if prompt_budget_usd is None:
+        return argv_budget_usd
+    if argv_budget_usd is None:
+        return prompt_budget_usd
+    if prompt_budget_usd > argv_budget_usd:
+        raise ValueError("prompt budget_usd cannot exceed --budget-usd")
+    return prompt_budget_usd
+
+
+def _resolve_prompt_system_hint(
+    *, argv_system_hint: int | None, prompt_system_hint: int | None,
+) -> int | None:
+    if prompt_system_hint is None:
+        return argv_system_hint
+    if argv_system_hint is None:
+        return prompt_system_hint
+    if prompt_system_hint != argv_system_hint:
+        raise ValueError("prompt system_hint must match --system-hint")
+    return prompt_system_hint
+
+
 async def run_jsonl_async(
     task: str,
     *,
@@ -794,9 +875,18 @@ async def run_jsonl_async(
                     event_log=eventlog,
                 )
                 continue
-            # Other commands are NOT supported in this commit (multi-prompt).
-            # Surface them as warnings but don't fail.
-            log.info("sage run: unsupported command in v0 prelude: %r", verb)
+            if verb == "prompt":
+                eventlog.emit_failure(
+                    kind="cli_command",
+                    error_type="prompt_already_started",
+                    message="prompt command rejected after run started",
+                )
+                continue
+            eventlog.emit_failure(
+                kind="cli_command",
+                error_type="unknown_command",
+                message=f"unsupported command: {verb!r}",
+            )
 
     dispatcher_task = asyncio.create_task(_command_dispatcher())
 
@@ -1000,20 +1090,45 @@ def main(argv: list[str]) -> int:
         return 2
 
     task = args.task
+    stdin_for_run: TextIO | None = None
+    budget_usd = args.budget_usd
+    system_hint = args.system_hint
     if not task:
-        # Read task text from stdin until EOF (one-shot mode for batch use).
-        # The stdin command parser is NOT used in this branch.
-        task = sys.stdin.read().strip()
-        if not task:
+        first_line = sys.stdin.readline()
+        if not first_line:
             print("sage run: empty task (no positional + empty stdin).", file=sys.stderr)
             return 2
+        if _looks_like_stdin_command(first_line):
+            try:
+                prompt = _parse_initial_prompt_command(first_line)
+                budget_usd = _resolve_prompt_budget(
+                    argv_budget_usd=args.budget_usd,
+                    prompt_budget_usd=prompt.budget_usd,
+                )
+                system_hint = _resolve_prompt_system_hint(
+                    argv_system_hint=args.system_hint,
+                    prompt_system_hint=prompt.system_hint,
+                )
+            except ValueError as exc:
+                print(f"sage run: {exc}", file=sys.stderr)
+                return 2
+            task = prompt.task
+            stdin_for_run = sys.stdin
+        else:
+            # Preserve the legacy one-shot batch mode: non-command stdin is
+            # task text, including any remaining lines.
+            task = (first_line + sys.stdin.read()).strip()
+            if not task:
+                print("sage run: empty task (no positional + empty stdin).", file=sys.stderr)
+                return 2
 
     try:
         return asyncio.run(
             run_jsonl_async(
                 task,
-                budget_usd=args.budget_usd,
-                system_hint=args.system_hint,
+                budget_usd=budget_usd,
+                system_hint=system_hint,
+                stdin=stdin_for_run,
             )
         )
     except KeyboardInterrupt:
