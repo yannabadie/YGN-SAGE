@@ -32,7 +32,7 @@ The remaining OFF-mode columns (StateCore / RunFrame) are still **byte-identical
 
 `final_result` is the LAST **business** event of any run. Under default-on `SAGE_ORACLE` (unset or any non-kill-switch value, cycle 7+), exactly ONE `oracle_verdict` event is emitted after `final_result` and before any optional `run_frame_summary`; its `parent_event_id` MUST equal `final_result.seq`. Under `SAGE_RUN_FRAME=1`, exactly ONE optional trailing `run_frame_summary` diagnostic event MAY follow `final_result` or `oracle_verdict`. The summary's `parent_event_id` remains `final_result.seq`. The summary is best-effort: any sink failure during its emission MUST NOT change the pipeline result. `final_result` is still emitted exactly once per run regardless of oracle or summary success.
 
-## Event-type catalog (13 types as of R9)
+## Event-type catalog (15 types)
 
 | Event | Source component | Pipeline scope | When emitted |
 |---|---|---|---|
@@ -49,6 +49,7 @@ The remaining OFF-mode columns (StateCore / RunFrame) are still **byte-identical
 | `final_result` | pipeline | pipeline | once per run, last BUSINESS event, with `status: success` / `failure` / `budget_exceeded` |
 | `oracle_verdict` | pipeline | pipeline | OracleStack verdict event (R9, **default-on since cycle 7 — `SAGE_ORACLE` unset = ON**); follows `final_result` with `parent_event_id == final_result.seq`; payload is `OracleVerdict.to_dict()` with no raw output. Kill-switch via `SAGE_ORACLE=0|false|off|no|disable|disabled`. |
 | `run_frame_summary` | pipeline | pipeline | trailing DIAGNOSTIC event (R7, behind SAGE_RUN_FRAME=1); follows `final_result` with `parent_event_id == final_result.seq`; best-effort emission — sink failure here MUST NOT change pipeline result |
+| `prompt_injection_detected` | pipeline | pipeline | prompt-injection detector observation event; additive RuntimeEventLog event with v1 payload schema. Its presence in the catalog does not make prompt-injection detection default-on. |
 
 ## Core fields (always present on every event)
 
@@ -59,7 +60,7 @@ trace_id: str          # = run_id in v0
 parent_event_id: int | None  # parent's seq; None for task_started
 seq: int               # 0-indexed, contiguous, strictly monotonic per run
 timestamp_ns: int      # time.time_ns()
-event_type: str        # one of EVENT_TYPES above (13 as of R9)
+event_type: str        # one of EVENT_TYPES above (15 as of 2026-05-09)
 source_component: str  # pipeline | topology_runner | controller | model_assigner | provider_pool
 task_hash: str         # sha256(task_text), 64 lowercase hex
 payload_hash: str      # sha256({schema_version, event_type, payload}), 64 lowercase hex

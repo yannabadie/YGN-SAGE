@@ -3,7 +3,7 @@
 claims:
   - id: runtime.invariants_ledger
     status: delivered
-    description: "9 runtime-integrity invariants binding declared labels to verified content. Source-of-truth: docs/contracts/runtime-integrity-ledger.md."
+    description: "10 runtime-integrity invariants binding declared labels to verified content. Source-of-truth: docs/contracts/runtime-integrity-ledger.md."
     evidence_test: "sage-python/tests/test_runtime_event_contracts.py"
     evidence_benchmark: "n/a"
     evidence_commit: "f647c5ae"
@@ -11,8 +11,8 @@ claims:
     owner: "yann"
     notes: |
       Count was 8 through cycle-11; cycle-12 commit f647c5ae backported
-      invariant 9 (CLI protocol versioning). README + AI-ARCHITECTURE.md
-      drift was closed in Phase 0.3 of cycle-13 K (8 -> 9).
+      invariant 9 (CLI protocol versioning), and cycle-13 K Phase 1.5
+      added invariant 10 (Tool capability declaration & grant enforcement).
       `scripts/sync_doc_counters.py:load_invariant_count()` parses the
       `## The N invariants` heading from the ledger AND counts table
       rows underneath, raising on heading/table mismatch.
@@ -63,14 +63,15 @@ claims:
 
   - id: runtime.cli_protocol_v0
     status: delivered
-    description: "sage run --jsonl: 14 RuntimeEventLog events tee'd + 4 envelope events (cli_started/cli_progress/cli_tool_request/cli_complete) + 5 inbound commands. v0 spec at docs/contracts/SAGE_CLI_PROTOCOL.md."
+    description: "sage run --jsonl: 15 RuntimeEventLog events tee'd + 4 envelope events (cli_started/cli_progress/cli_tool_request/cli_complete) + 5 inbound commands. v0 spec at docs/contracts/SAGE_CLI_PROTOCOL.md."
     evidence_test: "sage-python/tests/test_runtime_event_contracts.py"
     evidence_benchmark: "n/a"
     evidence_commit: "f647c5ae"
     last_verified_utc: "2026-05-06T00:00:00Z"
     owner: "yann"
     notes: |
-      Gaps NYI per cgpro DESIGN E trap Q5: cli_progress heartbeat,
-      set_budget mid-run, cancel cancellation token,
-      cli_complete.payload.final_seq. Phase 1.2 of cycle-13 K queue
-      closes these and bumps protocol_version.
+      Python backend v0 gaps are closed: cli_progress heartbeat,
+      tightening-only set_budget mid-run, cooperative cancel with
+      failure(kind="cli_cancel"), and cli_complete.payload.final_seq.
+      The TypeScript clients/pi-ygn-sage adapter is tracked separately
+      and remains unshipped/NYI until implemented and tested.

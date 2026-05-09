@@ -38,7 +38,7 @@ Pattern that emerged from 6 cycles of "declared ≠ verified" traps (cycle-7 con
 
 ## Boundary against accidental coupling
 
-These 9 invariants are **conceptually a family** but **physically deliberately not consolidated** under a single `sage/runtime/integrity/` umbrella. Reason (cgpro Q-A verdict 2026-04-30):
+These 10 invariants are **conceptually a family** but **physically deliberately not consolidated** under a single `sage/runtime/integrity/` umbrella. Reason (cgpro Q-A verdict 2026-04-30):
 
 > "payload_schemas.py est naturellement couplé à runtime/event_log, tandis que posterior_epoch est naturellement couplé à topology et aux fichiers bandit_state.db, archive_state.db, engine_extras.json. Un refactor physique maintenant créerait surtout churn/import risk sans benchmark gain."
 

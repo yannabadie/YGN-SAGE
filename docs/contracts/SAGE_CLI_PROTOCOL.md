@@ -22,7 +22,7 @@ binds each event to the runtime-integrity invariants** so the CLI cannot
 become a side-channel that bypasses cycle-7+ guarantees.
 
 Goals:
-1. **Reuse** the 14 event types already shipped in `RuntimeEventLog` v0
+1. **Reuse** the 15 event types already shipped in `RuntimeEventLog` v0
    (`sage-python/src/sage/runtime/event_log/schema.py:6-21`) — the CLI is a
    *consumer* of the runtime contract, not a parallel one.
 2. **Add only 4 CLI-shell envelope events** (`cli_started`, `cli_progress`,
@@ -53,7 +53,7 @@ Every JSONL frame on stdout (backend → frontend) has the same envelope:
 ```json
 {
   "protocol_version": "v0",
-  "event_type": "<one of 18>",
+  "event_type": "<one of 19>",
   "seq": <monotonic int per run, starts at 0>,
   "run_id": "<26-char ULID, stable for the entire run>",
   "ts_ms": <unix-ms, wall-clock>,
@@ -80,9 +80,9 @@ the `correlation_id` from the matching `cli_tool_request` event).
 
 ---
 
-## Outbound events (18 types)
+## Outbound events (19 types)
 
-### Inherited from `RuntimeEventLog` v0 (14 types)
+### Inherited from `RuntimeEventLog` v0 (15 types)
 
 These pass through unchanged from the existing taxonomy at
 `sage-python/src/sage/runtime/event_log/schema.py:6-21`. Each event's payload
@@ -106,6 +106,7 @@ them via the same writer, multiplexed onto stdout.
 | `final_result` | pipeline | Stage 5 entry, before learn | 1, 5 (RunFrame summary) |
 | `oracle_verdict` | pipeline | Oracle gate firing (cycle-7+) | 2 (oracle evidence) |
 | `run_frame_summary` | pipeline | After learn, terminal frame for the run | 5 |
+| `prompt_injection_detected` | pipeline | Prompt-injection detector observation event when the detector is wired on the producing path | 1 |
 
 Inherited runtime events preserve their payload schema and forensic
 archive bytes (the `RuntimeEventLog` file kept under `trace_dir`). When
@@ -331,7 +332,7 @@ JSONL files at `sage-python/tests/golden/cli_jsonl/`):
 
 ## References
 
-- `docs/contracts/runtime-integrity-ledger.md` — the 8 invariants this protocol extends.
+- `docs/contracts/runtime-integrity-ledger.md` — the 10 invariants this protocol extends.
 - `docs/contracts/rust-python-boundary.md` — the ownership matrix.
 - `sage-python/src/sage/runtime/event_log/` — the runtime event taxonomy.
 - `sage-python/src/sage/runtime/event_log/payload_schemas.py` — per-event payload schemas (cycle-7 R6.1c versioning, commit `78565578`).
@@ -360,4 +361,4 @@ JSONL files at `sage-python/tests/golden/cli_jsonl/`):
     - Stage C `2ce3c877`: `cli_progress` idle heartbeat (timer-based, 5s cadence with 10s idle guard, 7 canonical stage labels).
     - Stage D `d0bfea2b`: cooperative Python cancellation hardening + terminal `failure(kind="cli_cancel")` frame + v0 limitation documented.
 - TBD (cycle-13+): TypeScript adapter `clients/pi-ygn-sage/` shipped on npm with `protocol_version="v0"` pinned. Not yet started.
-- TBD: First `protocol_version="v1"` bump (any breaking change to the 18 events / 5 commands / 9 invariants).
+- TBD: First `protocol_version="v1"` bump (any breaking change to the 19 events / 5 commands / 10 invariants).

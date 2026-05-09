@@ -302,6 +302,7 @@ def test_event_type_catalog_completeness() -> None:
         "final_result",
         "oracle_verdict",
         "run_frame_summary",
+        "prompt_injection_detected",
     }
 
     assert set(EVENT_TYPES) == expected, (
