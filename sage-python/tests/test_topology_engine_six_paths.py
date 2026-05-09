@@ -13,8 +13,6 @@ Every test is deterministic — no RNG flakiness.
 
 from __future__ import annotations
 
-import pytest
-
 
 def test_topology_path_template_fallback():
     """Cold start with empty engine → template fallback always succeeds."""
@@ -62,9 +60,7 @@ def test_topology_path_mutation():
         allow_mcts=False,
         allow_template=False,
     )
-    assert r.source in {"mutation", "mcts_search"}, (
-        f"expected mutation or mcts_search, got {r.source!r}"
-    )
+    assert r.source == "mutation", f"expected mutation, got {r.source!r}"
     assert r.topology.node_count() > 0
 
 
@@ -87,11 +83,12 @@ def test_topology_path_mcts_search():
         allow_mcts=True,
         allow_template=False,
     )
-    # MCTS may fall through to template if archive lacks enough diversity;
-    # accept either as long as a valid topology is returned.
-    assert r.source in {"mcts_search", "template_fallback"}, (
-        f"expected mcts_search or template_fallback, got {r.source!r}"
+    # MCTS may exhaust without a valid search result; with templates disabled,
+    # that must surface as an abstention, not as template_fallback.
+    assert r.source in {"mcts_search", "no_allowed_path"}, (
+        f"expected mcts_search or no_allowed_path, got {r.source!r}"
     )
+    assert r.source != "template_fallback"
     assert r.topology.node_count() > 0
 
 
@@ -128,9 +125,10 @@ def test_topology_path_smmu_hit():
         allow_template=False,
     )
     # S-MMU hit is not guaranteed — but we must get a valid topology.
-    assert r.source in {"smmu_hit", "template_fallback"}, (
-        f"expected smmu_hit or template_fallback, got {r.source!r}"
+    assert r.source in {"smmu_hit", "no_allowed_path"}, (
+        f"expected smmu_hit or no_allowed_path, got {r.source!r}"
     )
+    assert r.source != "template_fallback"
     assert r.topology.node_count() > 0
 
 

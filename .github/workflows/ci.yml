@@ -120,6 +120,7 @@ jobs:
   rust:
     name: Rust (cargo test + clippy)
     runs-on: ubuntu-latest
+    needs: build-wasm-sandbox
     defaults:
       run:
         working-directory: sage-core
@@ -132,9 +133,26 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
+      - name: Download rustpython.wasm
+        uses: actions/download-artifact@v6
+        with:
+          name: rustpython-wasm-${{ needs.build-wasm-sandbox.outputs.rustpython-sha }}
+          path: external/rustpython-wasm-target/wasm32-wasip1/release
+      - name: Verify downloaded rustpython.wasm
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          cd external/rustpython-wasm-target/wasm32-wasip1/release
+          test -s rustpython.wasm
+          sha256sum -c rustpython.wasm.sha256
       - run: cargo fmt --check
       - run: cargo clippy --no-default-features --features smt,cognitive,sandbox,cranelift,tool-executor -- -D warnings
+        env:
+          SAGE_REQUIRE_WASM: "1"
       - run: cargo test --no-default-features --features smt,cognitive,sandbox,cranelift,tool-executor --lib
+        env:
+          SAGE_REQUIRE_WASM: "1"
       - name: ONNX feature tests
         run: cargo test --no-default-features --features onnx --lib
 

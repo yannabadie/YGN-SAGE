@@ -56,6 +56,22 @@ class _Engine:
         return self.result
 
 
+class _FailingEngine:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def generate(
+        self,
+        task: str,
+        task_embedding: Any,
+        system: int,
+        budget: float,
+    ) -> _GenerateResult:
+        del task, task_embedding, system, budget
+        self.calls += 1
+        raise RuntimeError("engine unavailable")
+
+
 class _NoSemanticEmbedder:
     is_semantic = False
 
@@ -140,13 +156,16 @@ def test_log_all_candidates_emits_per_candidate_lines(monkeypatch, caplog) -> No
     assert "path=2 source=mutation archive_hit=false" in candidate_lines[1]
 
 
-def test_default_off_byte_identical(monkeypatch, caplog) -> None:
+def test_default_candidate_mode_evaluates_engine_over_dag_template(
+    monkeypatch, caplog,
+) -> None:
     _stub_embedder(monkeypatch)
     monkeypatch.delenv("SAGE_TOPOLOGY_SKIP_DAG_TEMPLATE", raising=False)
     monkeypatch.delenv("SAGE_TOPOLOGY_FORCE_ENGINE", raising=False)
     monkeypatch.delenv("SAGE_TOPOLOGY_LOG_ALL_CANDIDATES", raising=False)
     caplog.set_level(logging.INFO, logger="sage.pipeline")
-    engine = _Engine(_GenerateResult(topology=_Topology("engine_graph")))
+    engine_topology = _Topology("engine_graph")
+    engine = _Engine(_GenerateResult(topology=engine_topology))
     pipeline = CognitiveOrchestrationPipeline(
         router=None,
         engine=engine,
@@ -157,9 +176,66 @@ def test_default_off_byte_identical(monkeypatch, caplog) -> None:
 
     result = select_topology(pipeline, _ctx())
 
-    assert engine.calls == 0
+    assert engine.calls == 1
+    assert result.topology is engine_topology
+    lines = [record.getMessage() for record in caplog.records]
+    assert any("topology.source source=dag_template" in line for line in lines)
+    assert any("topology.source source=engine_dynamic" in line for line in lines)
+    assert not any("topology.candidate" in line for line in lines)
+
+
+def test_engine_failure_falls_back_to_dag_template(monkeypatch, caplog) -> None:
+    _stub_embedder(monkeypatch)
+    monkeypatch.delenv("SAGE_TOPOLOGY_SKIP_DAG_TEMPLATE", raising=False)
+    monkeypatch.delenv("SAGE_TOPOLOGY_FORCE_ENGINE", raising=False)
+    monkeypatch.delenv("SAGE_TOPOLOGY_LOG_ALL_CANDIDATES", raising=False)
+    caplog.set_level(logging.INFO, logger="sage.pipeline")
+    engine = _FailingEngine()
+    pipeline = CognitiveOrchestrationPipeline(
+        router=None,
+        engine=engine,
+        assigner=None,
+        provider_pool=None,
+    )
+
+    result = select_topology(pipeline, _ctx())
+
+    assert engine.calls == 1
     assert result.topology is not None
     assert result.topology.template_type == "sequential"
     lines = [record.getMessage() for record in caplog.records]
+    assert any("Stage 2 topology engine failed" in line for line in lines)
     assert any("topology.source source=dag_template" in line for line in lines)
-    assert not any("topology.candidate" in line for line in lines)
+
+
+def test_engine_no_allowed_path_falls_back_to_dag_template(monkeypatch, caplog) -> None:
+    _stub_embedder(monkeypatch)
+    monkeypatch.delenv("SAGE_TOPOLOGY_SKIP_DAG_TEMPLATE", raising=False)
+    monkeypatch.delenv("SAGE_TOPOLOGY_FORCE_ENGINE", raising=False)
+    monkeypatch.delenv("SAGE_TOPOLOGY_LOG_ALL_CANDIDATES", raising=False)
+    caplog.set_level(logging.INFO, logger="sage.pipeline")
+    no_allowed_topology = _Topology("no_allowed_graph")
+    engine = _Engine(
+        _GenerateResult(
+            topology=no_allowed_topology,
+            source="no_allowed_path",
+            confidence=0.0,
+        )
+    )
+    pipeline = CognitiveOrchestrationPipeline(
+        router=None,
+        engine=engine,
+        assigner=None,
+        provider_pool=None,
+    )
+    setattr(pipeline, "_build_topology_from_hint", lambda hint: _Topology(hint))
+
+    result = select_topology(pipeline, _ctx())
+
+    assert engine.calls == 1
+    assert result.topology is not no_allowed_topology
+    assert result.topology is not None
+    lines = [record.getMessage() for record in caplog.records]
+    assert any("Stage 2 topology engine abstained" in line for line in lines)
+    assert any("topology.source source=dag_template" in line for line in lines)
+    assert not any("topology.source source=no_allowed_path" in line for line in lines)

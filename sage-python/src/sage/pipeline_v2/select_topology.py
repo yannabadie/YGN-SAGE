@@ -170,6 +170,49 @@ def select_topology(
                     if isinstance(raw_result, (list, tuple)) and candidates
                     else raw_result
                 )
+                # Gap 1+2 (2026-04-21): log DAG edges + 6-path source
+                # (smmu_hit / archive_hit / llm_synthesis / mutation /
+                # mcts_search / template_fallback / no_allowed_path) with
+                # confidence. The source is exposed by PyGenerateResult.source()
+                # per sage-core/src/topology/pyo3_wrappers.rs.
+                _src = None
+                _conf = None
+                if result is not None:
+                    _src_attr = getattr(result, "source", None)
+                    if callable(_src_attr):
+                        try:
+                            _src = _src_attr()
+                        except Exception:
+                            _src = None
+                    else:
+                        _src = _src_attr
+                    _conf_attr = getattr(result, "confidence", None)
+                    if callable(_conf_attr):
+                        try:
+                            _conf = _conf_attr()
+                        except Exception:
+                            _conf = None
+                    else:
+                        _conf = _conf_attr
+
+                if _src == "no_allowed_path":
+                    log.info(
+                        "Stage 2 topology engine abstained "
+                        "(source=no_allowed_path), using DAG/template fallback"
+                    )
+                    if _dag_template_topo is not None:
+                        ctx.topology = _dag_template_topo
+                        ctx.topology_id = getattr(ctx.topology, "id", "") or ""
+                        topology_helpers_mod.log_topology_structure(
+                            self,
+                            ctx.topology,
+                            source="dag_template",
+                            confidence=None,
+                        )
+                        topology_helpers_mod.apply_topology_budget_and_cache(self, ctx)
+                        return ctx
+                    result = None
+
                 if result and hasattr(result, "topology"):
                     if _dag_template_topo is not None:
                         log.info(
@@ -195,36 +238,15 @@ def select_topology(
                     # telemetry sees the right value.
                     ctx.topology_id = getattr(result, "id", "") or ""
 
-                # Gap 1+2 (2026-04-21): log DAG edges + 6-path source
-                # (smmu_hit / archive_hit / llm_synthesis / mutation /
-                # mcts_search / template_fallback) with confidence. The
-                # source is exposed by PyGenerateResult.source() per
-                # sage-core/src/topology/pyo3_wrappers.rs.
-                _src = None
-                _conf = None
                 if result is not None:
-                    _src_attr = getattr(result, "source", None)
-                    if callable(_src_attr):
-                        try:
-                            _src = _src_attr()
-                        except Exception:
-                            _src = None
-                    else:
-                        _src = _src_attr
-                    _conf_attr = getattr(result, "confidence", None)
-                    if callable(_conf_attr):
-                        try:
-                            _conf = _conf_attr()
-                        except Exception:
-                            _conf = None
-                    else:
-                        _conf = _conf_attr
-                topology_helpers_mod.log_topology_structure(
-                    self,
-                    ctx.topology, source=_src or "engine_unknown", confidence=_conf,
-                )
-                topology_helpers_mod.apply_topology_budget_and_cache(self, ctx)
-                return ctx
+                    topology_helpers_mod.log_topology_structure(
+                        self,
+                        ctx.topology,
+                        source=_src or "engine_unknown",
+                        confidence=_conf,
+                    )
+                    topology_helpers_mod.apply_topology_budget_and_cache(self, ctx)
+                    return ctx
             except (ImportError, RuntimeError) as exc:
                 log.warning(
                     "Stage 2 topology engine failed: %s, using template", exc

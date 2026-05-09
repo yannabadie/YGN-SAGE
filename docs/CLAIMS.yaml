@@ -6,7 +6,7 @@
 # Generated_at_utc is updated on every run; the canonical hashable diff is the
 # `claims:` array, which is sorted by id for stable output.
 
-_generated_at_utc: '2026-05-09T11:48:21+00:00'
+_generated_at_utc: '2026-05-09T13:40:04+00:00'
 _total_claims: 21
 claims:
 - id: benchmarks.bcb_hard_45_9
@@ -557,22 +557,31 @@ claims:
     '
   _source_file: docs/claims/topology.yaml
 - id: topology.engine_6_paths
-  status: delivered
-  description: TopologyEngine 6-path generation with deterministic per-path test harness (GenerationOptions).
+  status: evidence_pending
+  description: TopologyEngine exposes the 6 named generation sources and GenerationOptions path toggles,
+    but deterministic end-to-end proof for every source remains pending.
   evidence_test: sage-python/tests/test_topology_engine_six_paths.py
   evidence_benchmark: n/a
-  evidence_commit: '32345072'
-  last_verified_utc: '2026-05-08T00:00:00Z'
+  evidence_commit: evidence_pending
+  last_verified_utc: '2026-05-09T00:00:00Z'
   owner: yann
   notes: 'Phase 2 (2026-05-07): GenerationOptions struct with per-path
 
     toggles (allow_smmu/archive/mutation/mcts/template).
 
-    generate_with_options() in engine.rs. Seed helpers:
+    2026-05-09 CI follow-up: allow_template=false no longer reports
 
-    seed_archive_outcome, seed_archive_diversity. 6 Python
+    template_fallback when no enabled path succeeds; it reports a
 
-    boundary tests prove each source is reachable. 223 Rust tests.
+    no_allowed_path abstention instead. The current Python boundary
+
+    tests prove template fallback, archive, mutation, LLM synthesis
+
+    mock, and disabled-template abstention semantics, but S-MMU and
+
+    MCTS source reachability are not yet deterministic enough to
+
+    certify full 6-path reachability.
 
     '
   _source_file: docs/claims/topology.yaml

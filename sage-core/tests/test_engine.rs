@@ -1,7 +1,7 @@
 //! Integration tests for DynamicTopologyEngine.
 
 use sage_core::memory::smmu::MultiViewMMU;
-use sage_core::topology::engine::{TopologyEngine, TopologySource};
+use sage_core::topology::engine::{GenerationOptions, TopologyEngine, TopologySource};
 use sage_core::topology::templates;
 
 // ── Test 1: New engine has empty cache ───────────────────────────────────
@@ -174,6 +174,175 @@ fn test_generate_empty_state_falls_back() {
 }
 
 // ── Test 10: generate after record_outcome may hit archive or mutation ───
+
+#[test]
+fn test_generate_with_template_disabled_all_paths_exhausted_reports_no_allowed_path() {
+    let mut engine = TopologyEngine::new();
+    let mut smmu = MultiViewMMU::new();
+
+    let result = engine.generate_with_options(
+        &mut smmu,
+        "no enabled topology source",
+        None,
+        2,
+        0.0,
+        &GenerationOptions {
+            allow_smmu: false,
+            allow_archive: false,
+            allow_mutation: false,
+            allow_mcts: false,
+            allow_template: false,
+        },
+    );
+
+    assert_eq!(result.source, TopologySource::NoAllowedPath);
+    assert_eq!(result.source.as_str(), "no_allowed_path");
+    assert_eq!(result.confidence, 0.0);
+    assert!(result.topology.node_count() > 0);
+    assert_eq!(
+        engine.bandit().arm_count(),
+        0,
+        "no_allowed_path is an abstention sentinel, not a trainable arm",
+    );
+}
+
+#[test]
+fn test_no_allowed_path_cancels_pending_bandit_decision() {
+    let mut engine = TopologyEngine::new();
+    let mut smmu = MultiViewMMU::new();
+
+    let seed_graphs = vec![
+        templates::sequential("seed-model"),
+        templates::parallel("seed-model", 2),
+        templates::avr("actor-model", "reviewer-model"),
+        templates::debate("debater-model", "judge-model"),
+    ];
+
+    for (idx, graph) in seed_graphs.into_iter().enumerate() {
+        let topo_id = graph.id.clone();
+        engine.cache_topology(graph);
+        engine.record_outcome(
+            &mut smmu,
+            &topo_id,
+            &format!("seed topology {}", idx),
+            vec![format!("seed-{}", idx)],
+            None,
+            0.7,
+            0.01,
+            100.0,
+        );
+    }
+
+    assert!(
+        engine.bandit().arm_count() > 3,
+        "seeded bandit arms should force generate() to create a pending decision",
+    );
+    assert_eq!(engine.bandit().total_observations(), 0);
+
+    let result = engine.generate_with_options(
+        &mut smmu,
+        "no enabled topology source with seeded bandit",
+        None,
+        2,
+        0.0,
+        &GenerationOptions {
+            allow_smmu: false,
+            allow_archive: false,
+            allow_mutation: false,
+            allow_mcts: false,
+            allow_template: false,
+        },
+    );
+
+    assert_eq!(result.source, TopologySource::NoAllowedPath);
+    assert_eq!(engine.bandit().total_observations(), 0);
+
+    engine.record_outcome(
+        &mut smmu,
+        &result.topology.id,
+        "abstention outcome should not be attributed to a stale decision",
+        vec!["abstention".into()],
+        None,
+        0.9,
+        0.01,
+        50.0,
+    );
+
+    assert_eq!(
+        engine.bandit().total_observations(),
+        0,
+        "no_allowed_path must cancel the pending bandit decision instead of attributing a later outcome",
+    );
+}
+
+#[test]
+fn test_mutation_path_records_bounded_retry_stats() {
+    let mut engine = TopologyEngine::new();
+    let mut smmu = MultiViewMMU::new();
+    let graph = templates::parallel("seed-model", 3);
+    let topo_id = graph.id.clone();
+    engine.cache_topology(graph);
+    engine.record_outcome(
+        &mut smmu,
+        &topo_id,
+        "seed archive for mutation",
+        vec!["mutation".into()],
+        None,
+        0.8,
+        0.01,
+        100.0,
+    );
+
+    let result = engine.generate_with_options(
+        &mut smmu,
+        "mutation retry stats should be bounded",
+        None,
+        2,
+        0.0,
+        &GenerationOptions {
+            allow_smmu: false,
+            allow_archive: false,
+            allow_mutation: true,
+            allow_mcts: false,
+            allow_template: false,
+        },
+    );
+
+    assert!(
+        matches!(
+            result.source,
+            TopologySource::Mutation | TopologySource::NoAllowedPath
+        ),
+        "expected mutation success or explicit abstention, got {:?}",
+        result.source,
+    );
+
+    let snapshot = engine.mutation_stats_snapshot();
+    let total_attempts: u32 = snapshot
+        .iter()
+        .map(|(_, attempts, _, _, _)| *attempts)
+        .sum();
+    let total_successes: u32 = snapshot
+        .iter()
+        .map(|(_, _, successes, _, _)| *successes)
+        .sum();
+    let retry_limit = snapshot.len() as u32 * 2;
+
+    assert!(
+        total_attempts > 0,
+        "mutation path should record attempted operators"
+    );
+    assert!(
+        total_attempts <= retry_limit,
+        "mutation retries must remain bounded, got {} attempts",
+        total_attempts,
+    );
+    assert!(
+        total_successes <= 1,
+        "a single mutation generation should record at most one successful operator",
+    );
+    assert!(total_successes <= total_attempts);
+}
 
 #[test]
 fn test_generate_after_record_may_hit_archive_or_mutation() {
@@ -374,6 +543,7 @@ fn test_record_outcome_feeds_bandit() {
 mod persistence_tests {
     use sage_core::memory::smmu::MultiViewMMU;
     use sage_core::topology::engine::TopologyEngine;
+    use sage_core::topology::posterior_epoch;
     use sage_core::topology::templates;
 
     fn temp_state_dir() -> std::path::PathBuf {
@@ -631,12 +801,50 @@ mod persistence_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Cold-start case: load_state from a directory missing engine_extras.json
-    /// must succeed and leave defaults in place. Covers the migration path
-    /// for pre-extras checkpoint directories.
+    /// Current manifests must fail closed when a declared state file is missing.
     #[test]
-    fn test_engine_load_pre_extras_checkpoint() {
-        // Build a "legacy" checkpoint by saving and then deleting the extras file.
+    fn test_engine_load_rejects_manifest_declared_missing_extras() {
+        let mut engine = TopologyEngine::new();
+        let mut smmu = MultiViewMMU::new();
+        let graph = templates::sequential("only-model");
+        let topo_id = graph.id.clone();
+        engine.cache_topology(graph);
+        engine.record_outcome(
+            &mut smmu,
+            &topo_id,
+            "task",
+            vec!["test".into()],
+            None,
+            0.8,
+            0.01,
+            100.0,
+        );
+        let dir = temp_state_dir();
+        engine.save_state(dir.to_str().unwrap()).unwrap();
+
+        let extras_path = dir.join("engine_extras.json");
+        assert!(extras_path.exists(), "save should write extras");
+        std::fs::remove_file(&extras_path).expect("simulate corrupted checkpoint");
+
+        let mut engine2 = TopologyEngine::new();
+        let err = engine2
+            .load_state(dir.to_str().unwrap())
+            .expect_err("manifest-declared missing extras must fail closed");
+        assert!(
+            err.contains("topology_state_manifest.json state file set mismatch"),
+            "unexpected error: {}",
+            err
+        );
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Legacy/pre-extras-compatible checkpoint: if the manifest and actual
+    /// files both omit engine_extras.json, load_state succeeds and keeps
+    /// extras at defaults.
+    #[test]
+    fn test_engine_load_pre_extras_manifest_without_extras() {
         let mut engine = TopologyEngine::new();
         let mut smmu = MultiViewMMU::new();
         let graph = templates::sequential("only-model");
@@ -658,11 +866,13 @@ mod persistence_tests {
         let extras_path = dir.join("engine_extras.json");
         assert!(extras_path.exists(), "save should write extras");
         std::fs::remove_file(&extras_path).expect("simulate legacy checkpoint");
+        posterior_epoch::write_topology_state_manifest(&dir, "legacy_pre_extras_fixture")
+            .expect("rewrite manifest over remaining legacy files");
 
         let mut engine2 = TopologyEngine::new();
         engine2
             .load_state(dir.to_str().unwrap())
-            .expect("load should tolerate missing extras file");
+            .expect("manifest-compatible missing extras should load");
 
         // Bandit + archive still load; extras stay at defaults
         assert!(engine2.bandit().arm_count() > 0);

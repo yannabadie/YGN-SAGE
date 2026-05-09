@@ -37,7 +37,7 @@ use super::mutations::{apply_mutation_tracked, MutationResult, MutationStats};
 use super::posterior_epoch;
 use super::smmu_bridge::{TopologyOutcome, TopologySmmuBridge};
 use super::templates;
-use super::topology_graph::TopologyGraph;
+use super::topology_graph::{TopologyGraph, TopologyNode};
 use super::verifier::HybridVerifier;
 
 // ── TopologySource ────────────────────────────────────────────────────────
@@ -57,6 +57,8 @@ pub enum TopologySource {
     MctsSearch,
     /// Fell back to a built-in template.
     TemplateFallback,
+    /// Sentinel: no enabled generation path produced a topology.
+    NoAllowedPath,
 }
 
 impl TopologySource {
@@ -68,6 +70,7 @@ impl TopologySource {
             Self::Mutation => "mutation",
             Self::MctsSearch => "mcts_search",
             Self::TemplateFallback => "template_fallback",
+            Self::NoAllowedPath => "no_allowed_path",
         }
     }
 }
@@ -377,6 +380,7 @@ impl TopologyEngine {
                 );
                 modulated
             } else {
+                self.last_decision_id = None;
                 exploration_budget
             }
         } else {
@@ -467,20 +471,24 @@ impl TopologyEngine {
                 );
                 fb
             } else {
-                // All generative paths exhausted and template is disabled.
-                // Use the same single-node topology as template_fallback
-                // but mark confidence=0.0 so callers can distinguish.
-                warn!("all allowed topology paths exhausted (template disabled), returning empty fallback");
-                let mut fb = self.template_fallback(system);
-                fb.confidence = 0.0;
-                fb
+                warn!("all allowed topology paths exhausted (template disabled)");
+                self.no_allowed_path_result(system)
             }
         });
 
-        // Register the chosen path as a bandit arm.
-        let source_str = result.source.as_str();
-        self.bandit
-            .add_arm(source_str, &result.topology.template_type);
+        // Register only real generation paths as bandit arms. `NoAllowedPath`
+        // is an abstention sentinel, not a trainable topology source.
+        if result.source != TopologySource::NoAllowedPath {
+            let source_str = result.source.as_str();
+            self.bandit
+                .add_arm(source_str, &result.topology.template_type);
+        } else {
+            if let Some(decision_id) = self.last_decision_id.take() {
+                let cancelled = self.bandit.cancel_decision(&decision_id);
+                debug!(decision_id = %decision_id, cancelled, "topology_no_allowed_path_cancelled_bandit_decision");
+            }
+            debug!("topology_no_allowed_path_not_registered_as_bandit_arm");
+        }
 
         result
     }
@@ -611,53 +619,53 @@ impl TopologyEngine {
 
         let best = self.archive.best_by_quality()?;
 
-        let graph = best.graph.clone();
         let mut rng = rand::rng();
 
-        let stats = self
-            .mutation_stats
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let (op_idx, result) = apply_mutation_tracked(graph, &mut rng, &stats);
-        drop(stats);
+        for _ in 0..(super::mutations::OPERATOR_NAMES.len() * 2).max(1) {
+            let graph = best.graph.clone();
+            let stats = self
+                .mutation_stats
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let (op_idx, result) = apply_mutation_tracked(graph, &mut rng, &stats);
+            drop(stats);
 
-        match result {
-            MutationResult::Success(mutated) => {
-                let vr = self.verifier.verify(&mutated);
-                if vr.valid {
-                    self.mutation_stats
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .record(op_idx as usize, true);
-                    info!(
-                        parent_quality = best.quality,
-                        operator = super::mutations::OPERATOR_NAMES[op_idx as usize],
-                        stats = %self.mutation_stats.lock().unwrap_or_else(|e| e.into_inner()).summary(),
-                        "mutation_success"
-                    );
-                    Some(GenerateResult {
-                        topology: mutated,
-                        source: TopologySource::Mutation,
-                        confidence: best.quality * 0.8,
-                    })
-                } else {
+            match result {
+                MutationResult::Success(mutated) => {
+                    let vr = self.verifier.verify(&mutated);
+                    if vr.valid {
+                        self.mutation_stats
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .record(op_idx as usize, true);
+                        info!(
+                            parent_quality = best.quality,
+                            operator = super::mutations::OPERATOR_NAMES[op_idx as usize],
+                            stats = %self.mutation_stats.lock().unwrap_or_else(|e| e.into_inner()).summary(),
+                            "mutation_success"
+                        );
+                        return Some(GenerateResult {
+                            topology: mutated,
+                            source: TopologySource::Mutation,
+                            confidence: best.quality * 0.8,
+                        });
+                    }
                     self.mutation_stats
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
                         .record(op_idx as usize, false);
                     debug!(errors = ?vr.errors, "mutation_failed_verification");
-                    None
+                }
+                MutationResult::Invalid(reason) => {
+                    self.mutation_stats
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .record(op_idx as usize, false);
+                    debug!(reason = %reason, "mutation_invalid");
                 }
             }
-            MutationResult::Invalid(reason) => {
-                self.mutation_stats
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .record(op_idx as usize, false);
-                debug!(reason = %reason, "mutation_invalid");
-                None
-            }
         }
+        None
     }
 
     /// Path 5: Try MCTS search over mutation space (requires archive diversity).
@@ -713,6 +721,25 @@ impl TopologyEngine {
             topology,
             source: TopologySource::TemplateFallback,
             confidence: 0.5, // moderate confidence for templates
+        }
+    }
+
+    fn no_allowed_path_result(&self, system: u8) -> GenerateResult {
+        let mut topology = TopologyGraph::try_new("sequential")
+            .expect("sequential topology template must be registered");
+        topology.add_node(TopologyNode::new(
+            "no_allowed_path".into(),
+            "".into(),
+            system.clamp(1, 3),
+            Vec::new(),
+            0,
+            0.0,
+            0.0,
+        ));
+        GenerateResult {
+            topology,
+            source: TopologySource::NoAllowedPath,
+            confidence: 0.0,
         }
     }
 
@@ -1311,6 +1338,7 @@ mod tests {
             TopologySource::TemplateFallback.as_str(),
             "template_fallback"
         );
+        assert_eq!(TopologySource::NoAllowedPath.as_str(), "no_allowed_path");
     }
 
     #[test]
