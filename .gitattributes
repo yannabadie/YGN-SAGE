@@ -5,3 +5,6 @@
 Cargo.lock text eol=lf
 *.sh text eol=lf
 *.jsonl text eol=lf
+docs/superpowers/evidence/**/*.json text eol=lf
+docs/superpowers/evidence/**/*.log text eol=lf
+docs/superpowers/evidence/**/*.txt text eol=lf

@@ -384,13 +384,14 @@ def _emit_cli_cancel_failure_fallback(
 async def _read_stdin_commands(
     stdin: TextIO,
     queue: "asyncio.Queue[Mapping[str, Any] | None]",
-    stop_event: asyncio.Event,
+    stop_event: threading.Event,
 ) -> None:
     """Read JSONL commands from stdin and enqueue them.
 
     One command per line. Parse errors are NON-fatal — the malformed line is
     skipped (no failure event is emitted to avoid amplifying garbage). EOF on
-    stdin closes the queue with ``None`` and sets the stop event.
+    stdin closes the queue with ``None``. ``stop_event`` is a thread-safe flag
+    because the reader loop runs in an OS thread.
     """
     loop = asyncio.get_running_loop()
     finished = asyncio.Event()
@@ -908,7 +909,7 @@ async def run_jsonl_async(
 
     # Stdin command queue + reader task.
     command_queue: asyncio.Queue[Mapping[str, Any] | None] = asyncio.Queue()
-    stop_stdin_event = asyncio.Event()
+    stop_stdin_event = threading.Event()
     stdin_task = asyncio.create_task(
         _read_stdin_commands(stdin, command_queue, stop_stdin_event)
     )

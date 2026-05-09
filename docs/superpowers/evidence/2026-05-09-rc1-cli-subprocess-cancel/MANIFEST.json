@@ -1,6 +1,9 @@
 {
   "ticket": "P1 real-backend CLI JSONL/cancel smoke for Evidence-Pareto RC1",
   "repo_commit_under_test": "9c9b82ea16cf776be75ad452eb5facd6de9e5b2c",
+  "evidence_generated_from_dirty_parent_sha": "9c9b82ea16cf776be75ad452eb5facd6de9e5b2c",
+  "evidence_committed_in_sha": "80681595214cc22b75ceb4d1105cb478cbfd3d50",
+  "evidence_binding_note": "The subprocess evidence was generated before the fix commit existed, from parent 9c9b82e plus the local staged diff later committed as 80681595. This artifact proves that local diff, not the parent alone.",
   "date_utc": "2026-05-09",
   "command": [
     "C:\\ProgramData\\miniforge3\\python.exe",
