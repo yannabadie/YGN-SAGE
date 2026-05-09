@@ -50,7 +50,7 @@ YGN-SAGE est un **Agent Development Kit (ADK)** structuré en 3 packages : un no
 | **Branche analysée** | `main` |
 | **HEAD commit** | `a6f869c4` (2026-05-04) |
 | **Langages** | Rust 1.94 (sage-core), Python 3.13 (sage-python, sage-discover) |
-| **Tests Python collected** | **3376** (canonical : `docs/status/current.json`) |
+| **Tests Python collected** | **3383** (canonical : `docs/status/current.json`) |
 | **Tests Rust** | **560** (`cargo test --features smt,cognitive,sandbox,cranelift,tool-executor`) |
 | **Tests sage-discover** | **100** |
 | **mypy / ruff** | mypy 0 errors / 250 files, ruff clean, type:ignore ceiling 54/54 |
