@@ -1,6 +1,8 @@
 """Learning Side-Effect Ledger v0 contract tests."""
 from __future__ import annotations
 
+import hashlib
+import json
 import pathlib
 import shutil
 from uuid import uuid4
@@ -11,9 +13,14 @@ from sage.pipeline import PipelineContext
 from sage.pipeline_v2.learning_side_effects import emit_decision
 from sage.runtime.credit_assignment.schema import (
     LearningSideEffectSchemaError,
+    canonical_json,
+    record_hash_input,
     validate_record_shape,
 )
-from sage.runtime.credit_assignment.validate import validate_trace_dir
+from sage.runtime.credit_assignment.validate import (
+    validate_evidence_boundary,
+    validate_trace_dir,
+)
 from sage.runtime.event_log import RuntimeEventLog, install_event_log
 from sage.runtime.event_log.schema import EVENT_TYPES
 from sage.runtime.oracle.verdict import EvidenceRef, OracleVerdict
@@ -185,10 +192,228 @@ def test_validator_rejects_allowed_oracle_on_update_without_oracle_ref(
         validate_trace_dir(trace_dir, run_id=log.run_id)
 
 
+def test_stage5_evidence_boundary_accepts_minimal_oracle_backed_decisions(
+    trace_dir: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SAGE_ORACLE", "1")
+    log = RuntimeEventLog(run_id="01LSESTAGE5VALID000000001", trace_dir=trace_dir)
+    token = install_event_log(log)
+    try:
+        ctx = PipelineContext(task="ledger stage5 task")
+        _seed_trainable_oracle_trace(ctx, log)
+        ctx.executed_model_id = "model-a"
+        ctx.executed_template = "single_agent"
+
+        emit_decision(
+            object(),
+            ctx,
+            side_effect="bandit_record_outcome",
+            decision="allowed",
+            reason_code="oracle_trainable",
+            attempted=True,
+            quality=1.0,
+        )
+        emit_decision(
+            object(),
+            ctx,
+            side_effect="map_elites_record_outcome",
+            decision="allowed",
+            reason_code="oracle_trainable",
+            attempted=True,
+            quality=1.0,
+        )
+        emit_decision(
+            object(),
+            ctx,
+            side_effect="online_evolution_should_evolve",
+            decision="skipped",
+            reason_code="should_evolve_false",
+            attempted=True,
+            quality=1.0,
+        )
+    finally:
+        token.var.reset(token)
+        log.close()
+
+    records = validate_evidence_boundary(
+        trace_dir,
+        run_id=log.run_id,
+        expect_default_pipeline_learn=True,
+    )
+
+    assert {
+        "bandit_record_outcome",
+        "map_elites_record_outcome",
+        "online_evolution_should_evolve",
+    } <= {record["side_effect"] for record in records}
+
+
+def test_stage5_evidence_boundary_rejects_missing_minimal_decisions(
+    trace_dir: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SAGE_ORACLE", "1")
+    log = RuntimeEventLog(run_id="01LSESTAGE5MISSING000001", trace_dir=trace_dir)
+    token = install_event_log(log)
+    try:
+        ctx = PipelineContext(task="ledger missing stage5 task")
+        _seed_trainable_oracle_trace(ctx, log)
+
+        emit_decision(
+            object(),
+            ctx,
+            side_effect="bandit_record_outcome",
+            decision="allowed",
+            reason_code="oracle_trainable",
+            attempted=True,
+            quality=1.0,
+        )
+    finally:
+        token.var.reset(token)
+        log.close()
+
+    assert len(validate_trace_dir(trace_dir, run_id=log.run_id)) == 1
+    with pytest.raises(
+        LearningSideEffectSchemaError,
+        match="missing required stage5 side-effect decision",
+    ):
+        validate_evidence_boundary(
+            trace_dir,
+            run_id=log.run_id,
+            expect_default_pipeline_learn=True,
+        )
+
+
+def test_evidence_boundary_requires_run_id(trace_dir: pathlib.Path) -> None:
+    with pytest.raises(LearningSideEffectSchemaError, match="requires run_id"):
+        validate_evidence_boundary(trace_dir, run_id="")
+
+
+def test_validator_rejects_forged_oracle_ref_trainable(
+    trace_dir: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SAGE_ORACLE", "1")
+    log = RuntimeEventLog(run_id="01LSEFORGEDTRAINABLE0001", trace_dir=trace_dir)
+    token = install_event_log(log)
+    try:
+        ctx = PipelineContext(task="ledger forged oracle task")
+        _seed_oracle_trace(ctx, log, trainable=False)
+    finally:
+        token.var.reset(token)
+        log.close()
+
+    oracle_ref = ctx.runtime_event_refs["oracle_verdict"]
+    record = _minimal_record()
+    record.update(
+        {
+            "run_id": log.run_id,
+            "trace_id": log.run_id,
+            "task_hash": "forged-task-hash",
+            "parent_event_refs": [
+                ctx.runtime_event_refs["final_result"],
+                oracle_ref,
+            ],
+            "oracle_verdict_ref": {
+                "seq": oracle_ref["seq"],
+                "payload_hash": oracle_ref["payload_hash"],
+                "trainable": True,
+                "verdict_source": "exact",
+                "quality_label": "fail",
+                "score": 0.0,
+                "evidence_hashes": [],
+            },
+            "side_effect": "map_elites_record_outcome",
+            "decision": "allowed",
+            "reason_code": "oracle_trainable",
+            "attempted": True,
+            "gate": {
+                "oracle_enabled": True,
+                "oracle_trainable": True,
+                "allow_training_updates": True,
+                "quality_source": "oracle",
+            },
+            "metrics": {"quality": 0.0, "cost_usd": 0.0, "latency_ms": 1.0},
+        }
+    )
+    _write_single_record(trace_dir, record)
+
+    with pytest.raises(
+        LearningSideEffectSchemaError,
+        match="does not match RuntimeEventLog payload",
+    ):
+        validate_trace_dir(trace_dir, run_id=log.run_id)
+
+
 def test_runtime_event_taxonomy_remains_v0_15_types() -> None:
     assert len(EVENT_TYPES) == 15
     assert "learning_side_effect" not in EVENT_TYPES
     assert "credit_assignment" not in EVENT_TYPES
+
+
+def _seed_trainable_oracle_trace(ctx: PipelineContext, log: RuntimeEventLog) -> None:
+    _seed_oracle_trace(ctx, log, trainable=True)
+
+
+def _seed_oracle_trace(
+    ctx: PipelineContext,
+    log: RuntimeEventLog,
+    *,
+    trainable: bool,
+) -> None:
+    log.emit_task_started(ctx.task)
+    _store(ctx, "task_started", log)
+    log.emit_routing_decision(
+        routing_source="test",
+        system=2,
+        domain="code",
+        confidence=1.0,
+        model_id="model-a",
+    )
+    _store(ctx, "routing_decision", log)
+    final_seq = log.emit_final_result(
+        status="success",
+        output="ok",
+        total_cost_usd=0.01,
+        total_latency_ms=10.0,
+        node_count=1,
+    )
+    _store(ctx, "final_result", log)
+    verdict = OracleVerdict(
+        trainable=trainable,
+        verdict_source="exact" if trainable else "abstain",
+        quality_label="pass" if trainable else "unknown",
+        score=1.0 if trainable else None,
+        confidence=1.0,
+        reason_codes=("exact_pass",) if trainable else ("abstain",),
+        evidence=(
+            (EvidenceRef(run_id=log.run_id, evidence_hash="sha256:e1"),)
+            if trainable
+            else ()
+        ),
+    )
+    log.emit_oracle_verdict(parent_event_id=final_seq, verdict=verdict)
+    _store(ctx, "oracle_verdict", log)
+    ctx.oracle_verdict = verdict
+    ctx.cost = 0.01
+    ctx.latency_ms = 10.0
+
+
+def _write_single_record(trace_dir: pathlib.Path, record: dict) -> None:
+    record["record_hash"] = _record_hash(record)
+    (trace_dir / "learning_side_effects.jsonl").write_text(
+        json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+def _record_hash(record: dict) -> str:
+    digest = hashlib.sha256(
+        canonical_json(record_hash_input(record)).encode("utf-8")
+    ).hexdigest()
+    return f"sha256:{digest}"
 
 
 def _store(ctx: PipelineContext, event_type: str, log: RuntimeEventLog) -> None:

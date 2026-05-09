@@ -15,6 +15,9 @@ invariants in `docs/contracts/runtime-integrity-ledger.md`.
 - File name: `learning_side_effects.jsonl`
 - Python package: `sage.runtime.credit_assignment`
 - Validator: `python -m sage.runtime.credit_assignment.validate <trace_dir> [--run-id <id>]`
+- Evidence-boundary validator:
+  `python -m sage.runtime.credit_assignment.validate <trace_dir> --run-id <id> --mode evidence-boundary`
+  for RC/canary traces that explicitly claim learning-integrity evidence
 - Schema version: `learning_side_effect.v0`
 - Runtime behavior: fail-open for sidecar writes; validation failures fail
   evidence gates, not the live task execution path
@@ -58,10 +61,31 @@ Each line is one canonical JSON object with:
   its `payload_hash` matches;
 - `oracle_verdict_ref` points to a real `oracle_verdict` event with matching
   hash;
+- `oracle_verdict_ref.trainable` matches the referenced RuntimeEventLog
+  oracle payload when that payload is available;
 - an `allowed` oracle-on learning update requires an oracle verdict ref with
   `trainable=True`;
 - `bandit_cancel_pending` is treated as an allowed safety side-effect, not a
   learning update.
+
+`validate_evidence_boundary()` (or CLI `--mode evidence-boundary`) is a
+separate fail-closed gate for traces explicitly declared by RC/canary/benchmark
+harnesses as learning-integrity evidence. It requires a concrete `run_id`, a
+sibling RuntimeEventLog for that run, at least one sidecar record for that run,
+and oracle-backed eligibility by default. If the harness also passes
+`--expect-default-pipeline-learn`, the validator requires the minimum current
+default Stage 5 decision set:
+
+- `bandit_record_outcome`
+- `map_elites_record_outcome`
+- `online_evolution_should_evolve`
+
+This remains a minimum RC/canary evidence gate, not an inference from
+`oracle_verdict` alone and not an exhaustive completeness proof. Runtime events
+do not expose enough state to infer every possible
+`training_memory_consolidate` or `online_evolution_evolve` branch without
+additional instrumentation, so those branches are schema/hash/oracle-validated
+when present but are not required by this v0 minimum gate.
 
 ## Integrity Position
 
