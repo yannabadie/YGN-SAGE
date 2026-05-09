@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import sys
 import time
 from datetime import datetime
@@ -34,6 +35,37 @@ pytestmark = pytest.mark.skipif(
 REPORT_DIR = Path("docs/benchmarks")
 
 
+def _cleanup_sage_state_dir() -> None:
+    """Remove the live e2e state dir, failing if SQLite handles remain open."""
+    state_dir = Path(os.environ["HOME"]) / ".sage"
+    for _ in range(5):
+        if not state_dir.exists():
+            return
+        shutil.rmtree(state_dir, ignore_errors=True)
+        if not state_dir.exists():
+            return
+        time.sleep(0.05)
+
+    leftovers = list(state_dir.iterdir()) if state_dir.exists() else []
+    assert not leftovers, f"Failed to clean e2e .sage state; leftovers={leftovers!r}"
+
+
+async def _close_system_memories(system: Any) -> None:
+    """Close cached async SQLite resources owned by a live AgentSystem."""
+    seen: set[int] = set()
+    candidates = [
+        getattr(getattr(system, "agent_loop", None), "episodic_memory", None),
+        getattr(getattr(system, "pipeline", None), "episodic_memory", None),
+    ]
+    for memory in candidates:
+        if memory is None or id(memory) in seen:
+            continue
+        seen.add(id(memory))
+        close = getattr(memory, "close", None)
+        if close is not None:
+            await close()
+
+
 # ── SSL fixture — use proper CA bundle, never bypass ─────────────────────────
 @pytest.fixture(autouse=True)
 def _ssl_certs(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -47,15 +79,30 @@ def _ssl_certs(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 # ── Module-scoped system fixture ─────────────────────────────────────────────
-@pytest.fixture(scope="module")
-def system():
-    """Boot a full AgentSystem (SYNCHRONOUS) once per module."""
+@pytest.fixture
+def system(_isolate_sage_state_dir):
+    """Boot a full AgentSystem with an isolated SQLite state dir.
+
+    This fixture must stay function-scoped. The global autouse state-dir
+    cleanup is also function-scoped; a module-scoped live AgentSystem can be
+    booted before that cleanup runs, leaving memory objects pointing at a
+    directory that pytest then deletes.
+    """
     from sage.boot import boot_agent_system
     from sage.events.bus import EventBus
 
+    _cleanup_sage_state_dir()
     bus = EventBus()
     sys = boot_agent_system(use_mock_llm=False, llm_tier="auto", event_bus=bus)
-    return sys
+    try:
+        yield sys
+    finally:
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(_close_system_memories(sys))
+        finally:
+            loop.close()
+        _cleanup_sage_state_dir()
 
 
 @pytest.fixture(scope="module")

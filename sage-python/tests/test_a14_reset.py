@@ -104,6 +104,116 @@ def test_post_reset_boot_fail_closed_on_restore(tmp_path: Path) -> None:
     assert "epoch_file=missing" in message
 
 
+def test_a14_reset_retries_windows_final_backup_rename(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state_dir = tmp_path / "state"
+    audit_dir = tmp_path / "audit"
+    _seed_a14_state(state_dir)
+
+    real_replace = a14_reset.os.replace
+    calls = {"final": 0}
+
+    def flaky_replace(src: object, dst: object) -> None:
+        src_path = Path(src)
+        dst_path = Path(dst)
+        if (
+            src_path.is_dir()
+            and src_path.name.startswith(".tmp_pre_a14_20260429_")
+            and dst_path.name == "pre_a14_20260429"
+            and calls["final"] < 2
+        ):
+            calls["final"] += 1
+            exc = PermissionError("Access is denied")
+            exc.winerror = 5  # type: ignore[attr-defined]
+            raise exc
+        real_replace(src, dst)
+
+    monkeypatch.setattr(a14_reset.os, "name", "nt", raising=False)
+    monkeypatch.setattr(a14_reset.os, "replace", flaky_replace)
+
+    backup_dir = _run_reset(state_dir, audit_dir, "A14 reset under test")
+
+    assert calls["final"] == 2
+    assert backup_dir.exists()
+    assert (backup_dir / "bandit_state.db").exists()
+    assert (state_dir / POSTERIOR_EPOCH_FILENAME).exists()
+
+
+def test_a14_reset_preserves_temp_and_poison_marks_on_final_rename_exhaustion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state_dir = tmp_path / "state"
+    audit_dir = tmp_path / "audit"
+    _seed_a14_state(state_dir)
+
+    real_replace = a14_reset.os.replace
+
+    def failing_final_replace(src: object, dst: object) -> None:
+        src_path = Path(src)
+        dst_path = Path(dst)
+        if (
+            src_path.is_dir()
+            and src_path.name.startswith(".tmp_pre_a14_20260429_")
+            and dst_path.name == "pre_a14_20260429"
+        ):
+            exc = PermissionError("Access is denied")
+            exc.winerror = 5  # type: ignore[attr-defined]
+            raise exc
+        real_replace(src, dst)
+
+    monkeypatch.setattr(a14_reset.os, "name", "nt", raising=False)
+    monkeypatch.setattr(a14_reset.os, "replace", failing_final_replace)
+
+    with pytest.raises(PermissionError):
+        _run_reset(state_dir, audit_dir, "A14 reset under test")
+
+    preserved = list((state_dir / "contaminated").glob(".tmp_pre_a14_20260429_*"))
+    assert len(preserved) == 1
+    assert (preserved[0] / "bandit_state.db").exists()
+
+    marker_path = state_dir / CONTAMINATED_MARKER_FILENAME
+    assert marker_path.exists()
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    assert marker["marker_type"] == "YGN-SAGE_A14_FAILED_RESET_POISON"
+    assert marker["failure_stage"] == "backup_finalize"
+    assert marker["preserved_temp_backup_dir"] == str(preserved[0])
+
+    message = _assert_a14_failure(state_dir)
+    assert "poison pill marker present" in message
+
+
+def test_a14_reset_final_backup_retry_is_windows_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "src"
+    source.mkdir()
+    target = tmp_path / "target"
+    calls = {"replace": 0}
+
+    def failing_replace(src: object, dst: object) -> None:  # noqa: ARG001
+        calls["replace"] += 1
+        exc = PermissionError("Access is denied")
+        exc.winerror = 5  # type: ignore[attr-defined]
+        raise exc
+
+    monkeypatch.setattr(a14_reset.os, "name", "posix", raising=False)
+    monkeypatch.setattr(a14_reset.os, "replace", failing_replace)
+
+    with pytest.raises(PermissionError):
+        a14_reset._replace_dir_atomic_with_retry(
+            source,
+            target,
+            attempts=3,
+            delay_seconds=0,
+        )
+
+    assert calls["replace"] == 1
+
+
 def test_post_reset_boot_fail_closed_on_restore_over_valid_epoch(tmp_path: Path) -> None:
     """cgpro 2026-04-30 cycle-8 step 2 A14 round-1 trap: contaminated DB
     copied back over a valid epoch=1 marker MUST fail-closed.

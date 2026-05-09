@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/ygn-sage/"><img src="https://img.shields.io/pypi/v/ygn-sage?style=flat-square" alt="PyPI"></a>
-  <img src="https://img.shields.io/badge/tests-3397%20Py%20%2B%20560%20Rust-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-3400%20Py%20%2B%20560%20Rust-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/status-research%20preview-yellow?style=flat-square" alt="Status">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
@@ -340,11 +340,11 @@ Live counts canonicalized at `docs/status/current.json` (regenerated via `python
 
 | Suite | Result |
 |-------|--------|
-| Python (`sage-python`) | **3089 collected** (cycle-13 B chain — manifest-contract regression + a14_reset orphan cleanup + sage_core_version helper + wheel_smoke release-pipeline assertion; source of truth = `docs/status/current.json`). Pre-existing 8 fail + 2 error in `test_e2e_*` / `test_pydantic_ai_integration.py` — API-key-gated fixtures. |
-| Rust (`sage-core`) | **553 listed** with `--features smt,cognitive,sandbox,cranelift,tool-executor`. `sandbox`/`cranelift`/`tool-executor`/`cognitive` are Cargo default features (ADR-013 §5 flip). |
+| Python (`sage-python`) | **3400 collected** (source of truth = `docs/status/current.json`). Full local suite with `.env` verified on 2026-05-09: **3329 passed, 71 skipped**. |
+| Rust (`sage-core`) | **560 listed** with `--features smt,cognitive,sandbox,cranelift,tool-executor`. `sandbox`/`cranelift`/`tool-executor`/`cognitive` are Cargo default features (ADR-013 §5 flip). |
 | Discovery (`sage-discover`) | **100 collected** |
 | CI | `.github/workflows/ci.yml` runs 10 jobs (`build-wasm-sandbox`, `python-constraints`, `rust`, `otel-bridge`, `otel-bridge-windows`, `rust-features`, `python-sage`, `python-discover`, `windows-pytest`, `integration-smoke`) + 3 supporting workflows (`security.yml` pip-audit/SBOM, `latest-deps.yml` weekly drift, `stochastic-empirical.yml` scheduled). |
-| Static analysis | mypy 0 errors; ruff clean (per cycle-8 R6.1c + A14 closure verification) |
+| Static analysis | mypy 0 errors / 261 source files; ruff clean (per local gate) |
 
 ## sage-discover — Knowledge Discovery Engine
 

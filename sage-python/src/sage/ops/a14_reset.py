@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from typing import Sequence
 from uuid import uuid4
 
@@ -150,6 +151,7 @@ def _run_reset(state_dir: Path, reset_id: str, audit_dir: Path, reason: str) -> 
         temp_backup_dir = backup_root / f".tmp_{reset_id}_{uuid4().hex}"
         temp_backup_dir.mkdir()
         moved_files: list[str] = []
+        finalized_backup = False
         try:
             _assert_same_filesystem_for_atomic_reset(
                 state_dir,
@@ -171,12 +173,106 @@ def _run_reset(state_dir: Path, reset_id: str, audit_dir: Path, reason: str) -> 
                 manifest_sha,
                 commit,
             )
-            os.replace(temp_backup_dir, final_backup_dir)
+            _replace_dir_atomic_with_retry(temp_backup_dir, final_backup_dir)
+            finalized_backup = True
             _write_active_epoch(state_dir, reset_id, final_backup_dir, manifest_path, reason, commit)
-        except Exception:
-            if temp_backup_dir.exists():
+        except Exception as exc:
+            if moved_files:
+                _write_failed_reset_poison_marker(
+                    state_dir=state_dir,
+                    reset_id=reset_id,
+                    reason=reason,
+                    moved_files=moved_files,
+                    manifest_path=manifest_path,
+                    manifest_sha=manifest_sha,
+                    commit=commit,
+                    temp_backup_dir=temp_backup_dir,
+                    final_backup_dir=final_backup_dir if finalized_backup else None,
+                    exc=exc,
+                )
+            elif temp_backup_dir.exists():
                 shutil.rmtree(temp_backup_dir, ignore_errors=True)
             raise
+
+
+def _replace_dir_atomic_with_retry(
+    source: Path,
+    target: Path,
+    *,
+    attempts: int = 6,
+    delay_seconds: float = 0.02,
+) -> None:
+    """Atomically rename a backup dir, retrying transient Windows handle races."""
+    if attempts < 1:
+        raise ValueError("attempts must be >= 1")
+
+    for attempt in range(attempts):
+        try:
+            os.replace(source, target)
+            return
+        except OSError as exc:
+            if (
+                attempt == attempts - 1
+                or not _is_windows_transient_replace_error(exc, target)
+            ):
+                raise
+            time.sleep(delay_seconds * (2**attempt))
+
+
+def _is_windows_transient_replace_error(exc: OSError, target: Path) -> bool:
+    if os.name != "nt":
+        return False
+    if target.exists():
+        return False
+    return getattr(exc, "winerror", None) in {5, 32}
+
+
+def _write_failed_reset_poison_marker(
+    *,
+    state_dir: Path,
+    reset_id: str,
+    reason: str,
+    moved_files: list[str],
+    manifest_path: Path,
+    manifest_sha: str,
+    commit: str,
+    temp_backup_dir: Path,
+    final_backup_dir: Path | None,
+    exc: BaseException,
+) -> None:
+    marker = _contaminated_marker_payload(
+        reset_id,
+        reason,
+        moved_files,
+        manifest_path,
+        manifest_sha,
+        commit,
+    )
+    marker.update(
+        {
+            "marker_type": "YGN-SAGE_A14_FAILED_RESET_POISON",
+            "reset_failure": True,
+            "failure_stage": (
+                "active_epoch_write" if final_backup_dir is not None else "backup_finalize"
+            ),
+            "preserved_temp_backup_dir": (
+                str(temp_backup_dir) if temp_backup_dir.exists() else None
+            ),
+            "final_backup_dir": (
+                str(final_backup_dir)
+                if final_backup_dir is not None and final_backup_dir.exists()
+                else None
+            ),
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:500],
+        }
+    )
+    try:
+        _write_json_atomic(state_dir / CONTAMINATED_MARKER_FILENAME, marker)
+    except Exception:
+        # Preserve the original reset failure; the moved temp/final backup remains
+        # in place for operator forensics even if the poison marker write fails.
+        pass
 
 
 def _write_audit_manifest(

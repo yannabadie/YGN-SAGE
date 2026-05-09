@@ -1,7 +1,10 @@
 """E2E tests with real LLM. Require GOOGLE_API_KEY. Skip in CI."""
 import os
+import shutil
 import sys
+import time
 import types
+from pathlib import Path
 
 if "sage_core" not in sys.modules:
     sys.modules["sage_core"] = types.ModuleType("sage_core")
@@ -82,10 +85,10 @@ if not hasattr(_mock_core, "WorkingMemory"):
     _mock_core.WorkingMemory = _MockWorkingMemory
 
 
-import pytest
+import pytest  # noqa: E402
 
-from sage.boot import boot_agent_system
-from sage.events.bus import EventBus
+from sage.boot import boot_agent_system  # noqa: E402
+from sage.events.bus import EventBus  # noqa: E402
 
 pytestmark = [
     pytest.mark.e2e,
@@ -108,6 +111,35 @@ def _patch_ssl():
     yield
 
 
+def _cleanup_sage_state_dir() -> None:
+    state_dir = Path(os.environ["HOME"]) / ".sage"
+    for _ in range(5):
+        if not state_dir.exists():
+            return
+        shutil.rmtree(state_dir, ignore_errors=True)
+        if not state_dir.exists():
+            return
+        time.sleep(0.05)
+
+    leftovers = list(state_dir.iterdir()) if state_dir.exists() else []
+    assert not leftovers, f"Failed to clean e2e .sage state; leftovers={leftovers!r}"
+
+
+async def _close_system_memories(system) -> None:
+    seen: set[int] = set()
+    candidates = [
+        getattr(getattr(system, "agent_loop", None), "episodic_memory", None),
+        getattr(getattr(system, "pipeline", None), "episodic_memory", None),
+    ]
+    for memory in candidates:
+        if memory is None or id(memory) in seen:
+            continue
+        seen.add(id(memory))
+        close = getattr(memory, "close", None)
+        if close is not None:
+            await close()
+
+
 # ---------------------------------------------------------------------------
 # Test 1: S1 simple question — real LLM, fast tier
 # ---------------------------------------------------------------------------
@@ -115,8 +147,13 @@ def _patch_ssl():
 async def test_s1_simple_question():
     """S1 fast path: simple factual question via real Gemini."""
     bus = EventBus()
+    _cleanup_sage_state_dir()
     system = boot_agent_system(use_mock_llm=False, llm_tier="fast", event_bus=bus)
-    result = await system.run("What is the capital of France?")
+    try:
+        result = await system.run("What is the capital of France?")
+    finally:
+        await _close_system_memories(system)
+        _cleanup_sage_state_dir()
     assert "paris" in result.lower()
 
 
@@ -127,6 +164,11 @@ async def test_s1_simple_question():
 async def test_s2_code_generation():
     """S2 code generation: real LLM produces a Python function."""
     bus = EventBus()
+    _cleanup_sage_state_dir()
     system = boot_agent_system(use_mock_llm=False, llm_tier="fast", event_bus=bus)
-    result = await system.run("Write a Python function that checks if a number is prime.")
+    try:
+        result = await system.run("Write a Python function that checks if a number is prime.")
+    finally:
+        await _close_system_memories(system)
+        _cleanup_sage_state_dir()
     assert "def " in result
