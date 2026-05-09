@@ -1693,6 +1693,99 @@ def test_prompt_mode_cli_started_first_and_cli_complete_last(
     assert frames[-1]["event_type"] == "cli_complete"
 
 
+def test_learning_side_effect_sidecar_does_not_extend_cli_stdout_v0(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A sidecar write during a CLI run must not create stdout protocol frames."""
+
+    class _SidecarPipeline:
+        last_context = None
+
+        async def run(
+            self,
+            task: str,
+            budget_usd: float | None = None,
+            system_hint: int | None = None,
+        ) -> str:
+            from sage.runtime.credit_assignment import emit_learning_side_effect
+
+            emitted = emit_learning_side_effect(
+                {
+                    "parent_event_refs": [],
+                    "oracle_verdict_ref": None,
+                    "policy_ref": {
+                        "decision_id": None,
+                        "routing_decision_ref": None,
+                        "policy_snapshot_hash": "sha256:" + "0" * 64,
+                        "candidate_set_hash": "sha256:" + "1" * 64,
+                        "selection_probability": None,
+                        "selection_probability_reason": "not_logged",
+                    },
+                    "subject": {
+                        "model_id": "test-model",
+                        "provider_id": "test-provider",
+                        "template": "single_agent",
+                        "topology_id": None,
+                        "node_id": None,
+                        "tool_path_hash": None,
+                    },
+                    "side_effect": "bandit_record_outcome",
+                    "decision": "allowed",
+                    "reason_code": "oracle_disabled_legacy_quality_path",
+                    "attempted": True,
+                    "gate": {
+                        "oracle_enabled": False,
+                        "oracle_trainable": False,
+                        "allow_training_updates": True,
+                        "quality_source": "legacy_quality",
+                    },
+                    "metrics": {
+                        "quality": 1.0,
+                        "cost_usd": 0.0,
+                        "latency_ms": 1.0,
+                    },
+                    "result_summary": {"status": "observed", "redacted": True},
+                }
+            )
+            assert emitted is True
+            return "ok"
+
+    class _SidecarSystem:
+        pipeline = _SidecarPipeline()
+
+    def _fake_boot(*_args: Any, **_kwargs: Any) -> _SidecarSystem:
+        return _SidecarSystem()
+
+    monkeypatch.setattr("sage.boot.boot_agent_system", _fake_boot)
+    monkeypatch.setenv("SAGE_ORACLE", "0")
+    monkeypatch.setenv("SAGE_BOOT_BYPASS_EPOCH_GUARD", "1")
+    monkeypatch.setenv("SAGE_BOOT_BYPASS_REASON", "cli sidecar stdout test")
+    monkeypatch.setenv("SAGE_OPERATOR_ID", "test")
+    monkeypatch.setattr(
+        "sys.stdin",
+        io.StringIO(
+            json.dumps({"command": "prompt", "args": {"task": "sidecar task"}}) + "\n"
+        ),
+    )
+
+    rc = cli_run.main(["--jsonl"])
+    captured = capsys.readouterr()
+
+    assert rc == 0
+    frames = _parse_jsonl_frames(captured.out)
+    event_types = [frame["event_type"] for frame in frames]
+    assert "learning_side_effect" not in event_types
+    assert "credit_assignment" not in event_types
+    assert frames[0]["event_type"] == "cli_started"
+    assert frames[-1]["event_type"] == "cli_complete"
+
+    trace_dir = Path(frames[-1]["payload"]["trace_dir"])
+    sidecar = trace_dir / "learning_side_effects.jsonl"
+    assert sidecar.exists()
+    assert sidecar.read_text(encoding="utf-8").strip()
+
+
 def test_set_cli_progress_stage_helper_no_op_without_state() -> None:
     """``_set_cli_progress_stage`` is a no-op when no CLI is attached
     (running pipeline outside the CLI doesn't pay any cost)."""

@@ -74,7 +74,7 @@ system = boot_agent_system()
 print(asyncio.run(system.run("Write a Python function that checks if a number is prime")))
 ```
 
-SAGE automatically routes to the right cognitive system (S1/S2/S3), builds a multi-agent topology, assigns models from 7 providers, executes with formal verification of the verifiable fragments (OxiZ SMT for bounded integer arithmetic), and learns from each run **only when the OracleStack emits a `trainable=True` verdict** — runs without verified evidence do not update bandit / MAP-Elites / online-evolution / training-memory.
+SAGE automatically routes to the right cognitive system (S1/S2/S3), builds a multi-agent topology, assigns models from 7 providers, executes with formal verification of the verifiable fragments (OxiZ SMT for bounded integer arithmetic), and in the default oracle-enabled mode learns from each run **only when the OracleStack emits a `trainable=True` verdict** — runs without verified evidence do not update bandit / MAP-Elites / online-evolution / training-memory. The `SAGE_ORACLE=0` kill-switch preserves the legacy quality path and labels it separately in learning side-effect audit records.
 
 ---
 
@@ -222,7 +222,7 @@ A 7-cycle arc shipped a typed runtime layer underneath the orchestration pipelin
 | RuntimeEventLog (cycle 2) | `sage/runtime/event_log/` | `SAGE_TRACE_JSONL_DIR=<path>` (opt-in) | 15 typed events, ULID `run_id`, full SHA-256 envelope hashes, redaction-on by default |
 | StateCore (cycle 3) | `sage/runtime/state/` | `SAGE_STATECORE=1` (opt-in) | Control / Message / State edge-channel partitioning, atomic delta reducer |
 | RunFrame (cycle 4) | `sage/runtime/run_frame/` | `SAGE_RUN_FRAME=1` (opt-in) | Private builder + public frozen snapshot, allowlisted env capture (8 keys, no wildcard) |
-| OracleStack (cycle 5) | `sage/runtime/oracle/` | **default-on (cycle 7); kill-switch `SAGE_ORACLE=0\|false\|off\|no\|disable\|disabled`** | Hierarchical quality verdicts (Exact > Tool > Formal > Spec > LLMJudge > Abstain) — Stage 6 learning ONLY consumes `trainable=True` evidence |
+| OracleStack (cycle 5) | `sage/runtime/oracle/` | **default-on (cycle 7); kill-switch `SAGE_ORACLE=0\|false\|off\|no\|disable\|disabled`** | Hierarchical quality verdicts (Exact > Tool > Formal > Spec > LLMJudge > Abstain) — oracle-enabled Stage 6 learning consumes only `trainable=True` evidence |
 | Learning Side-Effect Ledger v0 | `sage/runtime/credit_assignment/` | tied to active traced runtime log | Audit-only `learning_side_effects.jsonl` sidecar; validates hash-linked learning side-effect decisions without authorizing them |
 | EvidenceProducers (cycle 6, R6.1a) | `sage/runtime/evidence/` | gated by oracle (default-on) | 6 deterministic producers (tool / test / diff / formal / code-node / planner) emit typed `RuntimeDelta` records consumed by Tool/Formal/Spec v1 oracles |
 | Cycle-7 default-on flip | `sage/runtime/oracle/env.py` `oracle_enabled()` | predicate (default-on) | Centralised `SAGE_ORACLE` predicate; replaces 8 scattered `os.environ.get == "1"` checks. cgpro 2026-04-30 VERIFY round-1: forced `controller_decision.payload` is **allowlist-only** (no free-form `reason` leak), operator-friendly kill-switch values (`disable`/`disabled`). |

@@ -74,6 +74,7 @@ to cover it as a 5th side-effect.
 """
 from __future__ import annotations
 
+import inspect
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -384,6 +385,18 @@ async def test_oracle_trainable_false_blocks_map_elites_record_outcome(
         f"{capture.map_elites_calls!r}. Topology evolution archive "
         f"would be biased by oracle-abstained runs."
     )
+
+
+def test_map_elites_guard_names_allow_training_updates_explicitly() -> None:
+    """MAP-Elites must not rely on `quality is not None` as an implicit oracle gate."""
+    source = inspect.getsource(learn)
+
+    assert (
+        "allow_training_updates\n"
+        "            and self.engine\n"
+        "            and quality is not None\n"
+        "            and ctx.topology is not None"
+    ) in source
 
 
 @pytest.mark.asyncio

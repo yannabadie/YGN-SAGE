@@ -132,7 +132,12 @@ async def learn(
         # Feeds MAP-Elites + CMA-ME + S-MMU bridge for future topology selection
         allow_training_updates = (not oracle_on) or oracle_trainable
         _map_elites_recorded = False
-        if self.engine and quality is not None and ctx.topology is not None:
+        if (
+            allow_training_updates
+            and self.engine
+            and quality is not None
+            and ctx.topology is not None
+        ):
             try:
                 topology_id = ctx.topology_id or getattr(ctx.topology, 'id', '')
                 if topology_id and hasattr(self.engine, 'record_outcome'):
