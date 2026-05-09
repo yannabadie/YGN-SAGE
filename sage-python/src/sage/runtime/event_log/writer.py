@@ -9,6 +9,7 @@ import os
 import re
 import time
 from pathlib import Path
+from dataclasses import dataclass
 from typing import Any, Literal, TextIO, get_args, cast
 
 from sage.runtime.event_log.errors import EventLogSchemaError, EventLogUnavailable
@@ -76,6 +77,20 @@ def _coerce_threshold_band(value: str | None) -> ThresholdBand:
 
 
 _REASON_CODE_RE = re.compile(r"^[a-z0-9_.:-]{1,80}$")
+
+
+@dataclass(frozen=True, slots=True)
+class EventRef:
+    event_type: str
+    seq: int
+    payload_hash: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "event_type": self.event_type,
+            "seq": self.seq,
+            "payload_hash": self.payload_hash,
+        }
 
 
 def _safe_reason_code(value: str | None) -> str:
@@ -155,6 +170,7 @@ class RuntimeEventLog:
         self._fh: _SinkHandle | None = None
         self._cached_task_hash = ""
         self._path: Path | None = None
+        self._last_event_ref: EventRef | None = None
 
         if trace_dir is None:
             trace_dir_env = os.environ.get(_TRACE_DIR_ENV)
@@ -578,6 +594,15 @@ class RuntimeEventLog:
         self._fh = None
         self.disabled = True
 
+    @property
+    def path(self) -> Path | None:
+        """Return the JSONL file path for sidecar consumers."""
+        return self._path
+
+    def last_event_ref(self) -> EventRef | None:
+        """Return the last successfully written event reference."""
+        return self._last_event_ref
+
     def _emit(
         self,
         cls: type[_EventCore],
@@ -622,6 +647,7 @@ class RuntimeEventLog:
         offset: int | None = None
         try:
             offset = self._fh.tell()
+            payload_hash = _hash_payload(event_type, payload)
             event = cls(
                 schema_version=SCHEMA_VERSION,
                 payload_schema_version=schema.version,
@@ -633,7 +659,7 @@ class RuntimeEventLog:
                 event_type=event_type,
                 source_component=source_component,
                 task_hash=self._cached_task_hash,
-                payload_hash=_hash_payload(event_type, payload),
+                payload_hash=payload_hash,
                 redaction_state=self._redaction_state_for(payload),
                 payload=payload_redacted if self._raw_payload or _force_payload else None,
                 **fields,
@@ -649,6 +675,11 @@ class RuntimeEventLog:
                 self._fh.flush()
                 os.fsync(self._fh.fileno())
             self._last_event_seq = seq
+            self._last_event_ref = EventRef(
+                event_type=event_type,
+                seq=seq,
+                payload_hash=payload_hash,
+            )
             return seq
         except (OSError, IOError, ValueError, TypeError) as exc:
             if offset is not None and self._fh is not None and not self._fh.closed:

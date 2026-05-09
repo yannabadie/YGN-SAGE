@@ -272,6 +272,12 @@ def runtime_emit_topology_selected(
             nodes_summary=nodes_summary,
             edges_summary=edges_summary,
         )
+        try:
+            from sage.pipeline_v2 import learning_side_effects as lse_mod
+
+            lse_mod.store_event_ref(ctx, "topology_selected", event_log)
+        except Exception:  # noqa: BLE001 - audit sidecar refs are best-effort
+            pass
     if run_frame_builder is not None:
         run_frame_builder.record_topology_selected(
             seq=seq,
@@ -311,6 +317,12 @@ def runtime_emit_model_assigned(
                 provider_id=provider_id,
                 required_capabilities=capabilities,
             )
+            try:
+                from sage.pipeline_v2 import learning_side_effects as lse_mod
+
+                lse_mod.store_event_ref(ctx, "model_assigned", event_log)
+            except Exception:  # noqa: BLE001 - audit sidecar refs are best-effort
+                pass
         if run_frame_builder is not None:
             run_frame_builder.record_model_assigned(
                 seq=seq,

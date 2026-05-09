@@ -97,16 +97,41 @@ async def learn(
                 self._oracle_abstain_count = _ac + 1
         # Only record to bandit when quality is known and attribution is causal.
         from sage.pipeline_v2 import bandit_attribution as _bandit_attr
+        from sage.pipeline_v2 import learning_side_effects as _lse_mod
         if quality is not None:
             _bandit_attr.record_bandit_outcome_checked(self, ctx, quality)
             self._bandit_update_count = _bc + 1
         else:
+            _lse_mod.emit_decision(
+                self,
+                ctx,
+                side_effect="bandit_record_outcome",
+                decision="blocked" if oracle_on and not oracle_trainable else "skipped",
+                reason_code=_lse_mod.reason_for_blocked_or_skipped(ctx, quality),
+                attempted=False,
+                quality=quality,
+            )
             _bandit_attr.cancel_bandit_decision(self, ctx)
+            _lse_mod.emit_decision(
+                self,
+                ctx,
+                side_effect="bandit_cancel_pending",
+                decision="allowed" if getattr(ctx, "bandit_decision_id", "") else "skipped",
+                reason_code=(
+                    "safety_cancel_untrainable"
+                    if oracle_on and not oracle_trainable
+                    else "not_applicable"
+                ),
+                attempted=bool(getattr(ctx, "bandit_decision_id", "")),
+                quality=quality,
+            )
             _bandit_attr.clear_bandit_decision(self, ctx)
             self._bandit_cancel_count = _cc + 1
 
         # Evolution feedback: record outcome in TopologyEngine archive
         # Feeds MAP-Elites + CMA-ME + S-MMU bridge for future topology selection
+        allow_training_updates = (not oracle_on) or oracle_trainable
+        _map_elites_recorded = False
         if self.engine and quality is not None and ctx.topology is not None:
             try:
                 topology_id = ctx.topology_id or getattr(ctx.topology, 'id', '')
@@ -145,6 +170,20 @@ async def learn(
                         ctx.cost,
                         ctx.latency_ms,
                     )
+                    _lse_mod.emit_decision(
+                        self,
+                        ctx,
+                        side_effect="map_elites_record_outcome",
+                        decision="allowed",
+                        reason_code=(
+                            "oracle_trainable"
+                            if oracle_on
+                            else "oracle_disabled_legacy_quality_path"
+                        ),
+                        attempted=True,
+                        quality=quality,
+                    )
+                    _map_elites_recorded = True
                     cells_after = cells_before
                     if hasattr(self.engine, 'archive_cell_count'):
                         try:
@@ -171,7 +210,39 @@ async def learn(
                         topology_id[:8], quality,
                     )
             except (ImportError, RuntimeError) as exc:
+                _lse_mod.emit_decision(
+                    self,
+                    ctx,
+                    side_effect="map_elites_record_outcome",
+                    decision="failed",
+                    reason_code="call_failed",
+                    attempted=True,
+                    quality=quality,
+                    result_summary={"status": "failed", "redacted": True},
+                )
+                _map_elites_recorded = True
                 log.debug("Evolution feedback failed: %s", exc)
+        if not _map_elites_recorded:
+            if not allow_training_updates:
+                map_decision = "blocked"
+                map_reason = "oracle_untrainable" if oracle_on else "quality_unavailable"
+            else:
+                map_decision = "skipped"
+                if quality is None:
+                    map_reason = "quality_unavailable"
+                elif self.engine is None:
+                    map_reason = "engine_missing"
+                else:
+                    map_reason = "topology_missing"
+            _lse_mod.emit_decision(
+                self,
+                ctx,
+                side_effect="map_elites_record_outcome",
+                decision=map_decision,
+                reason_code=map_reason,
+                attempted=False,
+                quality=quality,
+            )
 
         # H1 audit fix (2026-04-19): Online evolution gate.
         #
@@ -188,7 +259,6 @@ async def learn(
         # just appended an outcome to the archive, so should_evolve()
         # has fresh data. Constants come from sage.constants — single
         # source of truth, already covered by test_online_evolution.py.
-        allow_training_updates = (not oracle_on) or oracle_trainable
         if allow_training_updates and self.engine and hasattr(self.engine, "should_evolve"):
             try:
                 from sage.constants import (
@@ -199,6 +269,23 @@ async def learn(
                 )
                 decision = self.engine.should_evolve(
                     EVOLUTION_MIN_OUTCOMES, EVOLUTION_COOLDOWN_OUTCOMES,
+                )
+                _lse_mod.emit_decision(
+                    self,
+                    ctx,
+                    side_effect="online_evolution_should_evolve",
+                    decision="allowed" if decision else "skipped",
+                    reason_code=(
+                        "oracle_trainable"
+                        if decision and oracle_on
+                        else (
+                            "oracle_disabled_legacy_quality_path"
+                            if decision
+                            else "should_evolve_false"
+                        )
+                    ),
+                    attempted=True,
+                    quality=quality,
                 )
                 # In-run observability: log every should_evolve() call, not
                 # just the True branch. Without this, False branches are
@@ -230,6 +317,19 @@ async def learn(
                     self.engine.evolve(
                         pop_size=EVOLUTION_ONLINE_POP_SIZE,
                         generations=EVOLUTION_ONLINE_GENERATIONS,
+                    )
+                    _lse_mod.emit_decision(
+                        self,
+                        ctx,
+                        side_effect="online_evolution_evolve",
+                        decision="allowed",
+                        reason_code=(
+                            "oracle_trainable"
+                            if oracle_on
+                            else "oracle_disabled_legacy_quality_path"
+                        ),
+                        attempted=True,
+                        quality=quality,
                     )
                     cells_post_evolve = cells_pre_evolve
                     if hasattr(self.engine, "archive_cell_count"):
@@ -289,18 +389,61 @@ async def learn(
                                 )
             except (ImportError, RuntimeError, AttributeError) as exc:
                 # Engine without these methods (e.g. test stub) → silent skip.
+                _lse_mod.emit_decision(
+                    self,
+                    ctx,
+                    side_effect="online_evolution_should_evolve",
+                    decision="failed",
+                    reason_code="call_failed",
+                    attempted=True,
+                    quality=quality,
+                    result_summary={"status": "failed", "redacted": True},
+                )
                 log.debug("Online evolution gate skipped: %s", exc)
+        else:
+            _lse_mod.emit_decision(
+                self,
+                ctx,
+                side_effect="online_evolution_should_evolve",
+                decision="blocked" if not allow_training_updates else "skipped",
+                reason_code=(
+                    "oracle_untrainable"
+                    if not allow_training_updates and oracle_on
+                    else (
+                        "engine_missing"
+                        if self.engine is None
+                        else "engine_method_missing"
+                    )
+                ),
+                attempted=False,
+                quality=quality,
+            )
 
         # ── Periodic maintenance ───────────────────────────────────────────
         self._task_count += 1
 
         # Inter-tier consolidation: episodic → semantic → causal (MAGMA 2601.03236)
         from sage.constants import CONSOLIDATION_INTERVAL_STEPS
-        if (allow_training_updates
-                and self._task_count % CONSOLIDATION_INTERVAL_STEPS == 0
-                and self.consolidator is not None):
+        consolidation_due = (
+            self._task_count % CONSOLIDATION_INTERVAL_STEPS == 0
+            and self.consolidator is not None
+        )
+        if allow_training_updates and consolidation_due:
             try:
                 consolidation_result = await self.consolidator.consolidate()
+                _lse_mod.emit_decision(
+                    self,
+                    ctx,
+                    side_effect="training_memory_consolidate",
+                    decision="allowed",
+                    reason_code=(
+                        "oracle_trainable"
+                        if oracle_on
+                        else "oracle_disabled_legacy_quality_path"
+                    ),
+                    attempted=True,
+                    quality=quality,
+                )
                 # In-run observability: emit a structured log regardless of
                 # whether any entries were processed, so smoke runs can see
                 # consolidation ran on the scheduled interval. The old DEBUG
@@ -315,7 +458,31 @@ async def learn(
                     processed, entities, edges, self._task_count,
                 )
             except (RuntimeError, IOError):
+                _lse_mod.emit_decision(
+                    self,
+                    ctx,
+                    side_effect="training_memory_consolidate",
+                    decision="failed",
+                    reason_code="call_failed",
+                    attempted=True,
+                    quality=quality,
+                    result_summary={"status": "failed", "redacted": True},
+                )
                 pass  # Best-effort, never blocks pipeline
+        elif self.consolidator is not None:
+            _lse_mod.emit_decision(
+                self,
+                ctx,
+                side_effect="training_memory_consolidate",
+                decision="blocked" if not allow_training_updates else "skipped",
+                reason_code=(
+                    "oracle_untrainable"
+                    if not allow_training_updates and oracle_on
+                    else "not_scheduled"
+                ),
+                attempted=False,
+                quality=quality,
+            )
 
         # Bandit + MAP-Elites state persistence (crash-safe, WAL write ~5ms)
         #

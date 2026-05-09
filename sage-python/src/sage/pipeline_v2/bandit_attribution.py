@@ -134,11 +134,38 @@ def record_bandit_outcome_checked(
     if oracle_enabled():
         verdict = getattr(ctx, "oracle_verdict", None)
         if verdict is None or not verdict.trainable:
+            _emit_lse(
+                pipeline,
+                ctx,
+                side_effect="bandit_record_outcome",
+                decision="blocked",
+                reason_code="oracle_missing" if verdict is None else "oracle_untrainable",
+                attempted=False,
+                quality=quality,
+            )
             cancel_bandit_decision(pipeline, ctx)
+            _emit_lse(
+                pipeline,
+                ctx,
+                side_effect="bandit_cancel_pending",
+                decision="allowed",
+                reason_code="safety_cancel_untrainable",
+                attempted=True,
+                quality=quality,
+            )
             clear_bandit_decision(pipeline, ctx)
             return
 
     if not getattr(ctx, "bandit_decision_id", ""):
+        _emit_lse(
+            pipeline,
+            ctx,
+            side_effect="bandit_record_outcome",
+            decision="skipped",
+            reason_code="no_pending_decision",
+            attempted=False,
+            quality=quality,
+        )
         return
 
     raw_executed_model_ids = getattr(ctx, "executed_model_ids", [])
@@ -151,8 +178,26 @@ def record_bandit_outcome_checked(
     ):
         ctx.bandit_attribution_state = "skipped"
         cancel_bandit_decision(pipeline, ctx)
+        _emit_lse(
+            pipeline,
+            ctx,
+            side_effect="bandit_cancel_pending",
+            decision="allowed",
+            reason_code="safety_cancel_ambiguous",
+            attempted=True,
+            quality=quality,
+        )
         from sage.pipeline_v2 import runtime_events as runtime_events_mod
         runtime_events_mod.emit_bandit_attribution_mismatch(pipeline, ctx, "multi_node_ambiguous")
+        _emit_lse(
+            pipeline,
+            ctx,
+            side_effect="bandit_record_outcome",
+            decision="skipped",
+            reason_code="multi_node_ambiguous",
+            attempted=False,
+            quality=quality,
+        )
         clear_bandit_decision(pipeline, ctx)
         return
 
@@ -163,8 +208,26 @@ def record_bandit_outcome_checked(
         )
         ctx.bandit_attribution_state = "mismatch"
         cancel_bandit_decision(pipeline, ctx)
+        _emit_lse(
+            pipeline,
+            ctx,
+            side_effect="bandit_cancel_pending",
+            decision="allowed",
+            reason_code="safety_cancel_mismatch",
+            attempted=True,
+            quality=quality,
+        )
         from sage.pipeline_v2 import runtime_events as runtime_events_mod
         runtime_events_mod.emit_bandit_attribution_mismatch(pipeline, ctx, "recorder_instance_mismatch")
+        _emit_lse(
+            pipeline,
+            ctx,
+            side_effect="bandit_record_outcome",
+            decision="failed",
+            reason_code="recorder_instance_mismatch",
+            attempted=True,
+            quality=quality,
+        )
         return
 
     try:
@@ -177,12 +240,69 @@ def record_bandit_outcome_checked(
             ctx.latency_ms,
         )
         ctx.bandit_attribution_state = "verified"
+        _emit_lse(
+            pipeline,
+            ctx,
+            side_effect="bandit_record_outcome",
+            decision="allowed",
+            reason_code=(
+                "oracle_trainable"
+                if oracle_enabled()
+                else "oracle_disabled_legacy_quality_path"
+            ),
+            attempted=True,
+            quality=quality,
+        )
     except (ImportError, RuntimeError, ValueError) as exc:
         from sage.pipeline_v2 import runtime_events as runtime_events_mod
         reason_code = runtime_events_mod.bandit_reason_from_exception(exc)
         ctx.bandit_attribution_state = "mismatch"
         cancel_bandit_decision(pipeline, ctx)
+        _emit_lse(
+            pipeline,
+            ctx,
+            side_effect="bandit_cancel_pending",
+            decision="allowed",
+            reason_code="safety_cancel_mismatch",
+            attempted=True,
+            quality=quality,
+        )
         runtime_events_mod.emit_bandit_attribution_mismatch(pipeline, ctx, reason_code)
+        _emit_lse(
+            pipeline,
+            ctx,
+            side_effect="bandit_record_outcome",
+            decision="failed",
+            reason_code=reason_code,
+            attempted=True,
+            quality=quality,
+        )
+
+
+def _emit_lse(
+    pipeline: "CognitiveOrchestrationPipeline",
+    ctx: "PipelineContext",
+    *,
+    side_effect: str,
+    decision: str,
+    reason_code: str,
+    attempted: bool,
+    quality: float | None,
+) -> None:
+    try:
+        from sage.pipeline_v2 import learning_side_effects as lse_mod
+
+        lse_mod.emit_decision(
+            pipeline,
+            ctx,
+            side_effect=side_effect,
+            decision=decision,
+            reason_code=reason_code,
+            attempted=attempted,
+            quality=quality,
+        )
+    except Exception:  # noqa: BLE001 - audit sidecar must not alter learning
+        pass
 
 
 __all__ = [

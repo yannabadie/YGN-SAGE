@@ -70,25 +70,36 @@ Run direct baseline and YGN-SAGE direct on the same SWE-bench Pro tasks. Archive
 
 Proceed only if every task has a complete trace, every prediction has verifier metadata, and the summary separates empty patch, invalid patch, official failure, timeout, provider failure, and cancel.
 
-### Task 3: Credit Event Schema v0
+### Task 3: Learning Side-Effect Ledger v0
 
 **Files:**
-- Modify: `sage-python/src/sage/runtime/events/payload_schemas.py`
-- Modify: `sage-python/src/sage/pipeline_v2/execute.py`
+- Add: `sage-python/src/sage/runtime/credit_assignment/`
+- Add: `sage-python/src/sage/pipeline_v2/learning_side_effects.py`
+- Modify: `sage-python/src/sage/runtime/event_log/writer.py`
+- Modify: `sage-python/src/sage/pipeline_v2/orchestrator.py`
+- Modify: `sage-python/src/sage/pipeline_v2/runtime_events.py`
+- Modify: `sage-python/src/sage/pipeline_v2/bandit_attribution.py`
 - Modify: `sage-python/src/sage/pipeline_v2/learn.py`
-- Test: `sage-python/tests/test_runtime_event_contracts.py`
+- Add: `sage-python/tests/test_learning_side_effect_ledger_contract.py`
+- Add: `docs/contracts/learning-side-effect-ledger.md`
 
-- [ ] **Step 1: Add a schema-level test**
+- [x] **Step 1: Add a schema-level test**
 
-The golden payload must include task id, arm id, topology id, node id, optional edge id, parent event ids, model id, provider, token counts, cost, duration, verifier/oracle deltas, and `trainable`.
+cgpro DESIGN rejected a new `RuntimeEventLog` event type and recommended an
+audit-only sidecar instead. The contract test proves `RuntimeEventLog` remains
+at 15 event types and that the sidecar schema/hash chain validates separately.
 
-- [ ] **Step 2: Emit credit records**
+- [x] **Step 2: Emit side-effect audit records**
 
-Emit credit records after node/tool execution boundaries without changing learning behavior.
+Emit `learning_side_effects.jsonl` records next to the trace for bandit,
+MAP-Elites, online evolution, and training-memory decisions without changing
+the learning authorization path or CLI stdout protocol.
 
-- [ ] **Step 3: Keep learning fail-closed**
+- [x] **Step 3: Keep learning fail-closed**
 
-Add a test proving a credit record with missing or unverified evidence cannot update bandit, MAP-Elites, training memory, or online evolution.
+Added validator tests proving `allowed` oracle-on updates require an oracle
+verdict reference with `trainable=True`, while `bandit_cancel_pending` remains a
+safety side-effect rather than a learning update.
 
 ### Task 4: Topology Claim Split
 

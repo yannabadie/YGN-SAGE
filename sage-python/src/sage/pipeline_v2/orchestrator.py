@@ -110,6 +110,7 @@ async def run_internal(
     from sage.contracts.cost_tracker import CostTracker
     from sage.observability.spans import sage_span
     from sage.pipeline_v2 import memory_gate as memory_gate_mod
+    from sage.pipeline_v2 import learning_side_effects as lse_mod
     from sage.pipeline_v2 import runtime_events as runtime_events_mod
     from sage.pipeline_v2.assign_models import assign_models
     from sage.pipeline_v2.classify import classify
@@ -238,6 +239,7 @@ async def run_internal(
                 confidence=routing_confidence,
                 model_id=routing_model_id,
             )
+            lse_mod.store_event_ref(ctx, "routing_decision", event_log)
             run_frame_builder.record_routing_decision(
                 seq=routing_seq,
                 routing_source=routing_source,
@@ -346,6 +348,7 @@ async def run_internal(
                     total_latency_ms=ctx.latency_ms,
                     node_count=runtime_events_mod.runtime_final_node_count(pipeline, ctx),
                 )
+                lse_mod.store_event_ref(ctx, "final_result", event_log)
                 run_frame_builder.record_final_result(
                     seq=final_seq,
                     status=final_status,
@@ -375,6 +378,7 @@ async def run_internal(
                     parent_event_id=final_seq,
                     verdict=verdict,
                 )
+                lse_mod.store_event_ref(ctx, "oracle_verdict", event_log)
                 run_frame_builder.record_oracle_verdict(
                     seq=oracle_seq,
                     verdict=verdict,
@@ -409,6 +413,7 @@ async def run_internal(
                     total_latency_ms=ctx.latency_ms,
                     node_count=runtime_events_mod.runtime_final_node_count(pipeline, ctx),
                 )
+                lse_mod.store_event_ref(ctx, "final_result", event_log)
                 run_frame_builder.record_final_result(
                     seq=final_seq,
                     status=final_status,
@@ -442,6 +447,8 @@ async def run_internal(
                 total_latency_ms=latency_ms,
                 node_count=runtime_events_mod.runtime_final_node_count(pipeline, ctx),
             )
+            if ctx is not None:
+                lse_mod.store_event_ref(ctx, "final_result", event_log)
             run_frame_builder.record_final_result(seq=final_seq, status="failure")
         raise
     finally:

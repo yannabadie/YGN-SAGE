@@ -22,6 +22,7 @@ from sage.runtime.event_log.schema import (
     SOURCE_COMPONENTS,
 )
 from sage.runtime.event_log.writer import (
+    EventRef,
     RuntimeEventLog,
     current_event_log,
     install_event_log,
@@ -29,6 +30,7 @@ from sage.runtime.event_log.writer import (
 
 __all__ = [
     "RuntimeEventLog",
+    "EventRef",
     "install_event_log",
     "current_event_log",
     "SCHEMA_VERSION",

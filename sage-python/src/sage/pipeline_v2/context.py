@@ -63,6 +63,7 @@ class PipelineContext:
     cost_tracker: Any = None
     oracle_verdict: "OracleVerdict | None" = None
     bench_result: "Mapping[str, Any] | None" = None
+    runtime_event_refs: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 # cgpro round-3 garde-fou: preserve `PipelineContext.__module__ ==
