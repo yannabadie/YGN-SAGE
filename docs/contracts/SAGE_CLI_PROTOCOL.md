@@ -154,7 +154,7 @@ the run.
 
 ---
 
-## Invariant binding (the 9 rules the CLI MUST preserve)
+## Invariant binding (the 10 invariants the CLI MUST preserve)
 
 This is the load-bearing table. The CLI is a NEW exit point for the runtime
 contract — it MUST NOT become a side-channel. Each invariant from the
@@ -162,7 +162,7 @@ ledger is reproduced here with the CLI-specific binding.
 
 | # | Invariant | CLI binding |
 |---|---|---|
-| 1 | **Event payload schema** | The 14 inherited events use the same `payload_schemas.py` envelope. Frame writes go through the same `_assert_current_payload_schema_for_emit` validator. The 4 CLI-shell events use an INDEPENDENT v1 schema (cli_payload_schemas.py) — ledger invariant 1 still holds because schema mismatches fail-close at write time. |
+| 1 | **Event payload schema** | The 15 inherited events use the same `payload_schemas.py` envelope. Frame writes go through the same `_assert_current_payload_schema_for_emit` validator. The 4 CLI-shell events use an INDEPENDENT v1 schema (cli_payload_schemas.py) — ledger invariant 1 still holds because schema mismatches fail-close at write time. |
 | 2 | **Oracle evidence** | The CLI MUST NOT update bandit / MAP-Elites / online-evolution / training-memory based on its own state. All those updates remain gated by `OracleVerdict.trainable` inside `sage.pipeline_v2.learn.learn` (the canonical Stage 5 module function — Phase 2.2 retired the `_stage_learn` private method). The CLI is a CONSUMER of `oracle_verdict` events (it can show "✓ Trainable" / "✗ Abstain" in the TUI), never a producer. |
 | 3 | **Posterior epoch** | CLI is read-only on bandit_state.db / archive_state.db / posterior_epoch.json. It does NOT call `engine.save_state` directly. The pipeline's existing periodic flush (post `213183c1` epoch preflight) and the atexit handler are the only writers. |
 | 4 | **Contaminated backup** | CLI MUST refuse to start when `~/.sage/_CONTAMINATED.json` is present. It surfaces the operator-readable poison-pill in `cli_started`'s `tier` field with `tier="contaminated_refuse"`, then exits 78 (EX_CONFIG). |
@@ -171,12 +171,12 @@ ledger is reproduced here with the CLI-specific binding.
 | 7 | **Timeout enforcement** | Per-task `budget_usd` is wall-clock-bounded via the existing `CostTracker.is_over_budget`. The CLI's `set_budget` command can TIGHTEN the budget (security: attacker who got `set_budget` access can NOT exfiltrate by extending). |
 | 8 | **Control-surface completeness** | When `node_count > 0`, frames `topology_selected` + `model_assigned` MUST appear before `node_started`. Frontend SHOULD validate this ordering and refuse to render a topology card without both. |
 | 9 | **CLI protocol versioning (NEW)** | `cli_started` MUST be the first frame. `protocol_version` MUST be `"v0"` (bumped per protocol change). Frontends fail-close on mismatch. Backend version must come from `sage.__version__`, not be a hardcoded literal. |
+| 10 | **Tool capability declaration & grant enforcement** | The frontend MUST NOT inject or broaden tool capability grants. `cli_tool_request` is an approval/display surface for backend-declared tools only; tool execution remains gated by the backend `ToolPolicy` before any handler runs. |
 
-Invariant 9 is recorded in `docs/contracts/runtime-integrity-ledger.md` as
-the 9th invariant (backported in cycle-12 commit `f647c5ae`, per the ledger
-maintenance discipline: "When adding a new invariant: append a row to both
-tables AND wire a regression test that proves the side-effect is blocked
-when the verification fails."). The regression test
+The ledger currently records 10 invariants in
+`docs/contracts/runtime-integrity-ledger.md`. Invariant 9 (backported in
+cycle-12 commit `f647c5ae`) introduced CLI protocol versioning; invariant 10
+added tool capability declaration and grant enforcement. The regression test
 `tests/test_runtime_event_contracts.py::test_cli_protocol_version_is_locked`
 asserts `CLI_PROTOCOL_VERSION == "v0"` AND every emitted frame carries that
 string verbatim.

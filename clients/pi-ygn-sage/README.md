@@ -1,66 +1,93 @@
-# `@ygn-sage/pi-adapter` — pi-mono ↔ YGN-SAGE bridge (cycle-13 scaffolding)
+# `@ygn-sage/pi-adapter` - pi-mono / YGN-SAGE bridge scaffold
 
-**Status**: scaffolding only (cycle-12 closeout, 2026-05-05). Cycle-13 implements.
-**Owner**: this directory ships as an npm package wrapping `sage run --jsonl` as a subprocess + JSONL bridge for pi-mono coding-agent (arm C in the cycle-13 SWE-bench Pro 4-arm ablation).
+**Status**: contract-correct scaffolding only. The subprocess bridge and
+pi-mono integration are still implementation NYI and must not be described as
+shipped.
 
-## Why this exists
+**Owner**: this directory will ship as an npm package wrapping
+`sage run --jsonl` as a subprocess + JSONL bridge for pi-mono coding-agent.
+For now it exports the SAGE CLI v0 TypeScript catalog/types and tests that the
+stub remains honest.
 
-The pivot strategy (cgpro `cgpro_pi_mono_pivot_20260505` 2026-05-05 verdict APPROVE_WITH_FOLLOWUPS):
+## Protocol Contract
 
-> *pi-mono = front-end UX/transport. YGN-SAGE = orchestration backend. Communicating via subprocess + JSONL/RPC (NOT MCP).*
+The source of truth is `docs/contracts/SAGE_CLI_PROTOCOL.md` in the parent
+repo.
 
-This package is the bridge. It:
-- Spawns `python -m sage.cli run --jsonl` as a subprocess.
-- Pipes stdin (pi-mono inbound commands) → sage stdin.
-- Pipes sage stdout (RuntimeEventLog v0 + cli envelope) → pi-mono frontend events.
-- Translates protocol semantics where SAGE_CLI_PROTOCOL.md and pi-mono's RPC spec disagree.
+Current v0 surface:
 
-The protocol contract is `docs/contracts/SAGE_CLI_PROTOCOL.md` in the parent repo (v0, 9 invariants including invariant 9 "CLI protocol versioning").
+- 15 inherited RuntimeEventLog events.
+- 4 CLI-shell envelope events:
+  `cli_started`, `cli_progress`, `cli_tool_request`, `cli_complete`.
+- 19 outbound event types total.
+- 5 inbound command types:
+  `prompt`, `approve_tool_call`, `deny_tool_call`, `cancel`, `set_budget`.
+- 10 runtime-integrity invariants in
+  `docs/contracts/runtime-integrity-ledger.md`.
 
-## Pinning rules (cycle-13 trap mitigation)
+The package pins `SAGE_CLI_PROTOCOL_VERSION = "v0"` and exports value-backed
+event/command catalogs from `src/index.ts`.
 
-Per cgpro pivot DESIGN trap #1 (pi-mono v0.73 is young, churn risk), this package MUST:
+## What Is Not Shipped Yet
 
-- Pin pi-mono dependencies to **EXACT** versions (no `^` or `~` ranges):
-  ```json
-  "@mariozechner/pi-coding-agent": "0.73.0",
-  "@mariozechner/pi-ai": "0.73.0"
-  ```
-- Never let `sage-python` or `sage-core` depend on this package (one-way dependency: `pi-ygn-sage` depends on YGN-SAGE backend via subprocess, NOT vice-versa).
-- Track upstream pi-mono via `external/pi-mono` git clone pinned to commit `dbcb473d6fdb96f60570b9ebe73e7aa6316fa8fb` (v0.73.0). Setup via `scripts/setup_pi_mono.sh`.
+- `createSageBridge()` is intentionally unimplemented and throws
+  `implementation NYI`.
+- No subprocess is spawned.
+- No stdin `prompt` behavior is implemented or normalized by this package.
+- No frontend override exists for model selection, topology, cost gates, tool
+  policy, or learning gates.
+- No npm release readiness is claimed.
+- No pi-mono API binding is imported yet.
 
-## Env hygiene (cgpro DESIGN E trap Q3)
+## Pinning Rules
 
-Benchmark runs MUST NOT have hidden network side-effects. Set these env vars before invoking pi-mono:
+Per cgpro pivot DESIGN trap #1, pi-mono dependencies stay exact:
 
-```bash
-export PI_OFFLINE=1            # no network update checks during bench
-export PI_TELEMETRY=0          # no install telemetry beacons
-export PI_SKIP_VERSION_CHECK=1 # no startup version check
+```json
+"@mariozechner/pi-coding-agent": "0.73.0",
+"@mariozechner/pi-ai": "0.73.0"
 ```
 
-## JSONL framing rules
+Never let `sage-python` or `sage-core` depend on this package. The dependency
+direction is one-way: future `pi-ygn-sage` consumes the YGN-SAGE backend via
+subprocess.
 
-Both protocols (SAGE_CLI_PROTOCOL.md v0 + pi-mono RPC) use:
-- **LF-only delimiter** (NOT CRLF, NOT Unicode line separators).
-- **Strict UTF-8 encoding**, no BOM.
-- One JSON object per line, each line independent.
-- Reader MUST split on `\n` (single byte 0x0A) — `readline.createInterface()` is FORBIDDEN.
+`external/pi-mono` is optional local reference material, not a required source
+for this sync-only scaffold. If needed later, setup is via
+`scripts/setup_pi_mono.sh`.
 
-Tests in `test_sage_cli_jsonl.py:test_jsonl_only_lf_delimited` (cycle-12 prelude) lock this for the YGN side. The adapter MUST mirror.
+## Env Hygiene
 
-## Package status
+Benchmark runs must avoid hidden network side effects before invoking a future
+pi-mono bridge:
 
-- **TODO (cycle-13)**: implement `src/index.ts` with the subprocess bridge + protocol translation layer.
-- **TODO (cycle-13)**: tests via `vitest` or similar.
-- **TODO (cycle-13)**: wheels CI integration so this package can release alongside YGN-SAGE.
+```bash
+export PI_OFFLINE=1
+export PI_TELEMETRY=0
+export PI_SKIP_VERSION_CHECK=1
+```
 
-This README + package.json + tsconfig.json + src/index.ts stub ship in cycle-12 closeout to lock the directory shape and pin policy. No actual TypeScript implementation lives here yet.
+## JSONL Framing Rules
+
+Both SAGE_CLI_PROTOCOL.md v0 and pi-mono RPC use:
+
+- LF-only delimiter.
+- Strict UTF-8, no BOM.
+- One JSON object per line.
+- Split on byte `0x0A`; do not use a reader that hides delimiter violations.
+
+## Local Checks
+
+```bash
+npm run typecheck
+npm test
+```
+
+The tests use Node's built-in `node:test` runner and do not require Vitest.
 
 ## References
 
-- Pivot strategy: `C:/Users/yann.abadie/.claude/plans/abstract-finding-pixel.md` (cycle-12 prelude).
-- SAGE_CLI_PROTOCOL v0: `docs/contracts/SAGE_CLI_PROTOCOL.md`.
-- Cycle-13 4-arm wiring: `docs/benchmarks/2026-05-05-cycle13-arm-wiring.md`.
-- pi-mono coding-agent docs: `external/pi-mono/packages/coding-agent/`.
-- cgpro pivot review: conv `cgpro_pi_mono_pivot_20260505` 2026-05-05.
+- SAGE CLI v0: `docs/contracts/SAGE_CLI_PROTOCOL.md`
+- Runtime integrity ledger: `docs/contracts/runtime-integrity-ledger.md`
+- Cycle-13 arm wiring: `docs/benchmarks/2026-05-05-cycle13-arm-wiring.md`
+- pi-mono setup helper: `scripts/setup_pi_mono.sh`

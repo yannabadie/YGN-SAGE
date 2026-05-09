@@ -3,7 +3,7 @@
 See ``docs/contracts/SAGE_CLI_PROTOCOL.md`` for the full v0 spec. This module
 implements the contract:
 
-  - 14 inherited events from ``RuntimeEventLog`` v0 (tee'd to stdout, with
+  - 15 inherited events from ``RuntimeEventLog`` v0 (tee'd to stdout, with
     stdout seq rewritten through the unified ``_StdoutSeqCounter``;
     forensic file keeps its own internal seq).
   - 4 CLI-shell envelope events emitted directly: ``cli_started``,

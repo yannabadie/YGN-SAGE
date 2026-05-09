@@ -2,7 +2,7 @@
   "name": "@ygn-sage/pi-adapter",
   "version": "0.0.1-pre",
   "private": true,
-  "description": "pi-mono ↔ YGN-SAGE subprocess + JSONL bridge (cycle-13 scaffolding — implementation NYI).",
+  "description": "SAGE CLI v0 TypeScript type/catalog scaffold; subprocess bridge implementation NYI.",
   "type": "module",
   "license": "MIT",
   "main": "./dist/index.js",
@@ -13,7 +13,8 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/test/contract.test.js"
   },
   "dependencies": {
     "@mariozechner/pi-coding-agent": "0.73.0",
