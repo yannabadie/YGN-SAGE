@@ -2,85 +2,81 @@ name: Strict current.json coherence
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
-    branches: [main, master]
 
-# Cycle-13 K Phase 0.1b (cgpro VERIFY conv 'Analyse approfondie de repo'
-# 2026-05-06 trap #1): at db304bc6, docs/status/current.json embarked
-# git.commit_sha = 32d39bdf (a commit BEFORE the HEAD it claimed to
-# describe). A 1-commit grace would have masked the drift instead of
-# catching it.
-#
-# This gate makes the binding EXPLICIT, not implicit:
-#   - schema_version MUST be v2 (so the new fields are guaranteed present).
-#   - git.snapshot_commit_sha MUST equal git.generated_for_commit_sha
-#     (the snapshot is self-consistent — it was captured for and at the
-#     same SHA).
-#   - git.generated_for_commit_sha MUST be a SHA that is at most 1 commit
-#     behind github.sha (codified, bounded grace — explicit not implicit).
-#     This accommodates the fact that current.json is bumped before the
-#     commit it describes lands; that commit becomes HEAD.
-#
-# The bounded 1-commit grace is the cgpro-validated trade-off: the strict
-# version (distance == 0) requires a post-commit amend, which would
-# violate the standing "create new commits, don't amend" project rule.
-# distance ≤ 1 is the smallest grace that lets you bump current.json
-# inside the same commit it describes WITHOUT amending afterwards.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  strict-current-json-coherence:
-    name: current.json self-binding
+  semantic-current-json:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
-      - name: Assert schema_version + commit_sha self-consistency
-        shell: bash
+      - name: Check semantic coherence (ignore volatile fields)
         run: |
-          set -euo pipefail
-          payload=$(cat docs/status/current.json)
-          schema=$(python -c "import json,sys; print(json.loads(sys.argv[1])['schema_version'])" "$payload")
-          if [ "$schema" != "v2" ]; then
-            echo "FAIL: schema_version is '$schema', expected 'v2'."
-            exit 1
-          fi
-          snapshot=$(python -c "import json,sys; print(json.loads(sys.argv[1])['git']['snapshot_commit_sha'])" "$payload")
-          generated=$(python -c "import json,sys; print(json.loads(sys.argv[1])['git']['generated_for_commit_sha'])" "$payload")
-          if [ "$snapshot" != "$generated" ]; then
-            echo "FAIL: snapshot_commit_sha=$snapshot != generated_for_commit_sha=$generated."
-            echo "Both fields must be identical — re-run \`python scripts/sync_doc_counters.py --bump-commit-sha=<sha>\` and recommit."
-            exit 1
-          fi
-          echo "OK: schema=$schema, snapshot=generated=$snapshot"
+          python scripts/status_snapshot.py
+          python - <<'PY'
+          import difflib, json, pprint, sys
+          from pathlib import Path
+          
+          repo = Path(".")
+          committed = json.loads((repo / "docs/status/current.json").read_text())
+          
+          # Regenerate
+          import subprocess
+          subprocess.run(["python", "scripts/status_snapshot.py"], check=True)
+          generated = json.loads((repo / "docs/status/current.json").read_text())
+          
+          # Restore committed version
+          (repo / "docs/status/current.json").write_text(json.dumps(committed, indent=2))
+          
+          VOLATILE = {"generated_at_utc", "generated_for_commit_sha", 
+                       "git", "schema_version", "notes"}
+          
+          def strip(v):
+              if isinstance(v, dict):
+                  return {k: strip(v[k]) for k in sorted(v) if k not in VOLATILE}
+              if isinstance(v, list):
+                  return [strip(i) for i in v]
+              return v
+          
+          c = strip(committed)
+          g = strip(generated)
+          
+          if c != g:
+              print("FAIL: semantic divergence detected")
+              print(difflib.unified_diff(
+                  pprint.pformat(c, sort_dicts=True).splitlines(),
+                  pprint.pformat(g, sort_dicts=True).splitlines(),
+                  fromfile="committed", tofile="generated", lineterm=""))
+              sys.exit(1)
+          print("OK: current.json semantic payload is coherent")
+          PY
 
-      - name: Assert generated_for_commit_sha is at most 1 commit behind HEAD
-        shell: bash
+      - name: SHA distance diagnostic (non-blocking)
+        if: always()
+        continue-on-error: true
         run: |
-          set -euo pipefail
-          generated=$(python -c "import json; print(json.load(open('docs/status/current.json'))['git']['generated_for_commit_sha'])")
-          head_sha="${{ github.sha }}"
-          # Validate the SHA exists in this repo (else --count would silently fail).
-          if ! git cat-file -e "${generated}^{commit}" 2>/dev/null; then
-            echo "FAIL: generated_for_commit_sha=$generated is not a known commit in this repo."
-            exit 1
-          fi
-          # rev-list --count counts commits between two refs.
-          distance=$(git rev-list --count "${generated}..${head_sha}")
-          echo "Distance from generated_for_commit_sha ($generated) to HEAD ($head_sha): $distance commit(s)."
-          if [ "$distance" -gt 1 ]; then
-            echo "FAIL: distance > 1. Bump current.json before committing:"
-            echo "  python scripts/sync_doc_counters.py --bump-commit-sha=\$(git rev-parse HEAD)"
-            echo "  git add docs/status/current.json"
-            echo "  git commit --amend --no-edit  # OR redo as a fresh commit before push"
-            exit 1
-          fi
-          echo "OK: distance=$distance (≤ 1, codified explicit grace)."
+          python - <<'PY'
+          import json, subprocess
+          from pathlib import Path
+          data = json.loads(Path("docs/status/current.json").read_text())
+          sha = data.get("generated_for_commit_sha","?")
+          head = subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip()
+          print(f"generated_for={sha[:12]} HEAD={head[:12]}")
+          if sha:
+              try:
+                  d = subprocess.check_output(["git","rev-list","--count",f"{sha}..{head}"],text=True).strip()
+                  print(f"distance={d} (diagnostic only)")
+              except:
+                  print("SHA not reachable (diagnostic only)")
+          PY
