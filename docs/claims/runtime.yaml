@@ -75,5 +75,26 @@ claims:
       cancel with failure(kind="cli_cancel"), post-start prompt/unknown command
       rejections as non-terminal failure(kind="cli_command"), and
       cli_complete.payload.final_seq.
-      The TypeScript clients/pi-ygn-sage adapter is tracked separately
-      and remains unshipped/NYI until implemented and tested.
+      The TypeScript clients/pi-ygn-sage local bridge is tracked by
+      runtime.pi_ygn_sage_adapter_v0; npm publication and pi-mono UI
+      integration remain separate planned work.
+
+  - id: runtime.pi_ygn_sage_adapter_v0
+    status: delivered
+    description: "clients/pi-ygn-sage local TypeScript bridge: spawns sage run --jsonl with shell=false, validates v0 stdout JSONL fail-closed, writes the 5 inbound commands as LF-only JSONL, and exposes typed pass-through events plus display metadata."
+    evidence_test: "clients/pi-ygn-sage/test/contract.test.ts"
+    evidence_benchmark: "n/a"
+    evidence_commit: "9db4380f"
+    last_verified_utc: "2026-05-09T16:20:51Z"
+    owner: "yann"
+    notes: |
+      Evidence command set: `cd clients/pi-ygn-sage && npm test`
+      (22 Node tests with fake backend subprocess fixture),
+      `npm run typecheck`, `npm run build`, plus backend guard
+      `python -m pytest sage-python/tests/test_sage_cli_jsonl.py -q`
+      (50 tests). Scope is deliberately local-contract bridge only.
+      Not claimed: npm publication, pi-mono UI extension/API binding,
+      benchmark arm wiring/results, real sage run --jsonl smoke, or
+      full per-event payload schema validation. Backend remains
+      authoritative for exact remaining-budget state and all runtime
+      side effects.

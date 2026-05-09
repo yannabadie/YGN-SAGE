@@ -5,8 +5,9 @@ cycle-12 prelude (`cgpro_pi_mono_pivot_20260505` Option 1 verdict). Implementati
 shipped 2026-05-05 (`d09bed4d` `sage run --jsonl` backend) and the four NYI
 v0 protocol gaps closed in cycle-13 K post-Phase-2.2 cli_gaps stage chain
 2026-05-07 (Stages A-D under `cgpro_cli_protocol_gaps_20260507`). The
-TypeScript `clients/pi-ygn-sage/` adapter is tracked separately and has not
-yet shipped. Architecture: pi-mono front-end + YGN-SAGE backend
+TypeScript `clients/pi-ygn-sage/` adapter now ships a local strict subprocess
+JSONL bridge with fixture-based contract tests, but does not yet ship an npm
+publication or pi-mono UI extension. Architecture: pi-mono front-end + YGN-SAGE backend
 communicating via subprocess + JSONL/RPC.
 
 ---
@@ -368,5 +369,12 @@ JSONL framing, and golden JSONL coverage under
   positional task, a first stdin JSONL `prompt` command now begins the run;
   plain stdin batch mode remains preserved; post-start `prompt` and unknown
   commands emit non-terminal `failure(kind="cli_command", ...)` frames.
-- TBD (cycle-13+): TypeScript adapter `clients/pi-ygn-sage/` shipped on npm with `protocol_version="v0"` pinned. Not yet started.
+- 2026-05-09 (`9db4380f`): TypeScript adapter `clients/pi-ygn-sage/`
+  implements a local strict subprocess JSONL bridge with `protocol_version="v0"`
+  pinned. Evidence: `cd clients/pi-ygn-sage && npm run typecheck && npm test`
+  (17 Node tests with fake backend fixture process). Not claimed: npm
+  publication, pi-mono UI extension, benchmark arm wiring, or real-backend
+  smoke.
+- TBD (cycle-13+): TypeScript adapter `clients/pi-ygn-sage/` published or
+  loaded as a pi-mono UI extension with `protocol_version="v0"` pinned.
 - TBD: First `protocol_version="v1"` bump (any breaking change to the 19 events / 5 commands / 10 invariants).
