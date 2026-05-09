@@ -107,6 +107,14 @@ def test_emit_cli_cancel_failure_fallback_flat_shape() -> None:
     assert frame["payload_schema_version"] == "v1"
     assert frame["kind"] == "cli_cancel"
     assert frame["error_type"] == "cancelled"
+    assert frame["payload_hash"] == cli_run._hash_payload(
+        "failure",
+        {
+            "kind": "cli_cancel",
+            "error_type": "cancelled",
+            "message": "<redacted>",
+        },
+    )
     assert "payload" not in frame
     assert "operator cancelled" not in buf.getvalue()
 
@@ -1244,6 +1252,40 @@ async def test_cancel_emits_failure_then_terminal_complete(
     assert frames[-1]["payload"]["exit_code"] == 130
     # The fake pipeline observed the CancelledError.
     assert fake_pipeline.cancelled is True
+
+
+@pytest.mark.asyncio
+async def test_cancel_normal_path_does_not_use_stdout_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If ``emit_failure`` advances stdout seq, no repair frame is emitted."""
+
+    def _fallback_must_not_fire(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("stdout-only cancel fallback must not run")
+
+    monkeypatch.setattr(
+        cli_run,
+        "_emit_cli_cancel_failure_fallback",
+        _fallback_must_not_fire,
+    )
+
+    exit_code, stdout, _ = await _drive_cancel_run(
+        monkeypatch,
+        stdin_lines=[
+            json.dumps({"command": "cancel", "args": {"reason": "normal path"}}) + "\n",
+        ],
+    )
+
+    assert exit_code == 130
+    frames = _parse_jsonl_frames(stdout)
+    cancel_failures = [
+        f
+        for f in frames
+        if f["event_type"] == "failure" and f.get("kind") == "cli_cancel"
+    ]
+    assert len(cancel_failures) == 1
+    assert frames[-2] is cancel_failures[0]
+    assert frames[-1]["event_type"] == "cli_complete"
 
 
 @pytest.mark.asyncio

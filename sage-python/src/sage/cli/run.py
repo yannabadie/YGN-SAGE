@@ -49,6 +49,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, TextIO
 
+from sage.runtime.event_log.redaction import _hash_payload
+
 CLI_PROTOCOL_VERSION = "v0"
 
 log = logging.getLogger(__name__)
@@ -348,6 +350,11 @@ def _emit_cli_cancel_failure_fallback(
 ) -> None:
     """Emit the flat v0 cancel failure on stdout if RuntimeEventLog misses it."""
     _ = reason  # operator-readable text is forensic-only on the primary path.
+    redacted_payload = {
+        "kind": "cli_cancel",
+        "error_type": "cancelled",
+        "message": "<redacted>",
+    }
     frame = {
         "protocol_version": CLI_PROTOCOL_VERSION,
         "event_type": "failure",
@@ -359,7 +366,7 @@ def _emit_cli_cancel_failure_fallback(
         "error_type": "cancelled",
         "node_id": "",
         "redaction_state": "redacted",
-        "payload_hash": "",
+        "payload_hash": _hash_payload("failure", redacted_payload),
     }
     stream.write(json.dumps(frame, separators=(",", ":")) + "\n")
     try:
