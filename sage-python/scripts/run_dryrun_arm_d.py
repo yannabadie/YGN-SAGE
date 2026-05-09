@@ -192,14 +192,11 @@ async def _run_sage_cli(
         env=env,
     )
 
-    # Write the JSONL prompt frame on stdin (canonical protocol).
-    prompt_frame = {
-        "command": "prompt",
-        "payload": {"task": task_text},
-    }
-    stdin_line = json.dumps(prompt_frame, separators=(",", ":")) + "\n"
+    # The CLI reads stdin as raw task text in one-shot mode
+    # (when no positional arg is given). Write the task text,
+    # then close stdin to signal EOF.
     assert proc.stdin is not None
-    proc.stdin.write(stdin_line.encode("utf-8"))
+    proc.stdin.write(task_text.encode("utf-8"))
     await proc.stdin.drain()
     proc.stdin.close()
 
