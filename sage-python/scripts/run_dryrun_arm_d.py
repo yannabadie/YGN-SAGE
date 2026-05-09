@@ -156,11 +156,14 @@ async def _run_sage_cli(
     output_events_path: Path,
     tier: str,
 ) -> dict[str, Any]:
-    """Invoke `python -m sage.cli run --jsonl <task>` as subprocess.
+    """Invoke `python -m sage.cli run --jsonl` as subprocess.
 
-    Captures stdout to `output_events_path` (line-by-line JSONL).
-    Returns a dict summarizing the run: total_cost, latency_ms,
-    final_result_payload, exit_code.
+    Uses the JSONL stdin protocol (matching the direct CLI path):
+    writes ``{"command":"prompt","payload":{"task":...}}`` to stdin,
+    then drains stdout events + stderr in parallel (cgpro 2026-05-09
+    fix — previously passed the task as a positional arg, which
+    bypasses the canonical JSONL prompt channel and deadlocks on
+    stderr buffering).
     """
     output_events_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -168,41 +171,48 @@ async def _run_sage_cli(
     env["SAGE_LLM_TIER"] = tier
     env["SAGE_DIFF_VERIFIER_MODE"] = "observe"
     env["SAGE_OTEL_EXPORTER"] = "none"
-    # Cycle-13 E Tier 2.1 smoke discovery 2026-05-05: per directive #8
-    # (A14 posterior epoch guard fail-closed), the post-save manifest
-    # gap (advisor-flagged 2026-05-04, separate ticket) leaves
-    # `~/.sage/` with state files but no `topology_state_manifest.json`
-    # after every successful pipeline run. Subsequent boots fail. The
-    # bypass env disables atexit save AND skips the boot guard — for
-    # bench/smoke runs this is the right semantics (no state pollution
-    # across smokes; learning is irrelevant for shape validation).
     env.setdefault("SAGE_BOOT_BYPASS_EPOCH_GUARD", "1")
-    env.setdefault(
-        "SAGE_BOOT_BYPASS_REASON",
+    env.setdefault("SAGE_BOOT_BYPASS_REASON",
         "cycle-13 E Tier 2.1 arm D smoke run; bypass disables atexit "
-        "save so smokes do not pollute ~/.sage/ across consecutive runs",
-    )
+        "save so smokes do not pollute ~/.sage/ across consecutive runs")
     env.setdefault("SAGE_OPERATOR_ID", "ygn-sage-arm-d-smoke")
 
     cmd = [
-        sys.executable,
-        "-m",
-        "sage.cli",
-        "run",
-        "--jsonl",
-        "--budget-usd",
-        str(budget_usd),
-        task_text,
+        sys.executable, "-m", "sage.cli", "run", "--jsonl",
+        "--budget-usd", str(budget_usd),
     ]
-    log.info("Spawning sage CLI: %s", " ".join(cmd[:5]))
+    log.info("Spawning sage CLI: %s", " ".join(cmd))
 
     start = time.monotonic()
     proc = await asyncio.create_subprocess_exec(
         *cmd,
+        stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env=env,
     )
+
+    # Write the JSONL prompt frame on stdin (canonical protocol).
+    prompt_frame = {
+        "command": "prompt",
+        "payload": {"task": task_text},
+    }
+    stdin_line = json.dumps(prompt_frame, separators=(",", ":")) + "\n"
+    assert proc.stdin is not None
+    proc.stdin.write(stdin_line.encode("utf-8"))
+    await proc.stdin.drain()
+    proc.stdin.close()
+
+    # Drain stderr in parallel to prevent pipe deadlock.
+    async def _drain_stderr() -> bytes:
+        if proc.stderr is None:
+            return b""
+        chunks: list[bytes] = []
+        async for chunk in proc.stderr:
+            chunks.append(chunk)
+        return b"".join(chunks)
+
+    stderr_task = asyncio.create_task(_drain_stderr())
 
     final_result_payload: dict[str, Any] | None = None
     cli_complete_payload: dict[str, Any] | None = None
@@ -227,7 +237,14 @@ async def _run_sage_cli(
 
     exit_code = await proc.wait()
     latency_s = time.monotonic() - start
-    stderr_bytes = await proc.stderr.read() if proc.stderr is not None else b""
+    stderr_bytes = await stderr_task
+
+    if cli_complete_payload is None:
+        stderr_text = stderr_bytes.decode("utf-8", errors="replace") if stderr_bytes else ""
+        log.error(
+            "CLI ended without cli_complete; exit_code=%s stderr=%s",
+            exit_code, stderr_text[-4000:],
+        )
 
     return {
         "exit_code": exit_code,
@@ -235,7 +252,9 @@ async def _run_sage_cli(
         "final_result_payload": final_result_payload,
         "cli_complete_payload": cli_complete_payload,
         "total_cost_usd": (
-            (cli_complete_payload or {}).get("total_cost") if cli_complete_payload else None
+            (cli_complete_payload or {}).get("total_cost_usd")
+            if cli_complete_payload
+            else None
         ),
         "stderr": stderr_bytes.decode("utf-8", errors="replace") if stderr_bytes else "",
     }
