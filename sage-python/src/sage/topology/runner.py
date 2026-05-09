@@ -2171,7 +2171,16 @@ class TopologyRunner:
                         for idx in ready_to_execute
                     ]
                 t0_par = _time.monotonic()
-                results = await asyncio.gather(*coros, return_exceptions=True)
+                # Per-node deadline to prevent a stuck provider from
+                # blocking the entire parallel batch (cgpro 2026-05-09).
+                _node_deadline_s = float(os.environ.get(
+                    "SAGE_TOPOLOGY_NODE_TIMEOUT_SEC", "120",
+                ))
+                _timed_coros = [
+                    asyncio.wait_for(coro, timeout=_node_deadline_s)
+                    for coro in coros
+                ]
+                results = await asyncio.gather(*_timed_coros, return_exceptions=True)
                 par_latency_ms = (_time.monotonic() - t0_par) * 1000
 
                 first_exc: BaseException | None = None
