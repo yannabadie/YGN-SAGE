@@ -9,12 +9,61 @@ jobs:
   rust-coverage:
     runs-on: ubuntu-latest
     env:
-      SAGE_REQUIRE_WASM: "0"
+      SAGE_REQUIRE_WASM: "1"
     steps:
       - uses: actions/checkout@v6
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install wasm32-wasip1 target
+        run: rustup target add wasm32-wasip1
+
+      - name: Resolve pinned RustPython revision
+        id: rustpython-ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(tr -d '[:space:]' < sage-core/rustpython-wasm.sha)"
+          test -n "$sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Using RustPython $sha"
+
+      - name: Restore RustPython wasm build cache
+        id: rustpython-wasm-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            external/rustpython-wasm-target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: rustpython-wasm-${{ runner.os }}-stable-wasm32-wasip1-${{ hashFiles('sage-core/rustpython-wasm.sha') }}
+
+      - name: Build rustpython.wasm
+        if: steps.rustpython-wasm-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p external
+
+          git init external/rustpython
+          git -C external/rustpython remote add origin https://github.com/RustPython/RustPython.git
+          git -C external/rustpython fetch --depth 1 origin "${{ steps.rustpython-ref.outputs.sha }}"
+          git -C external/rustpython checkout --detach FETCH_HEAD
+
+          cd external/rustpython
+          CARGO_TARGET_DIR=../rustpython-wasm-target \
+            cargo build --release --target wasm32-wasip1 --features freeze-stdlib
+
+      - name: Verify rustpython.wasm
+        shell: bash
+        run: |
+          set -euo pipefail
+          wasm="external/rustpython-wasm-target/wasm32-wasip1/release/rustpython.wasm"
+          test -s "$wasm"
+          bytes="$(wc -c < "$wasm")"
+          test "$bytes" -gt 1000000
+          sha256sum "$wasm"
 
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --locked
