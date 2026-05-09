@@ -1,13 +1,13 @@
-# `@ygn-sage/pi-adapter` - pi-mono / YGN-SAGE bridge scaffold
+# `@ygn-sage/pi-adapter` - SAGE CLI v0 JSONL bridge
 
-**Status**: contract-correct scaffolding only. The subprocess bridge and
-pi-mono integration are still implementation NYI and must not be described as
-shipped.
+**Status**: local v0 subprocess JSONL bridge implemented and contract-tested.
+It spawns `sage run --jsonl`, writes validated inbound commands as LF-only
+JSONL, parses stdout with strict v0 fail-closed validation, and exposes typed
+YGN-SAGE pass-through events.
 
-**Owner**: this directory will ship as an npm package wrapping
-`sage run --jsonl` as a subprocess + JSONL bridge for pi-mono coding-agent.
-For now it exports the SAGE CLI v0 TypeScript catalog/types and tests that the
-stub remains honest.
+This is not an npm-published package yet, and it is not a pi-mono UI extension.
+The bridge does not override backend-owned model selection, topology, tool
+policy, budget truth, or learning gates.
 
 ## Protocol Contract
 
@@ -28,16 +28,36 @@ Current v0 surface:
 The package pins `SAGE_CLI_PROTOCOL_VERSION = "v0"` and exports value-backed
 event/command catalogs from `src/index.ts`.
 
+## What Is Shipped Locally
+
+- `createSageBridge()` returns a bridge object with:
+  - `events: AsyncIterable<SageOutboundEvent>`;
+  - `send(command)` for the 5 validated inbound commands;
+  - `cancel(reason?)`, idempotent at the adapter write layer;
+  - `completed`, resolving only after a valid terminal `cli_complete`;
+  - `close()` for subprocess cleanup.
+- The subprocess is spawned with argv arrays and `shell: false`.
+- stdout is parsed as bytes, split only on `0x0A`.
+- The parser rejects BOM, raw CR/CRLF, invalid UTF-8, malformed JSON,
+  non-object frames, protocol mismatch, unknown v0 events, sequence gaps,
+  `run_id` drift, frames after `cli_complete`, missing `cli_complete`, bad
+  `final_seq`, and invalid cancel terminal ordering.
+- Inbound commands are written as `JSON.stringify(command) + "\n"` only.
+- `set_budget` rejects invalid values and adapter-known loosening before
+  writing to stdin; the backend remains authoritative for exact remaining
+  budget.
+- `toSageDisplayEvent()` maps all 19 v0 event types to display metadata
+  without converting them into pi-mono model/tool/topology side effects.
+
 ## What Is Not Shipped Yet
 
-- `createSageBridge()` is intentionally unimplemented and throws
-  `implementation NYI`.
-- No subprocess is spawned.
-- No stdin `prompt` behavior is implemented or normalized by this package.
 - No frontend override exists for model selection, topology, cost gates, tool
   policy, or learning gates.
 - No npm release readiness is claimed.
 - No pi-mono API binding is imported yet.
+- No pi-mono UI extension is shipped.
+- No benchmark arm C/D result is claimed from this package.
+- No real-backend smoke is claimed unless a run artifact explicitly says so.
 
 ## Pinning Rules
 
@@ -49,11 +69,11 @@ Per cgpro pivot DESIGN trap #1, pi-mono dependencies stay exact:
 ```
 
 Never let `sage-python` or `sage-core` depend on this package. The dependency
-direction is one-way: future `pi-ygn-sage` consumes the YGN-SAGE backend via
+direction is one-way: `pi-ygn-sage` consumes the YGN-SAGE backend via
 subprocess.
 
 `external/pi-mono` is optional local reference material, not a required source
-for this sync-only scaffold. If needed later, setup is via
+for the subprocess bridge. If needed later, setup is via
 `scripts/setup_pi_mono.sh`.
 
 ## Env Hygiene
@@ -84,6 +104,9 @@ npm test
 ```
 
 The tests use Node's built-in `node:test` runner and do not require Vitest.
+They include a fake backend fixture process so chunking, stdin writes, terminal
+frames, process exit, and fail-closed parser behavior are exercised without
+live API calls.
 
 ## References
 

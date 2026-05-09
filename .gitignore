@@ -13,6 +13,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
+node_modules/
 dist/
 build/
 .venv/
@@ -50,6 +51,7 @@ qdrant-data/
 # Temporary working directories (cgpro/codex artifacts, pytest temp roots)
 .tmp/
 **/.tmp/
+dist-test/
 
 # Test zip artifacts (ToolForge / TypedRepo smoke outputs)
 sage-python/files.zip

@@ -2,7 +2,7 @@
   "name": "@ygn-sage/pi-adapter",
   "version": "0.0.1-pre",
   "private": true,
-  "description": "SAGE CLI v0 TypeScript type/catalog scaffold; subprocess bridge implementation NYI.",
+  "description": "Strict SAGE CLI v0 subprocess JSONL bridge with TypeScript contract tests.",
   "type": "module",
   "license": "MIT",
   "main": "./dist/index.js",
