@@ -35,6 +35,25 @@ HF_HUB_OFFLINE=1
 HF_DATASETS_OFFLINE=1
 ```
 
+## Runner invocation
+
+For a real Arm D canary that claims default-pipeline learning-integrity
+evidence, the runner must enable the post-run evidence boundary:
+
+```bash
+python sage-python/scripts/run_dryrun_arm_d.py \
+  --instances-json <instances.json> \
+  --limit 5 \
+  --budget-usd 5.0 \
+  --output-dir <artifact-dir> \
+  --claim-default-pipeline-learning-evidence \
+  --expect-default-pipeline-learn
+```
+
+If this gate fails, keep the generated artifacts and classify the canary as
+NO_GO/blocked. Do not infer a successful learning-integrity claim from
+`oracle_verdict` presence alone.
+
 ## Stop conditions (abort N=50 if any trigger)
 
 1. Cumulative cost > $25
@@ -49,6 +68,7 @@ HF_DATASETS_OFFLINE=1
 - [ ] ≥3/5 tasks produce non-empty patches
 - [ ] Every predictions.jsonl entry has: `_verifier_repair_budget_usd`, `_diff_verifier_mismatches`
 - [ ] Every events.jsonl has: `cli_started`, `cli_progress`, `task_started`, `routing_decision`, `final_result`, `cli_complete`
+- [ ] Every real-task `summary.json.task_summaries[].learning_evidence_boundary.status == "pass"` and top-level `summary.json.learning_evidence_gate.status == "PASS"` when default-pipeline learning-integrity evidence is claimed
 - [ ] Cost tracking: every task has `total_cost_usd > 0` in `cli_complete`
 - [ ] No `model_id_final` empty or `provider_final` absent
 

@@ -57,6 +57,8 @@ import json
 import logging
 import os
 import re
+import shutil
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -211,8 +213,9 @@ async def _run_sage_cli(
 
     stderr_task = asyncio.create_task(_drain_stderr())
 
-    final_result_payload: dict[str, Any] | None = None
+    final_result_payload: Any = None
     cli_complete_payload: dict[str, Any] | None = None
+    cli_complete_run_id: str | None = None
 
     with output_events_path.open("w", encoding="utf-8", newline="\n") as event_log:
         assert proc.stdout is not None
@@ -231,6 +234,10 @@ async def _run_sage_cli(
                 final_result_payload = event.get("payload", {})
             elif ev_type == "cli_complete":
                 cli_complete_payload = event.get("payload", {})
+                event_run_id = event.get("run_id")
+                cli_complete_run_id = (
+                    event_run_id if isinstance(event_run_id, str) else None
+                )
 
     exit_code = await proc.wait()
     latency_s = time.monotonic() - start
@@ -253,11 +260,147 @@ async def _run_sage_cli(
             if cli_complete_payload
             else None
         ),
+        "run_id": cli_complete_run_id,
+        "trace_dir": (
+            cli_complete_payload.get("trace_dir")
+            if isinstance(cli_complete_payload, dict)
+            else None
+        ),
         "stderr": stderr_bytes.decode("utf-8", errors="replace") if stderr_bytes else "",
     }
 
 
 # ── Per-task runner ──────────────────────────────────────────────────────────
+
+
+def _learning_evidence_not_requested() -> dict[str, Any]:
+    return {
+        "claimed": False,
+        "status": "skipped",
+        "reason_code": "not_claimed",
+    }
+
+
+def _safe_artifact_stem(value: str) -> str:
+    stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("._")
+    return stem or "task"
+
+
+def _learning_evidence_no_go(
+    *,
+    reason_code: str,
+    detail: str,
+    run_id: str | None,
+    source_trace_dir: str | Path | None,
+    archived_trace_dir: Path | None,
+    expect_default_pipeline_learn: bool,
+) -> dict[str, Any]:
+    return {
+        "claimed": True,
+        "status": "no_go",
+        "reason_code": reason_code,
+        "detail": detail,
+        "mode": "evidence-boundary",
+        "expect_default_pipeline_learn": expect_default_pipeline_learn,
+        "run_id": run_id,
+        "source_trace_dir": str(source_trace_dir) if source_trace_dir else None,
+        "trace_dir": str(archived_trace_dir) if archived_trace_dir else None,
+        "records": 0,
+    }
+
+
+def _validate_learning_evidence(
+    trace_dir: str | Path | None,
+    run_id: str | None,
+    *,
+    archive_trace_dir: Path,
+    expect_default_pipeline_learn: bool,
+) -> dict[str, Any]:
+    """Run the post-run learning side-effect evidence boundary.
+
+    The task has already completed. This controls benchmark artifact
+    acceptability only; it does not authorize or block runtime learning.
+    """
+    if not trace_dir or not run_id:
+        return _learning_evidence_no_go(
+            reason_code="missing_trace_identity",
+            detail="cli_complete did not provide both run_id and trace_dir",
+            run_id=run_id,
+            source_trace_dir=trace_dir,
+            archived_trace_dir=archive_trace_dir,
+            expect_default_pipeline_learn=expect_default_pipeline_learn,
+        )
+
+    source_trace_dir = Path(trace_dir)
+    if not source_trace_dir.is_dir():
+        return _learning_evidence_no_go(
+            reason_code="trace_dir_missing",
+            detail=f"trace_dir not found: {source_trace_dir}",
+            run_id=run_id,
+            source_trace_dir=source_trace_dir,
+            archived_trace_dir=archive_trace_dir,
+            expect_default_pipeline_learn=expect_default_pipeline_learn,
+        )
+
+    try:
+        if archive_trace_dir.exists():
+            shutil.rmtree(archive_trace_dir)
+        shutil.copytree(source_trace_dir, archive_trace_dir)
+    except OSError as exc:
+        return _learning_evidence_no_go(
+            reason_code="trace_archive_failed",
+            detail=f"{type(exc).__name__}: {exc}",
+            run_id=run_id,
+            source_trace_dir=source_trace_dir,
+            archived_trace_dir=archive_trace_dir,
+            expect_default_pipeline_learn=expect_default_pipeline_learn,
+        )
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "sage.runtime.credit_assignment.validate",
+        str(archive_trace_dir),
+        "--run-id",
+        run_id,
+        "--mode",
+        "evidence-boundary",
+    ]
+    if expect_default_pipeline_learn:
+        cmd.append("--expect-default-pipeline-learn")
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            text=True,
+            capture_output=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return _learning_evidence_no_go(
+            reason_code="validator_error",
+            detail=f"{type(exc).__name__}: {exc}",
+            run_id=run_id,
+            source_trace_dir=source_trace_dir,
+            archived_trace_dir=archive_trace_dir,
+            expect_default_pipeline_learn=expect_default_pipeline_learn,
+        )
+
+    status = "pass" if proc.returncode == 0 else "no_go"
+    return {
+        "claimed": True,
+        "status": status,
+        "reason_code": "validated" if status == "pass" else "validator_failed",
+        "mode": "evidence-boundary",
+        "expect_default_pipeline_learn": expect_default_pipeline_learn,
+        "run_id": run_id,
+        "source_trace_dir": str(source_trace_dir),
+        "trace_dir": str(archive_trace_dir),
+        "validator_exit_code": proc.returncode,
+        "validator_command": cmd,
+        "validator_stdout": proc.stdout[-4000:],
+        "validator_stderr": proc.stderr[-4000:],
+    }
 
 
 def _load_format_patch_module() -> Any:
@@ -281,6 +424,8 @@ async def _run_one_task(
     tier: str,
     prefix: str,
     fmt_module: Any,
+    claim_default_pipeline_learning_evidence: bool,
+    expect_default_pipeline_learn: bool,
 ) -> dict[str, Any]:
     """Run one task end-to-end. Returns a per-task summary dict."""
     instance_id = task["instance_id"]
@@ -299,6 +444,7 @@ async def _run_one_task(
             "extracted_patch_present": bool(patch),
             "extracted_patch_chars": len(patch),
             "mock": True,
+            "learning_evidence_boundary": _learning_evidence_not_requested(),
         }
         # Write a dummy events file so per_task dir is uniform.
         per_task_events.parent.mkdir(parents=True, exist_ok=True)
@@ -335,13 +481,46 @@ async def _run_one_task(
         # Extract patch from final_result
         agent_output = ""
         payload = cli_result.get("final_result_payload") or {}
-        for key in ("result", "output", "text", "content", "answer"):
-            val = payload.get(key)
-            if isinstance(val, str) and val.strip():
-                agent_output = val
-                break
+        if isinstance(payload, str):
+            agent_output = payload
+        elif isinstance(payload, dict):
+            for key in ("result", "output", "text", "content", "answer"):
+                val = payload.get(key)
+                if isinstance(val, str) and val.strip():
+                    agent_output = val
+                    break
 
         patch = _extract_patch_from_text(agent_output)
+        if claim_default_pipeline_learning_evidence:
+            cli_complete_payload = cli_result.get("cli_complete_payload")
+            cli_outcome = (
+                cli_complete_payload.get("outcome")
+                if isinstance(cli_complete_payload, dict)
+                else None
+            )
+            archive_trace_dir = (
+                output_dir
+                / "per_task"
+                / f"{_safe_artifact_stem(instance_id)}.trace"
+            )
+            if cli_outcome != "success":
+                learning_evidence = _learning_evidence_no_go(
+                    reason_code="cli_outcome_not_success",
+                    detail=f"cli_complete outcome was {cli_outcome!r}",
+                    run_id=cli_result.get("run_id"),
+                    source_trace_dir=cli_result.get("trace_dir"),
+                    archived_trace_dir=archive_trace_dir,
+                    expect_default_pipeline_learn=expect_default_pipeline_learn,
+                )
+            else:
+                learning_evidence = _validate_learning_evidence(
+                    cli_result.get("trace_dir"),
+                    cli_result.get("run_id"),
+                    archive_trace_dir=archive_trace_dir,
+                    expect_default_pipeline_learn=expect_default_pipeline_learn,
+                )
+        else:
+            learning_evidence = _learning_evidence_not_requested()
 
         summary = {
             "instance_id": instance_id,
@@ -352,6 +531,7 @@ async def _run_one_task(
             "extracted_patch_chars": len(patch),
             "mock": False,
             "stderr_chars": len(cli_result.get("stderr", "")),
+            "learning_evidence_boundary": learning_evidence,
         }
 
     record = fmt_module.format_patch(instance_id, patch, prefix=prefix)
@@ -370,7 +550,16 @@ async def run(
     budget_usd: float,
     tier: str,
     prefix: str,
+    claim_default_pipeline_learning_evidence: bool = False,
+    expect_default_pipeline_learn: bool = False,
 ) -> int:
+    if mock and claim_default_pipeline_learning_evidence:
+        log.error(
+            "--claim-default-pipeline-learning-evidence requires real mode; "
+            "mock has no runtime trace"
+        )
+        return 2
+
     fmt_module = _load_format_patch_module()
 
     instances_text = instances_json.read_text(encoding="utf-8")
@@ -411,6 +600,8 @@ async def run(
             tier=tier,
             prefix=prefix,
             fmt_module=fmt_module,
+            claim_default_pipeline_learning_evidence=claim_default_pipeline_learning_evidence,
+            expect_default_pipeline_learn=expect_default_pipeline_learn,
         )
         summaries.append(result["summary"])
         records.append(result["record"])
@@ -442,6 +633,23 @@ async def run(
         ),
         "task_summaries": summaries,
     }
+    evidence_items = [
+        item
+        for item in (summary.get("learning_evidence_boundary") for summary in summaries)
+        if isinstance(item, dict)
+    ]
+    summary_doc["learning_evidence_gate"] = {
+        "claimed": claim_default_pipeline_learning_evidence,
+        "status": (
+            "NO_GO"
+            if any(item.get("status") == "no_go" for item in evidence_items)
+            else "PASS" if claim_default_pipeline_learning_evidence else "NOT_CLAIMED"
+        ),
+        "expect_default_pipeline_learn": expect_default_pipeline_learn,
+        "passed": sum(1 for item in evidence_items if item.get("status") == "pass"),
+        "failed": sum(1 for item in evidence_items if item.get("status") == "no_go"),
+        "skipped": sum(1 for item in evidence_items if item.get("status") == "skipped"),
+    }
     (output_dir / "summary.json").write_text(
         json.dumps(summary_doc, indent=2, ensure_ascii=False),
         encoding="utf-8",
@@ -455,6 +663,15 @@ async def run(
         cumulative_cost,
         cumulative_latency_ms / 1000,
     )
+    if claim_default_pipeline_learning_evidence and (
+        not summaries
+        or any(
+            (summary.get("learning_evidence_boundary") or {}).get("status") == "no_go"
+            for summary in summaries
+        )
+    ):
+        log.error("Learning side-effect evidence boundary failed")
+        return 3
     return 0
 
 
@@ -504,6 +721,23 @@ def main(argv: list[str] | None = None) -> int:
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
     )
+    parser.add_argument(
+        "--claim-default-pipeline-learning-evidence",
+        action="store_true",
+        help=(
+            "Claim oracle-enabled default-pipeline learning evidence; after "
+            "each real task, archive the canonical RuntimeEventLog trace, run "
+            "the evidence-boundary validator, and fail the harness if it fails."
+        ),
+    )
+    parser.add_argument(
+        "--expect-default-pipeline-learn",
+        action="store_true",
+        help=(
+            "With --claim-default-pipeline-learning-evidence, require the "
+            "minimal current default Stage 5 learning decision set."
+        ),
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -518,6 +752,19 @@ def main(argv: list[str] | None = None) -> int:
             args.instances_json,
         )
         return 2
+    if (
+        args.expect_default_pipeline_learn
+        and not args.claim_default_pipeline_learning_evidence
+    ):
+        parser.error(
+            "--expect-default-pipeline-learn requires "
+            "--claim-default-pipeline-learning-evidence"
+        )
+    if args.mock and args.claim_default_pipeline_learning_evidence:
+        parser.error(
+            "--claim-default-pipeline-learning-evidence requires real mode; "
+            "remove --mock"
+        )
 
     return asyncio.run(
         run(
@@ -528,6 +775,10 @@ def main(argv: list[str] | None = None) -> int:
             budget_usd=args.budget_usd,
             tier=args.tier,
             prefix=args.prefix,
+            claim_default_pipeline_learning_evidence=(
+                args.claim_default_pipeline_learning_evidence
+            ),
+            expect_default_pipeline_learn=args.expect_default_pipeline_learn,
         )
     )
 
