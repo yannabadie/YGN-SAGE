@@ -118,6 +118,9 @@ Keep deterministic S-MMU/MCTS reachability as `evidence_pending` unless a determ
 If Docker Desktop Linux daemon remains unavailable, archive a `NO_GO_LOCAL_DOCKER` record with exact command/error and select cloud/Linux runner options.
 
 Archived `NO_GO_LOCAL_DOCKER` in `docs/benchmarks/2026-05-09-docker-grading-blocker.md` with machine-readable artifact `docs/benchmarks/2026-05-09-swebench-pro-grader-preflight.json`.
+cgpro VERIFY follow-up hardened future `READY_LOCAL_DOCKER`: expected grader
+remote/commit, Docker context/endpoint, hello-world container smoke, and local
+disk-space checks are now explicit gates.
 
 - [x] **Step 2: Select grading path**
 
