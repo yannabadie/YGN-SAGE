@@ -1,0 +1,20 @@
+{
+  "process_exit_code": 130,
+  "frame_count": 4,
+  "event_types": [
+    "cli_started",
+    "budget",
+    "failure",
+    "cli_complete"
+  ],
+  "stdout_lf_only_no_cr": true,
+  "seq_contiguous": true,
+  "first_frame_cli_started": true,
+  "one_cli_cancel_failure": true,
+  "cancel_failure_penultimate": true,
+  "cli_complete_last": true,
+  "cli_complete_outcome_cancelled": true,
+  "cli_complete_exit_code_130": true,
+  "final_seq_points_to_previous_frame": true,
+  "no_frames_after_cli_complete": true
+}

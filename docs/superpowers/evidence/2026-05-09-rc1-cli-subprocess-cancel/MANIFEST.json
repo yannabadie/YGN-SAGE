@@ -1,0 +1,68 @@
+{
+  "ticket": "P1 real-backend CLI JSONL/cancel smoke for Evidence-Pareto RC1",
+  "repo_commit_under_test": "9c9b82ea16cf776be75ad452eb5facd6de9e5b2c",
+  "date_utc": "2026-05-09",
+  "command": [
+    "C:\\ProgramData\\miniforge3\\python.exe",
+    "-m",
+    "sage.cli",
+    "run",
+    "--jsonl"
+  ],
+  "backend_mode": "controlled_slow_local_backend_via_sitecustomize",
+  "scope": "subprocess CLI stream/cancel/adapter proof only; not provider preemption; not Pareto benchmark evidence",
+  "process_exit_code": 130,
+  "stdout_sha256": "fa9666c9b702d4e49aa158a593313bd97fc3ac2820ae276bdfc4478bcca0206d",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stdin_sha256": "bf82421f101b51dd4dddfa7c8114bb8bc9b2e8f2d829c754644030844508220e",
+  "fixture_path": "clients/pi-ygn-sage/test/fixtures/real-backend-cancel.stdout.jsonl",
+  "assertions": {
+    "process_exit_code": 130,
+    "frame_count": 4,
+    "event_types": [
+      "cli_started",
+      "budget",
+      "failure",
+      "cli_complete"
+    ],
+    "stdout_lf_only_no_cr": true,
+    "seq_contiguous": true,
+    "first_frame_cli_started": true,
+    "one_cli_cancel_failure": true,
+    "cancel_failure_penultimate": true,
+    "cli_complete_last": true,
+    "cli_complete_outcome_cancelled": true,
+    "cli_complete_exit_code_130": true,
+    "final_seq_points_to_previous_frame": true,
+    "no_frames_after_cli_complete": true,
+    "adapter_parser_accepts_fixture": true,
+    "adapter_rejects_frame_after_complete": true,
+    "pytest_cli_jsonl_passed": true,
+    "npm_test_passed": true,
+    "npm_typecheck_passed": true
+  },
+  "trace_files": [
+    {
+      "path": "trace_dir/01KR7279J0HQ2EAAVT0QX8JR58.jsonl",
+      "sha256": "19ffbf45b06cfe52f291e75d53030ef8de092e7f41894d2e21dbcc084afa2da1",
+      "size_bytes": 924
+    }
+  ],
+  "verification_logs": [
+    {
+      "path": "pytest.log",
+      "sha256": "01a6f7d7bc6824e7171527795afbe2231f29e49008f2f54c589e900a5c993570",
+      "size_bytes": 204
+    },
+    {
+      "path": "npm-test.log",
+      "sha256": "6779a9356ffb368788aa4af4a86d885b07ba66d7f8c64e9bb11b5928bf7f77a6",
+      "size_bytes": 3776
+    },
+    {
+      "path": "npm-typecheck.log",
+      "sha256": "2c904c2205958db7c6cc4bb8cab0e179a09cdcdece299aa843010abe3ace6350",
+      "size_bytes": 164
+    }
+  ]
+}

@@ -16,17 +16,24 @@ What this file covers:
      - deny_tool_call resolves to False
      - timeout falls back to deny
   5. argparse contract: ``--jsonl`` required, empty task returns 2.
+  6. Subprocess stdin/stdout smoke for prompt + set_budget + cancel with a
+     controlled slow backend.
 
 What this file does NOT cover (deferred to Cycle-12 Phase B):
-  - Full ``sage run --jsonl`` integration with real pipeline boot.
+  - Full ``sage run --jsonl`` integration with live provider/API execution.
   - Golden JSONL byte-identical snapshots across multi-stage runs.
-  - End-to-end ``cancel`` mid-run drains + emits ``cli_complete(outcome=cancelled)``.
 """
 from __future__ import annotations
 
 import asyncio
 import io
 import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import textwrap
+import time
 from types import SimpleNamespace
 from typing import Any
 
@@ -1050,6 +1057,207 @@ async def _drive_cancel_run(
 
 def _parse_jsonl_frames(text: str) -> list[dict[str, Any]]:
     return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
+def test_subprocess_jsonl_cancel_stream_is_adapter_compatible(tmp_path: Path) -> None:
+    """True subprocess smoke for stdin command mode + cancel terminal stream.
+
+    The child process executes the real ``python -m sage.cli run --jsonl``
+    entrypoint. A temporary ``sitecustomize.py`` replaces boot with a slow
+    controlled pipeline so this test proves protocol/process behavior without
+    spending API budget or touching live providers.
+    """
+    sitecustomize = tmp_path / "sitecustomize.py"
+    sitecustomize.write_text(
+        textwrap.dedent(
+            """
+            import asyncio
+
+            import sage.boot
+
+
+            class _SlowPipeline:
+                def __init__(self):
+                    self.last_context = None
+                    self._active_context = None
+                    self._remaining_budget = 5.0
+
+                def tighten_budget(self, new_budget):
+                    from sage.contracts.cost_tracker import BudgetUpdateResult
+
+                    if new_budget > self._remaining_budget:
+                        return BudgetUpdateResult(
+                            accepted=False,
+                            reason="budget_loosen_rejected",
+                            budget_usd=self._remaining_budget,
+                            remaining=self._remaining_budget,
+                            total_spent=0.0,
+                        )
+                    self._remaining_budget = float(new_budget)
+                    return BudgetUpdateResult(
+                        accepted=True,
+                        reason="tightened",
+                        budget_usd=float(new_budget),
+                        remaining=float(new_budget),
+                        total_spent=0.0,
+                    )
+
+                async def run(self, task, budget_usd=None, system_hint=None):
+                    self._active_context = object()
+                    try:
+                        await asyncio.Event().wait()
+                    except asyncio.CancelledError:
+                        raise
+
+
+            class _System:
+                def __init__(self):
+                    self.pipeline = _SlowPipeline()
+
+
+            def _boot_agent_system():
+                return _System()
+
+
+            sage.boot.boot_agent_system = _boot_agent_system
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "PYTHONPATH": os.pathsep.join(
+                [str(tmp_path), str(Path.cwd() / "src"), env.get("PYTHONPATH", "")]
+            ),
+            "SAGE_BOOT_BYPASS_EPOCH_GUARD": "1",
+            "SAGE_BOOT_BYPASS_REASON": "subprocess-cli-jsonl-cancel-test",
+            "SAGE_OPERATOR_ID": "pytest-cli-subprocess",
+            "SAGE_OTEL_EXPORTER": "none",
+            "SAGE_LLM_TIER": "budget",
+        }
+    )
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "sage.cli", "run", "--jsonl"],
+        cwd=Path.cwd(),
+        env=env,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert proc.stdin is not None
+    assert proc.stdout is not None
+
+    frames: list[dict[str, Any]] = []
+    try:
+        proc.stdin.write(
+            (
+                json.dumps(
+                    {
+                        "command": "prompt",
+                        "args": {
+                            "task": "hold execution until cancel",
+                            "budget_usd": 5.0,
+                            "system_hint": 3,
+                        },
+                    },
+                    separators=(",", ":"),
+                )
+                + "\n"
+            ).encode("utf-8")
+        )
+        proc.stdin.flush()
+
+        deadline = time.monotonic() + 20.0
+        while time.monotonic() < deadline:
+            line = proc.stdout.readline()
+            if not line:
+                break
+            assert line.endswith(b"\n")
+            assert b"\r" not in line
+            frame = json.loads(line.decode("utf-8"))
+            frames.append(frame)
+            if frame["event_type"] == "cli_started":
+                # cli_started is intentionally emitted before boot; wait a
+                # short deterministic interval so the controlled boot has
+                # installed the pipeline reference before set_budget arrives.
+                time.sleep(0.2)
+                proc.stdin.write(
+                    (
+                        json.dumps(
+                            {"command": "set_budget", "args": {"budget_usd": 2.0}},
+                            separators=(",", ":"),
+                        )
+                        + "\n"
+                    ).encode("utf-8")
+                )
+                proc.stdin.write(
+                    (
+                        json.dumps(
+                            {"command": "cancel", "args": {"reason": "pytest"}},
+                            separators=(",", ":"),
+                        )
+                        + "\n"
+                    ).encode("utf-8")
+                )
+                proc.stdin.flush()
+            if frame["event_type"] == "cli_complete":
+                break
+
+        try:
+            rc = proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout_tail = proc.stdout.read().decode("utf-8")
+            stderr = (
+                proc.stderr.read().decode("utf-8")
+                if proc.stderr is not None
+                else ""
+            )
+            pytest.fail(
+                "sage CLI subprocess did not exit after cli_complete; "
+                f"frames={frames!r}; stdout_tail={stdout_tail!r}; stderr={stderr!r}"
+            )
+        stdout_tail = proc.stdout.read().decode("utf-8")
+        stderr = (
+            proc.stderr.read().decode("utf-8")
+            if proc.stderr is not None
+            else ""
+        )
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=10)
+
+    assert stdout_tail == ""
+    assert rc == 130, stderr
+    assert frames, stderr
+    assert frames[0]["event_type"] == "cli_started"
+    assert [f["seq"] for f in frames] == list(range(len(frames)))
+    assert {f["run_id"] for f in frames} == {frames[0]["run_id"]}
+    assert all(f["protocol_version"] == "v0" for f in frames)
+
+    budget_frames = [
+        f for f in frames
+        if f["event_type"] == "budget" and f.get("kind") == "budget_tightened"
+    ]
+    assert len(budget_frames) == 1
+    assert budget_frames[0]["budget_remaining_usd"] == 2.0
+
+    cancel_failures = [
+        f for f in frames
+        if f["event_type"] == "failure" and f.get("kind") == "cli_cancel"
+    ]
+    assert len(cancel_failures) == 1
+    assert cancel_failures[0]["error_type"] == "cancelled"
+    assert frames[-2] == cancel_failures[0]
+
+    cli_complete = frames[-1]
+    assert cli_complete["event_type"] == "cli_complete"
+    assert cli_complete["payload"]["outcome"] == "cancelled"
+    assert cli_complete["payload"]["exit_code"] == 130
+    assert cli_complete["payload"]["final_seq"] == frames[-2]["seq"]
 
 
 def test_main_prompt_command_starts_run_from_stdin_first_line(

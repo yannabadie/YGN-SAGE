@@ -1,0 +1,3 @@
+{"command":"prompt","args":{"task":"hold execution until cancel","budget_usd":5.0,"system_hint":3}}
+{"command":"set_budget","args":{"budget_usd":2.0}}
+{"command":"cancel","args":{"reason":"evidence bundle"}}

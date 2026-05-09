@@ -44,6 +44,7 @@ import math
 import os
 import sys
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -392,28 +393,65 @@ async def _read_stdin_commands(
     stdin closes the queue with ``None`` and sets the stop event.
     """
     loop = asyncio.get_running_loop()
-    while not stop_event.is_set():
-        # ``readline`` blocks; run in executor so we don't block the loop.
+    finished = asyncio.Event()
+
+    def _put(item: Mapping[str, Any] | None) -> None:
         try:
-            line = await loop.run_in_executor(None, stdin.readline)
-        except (OSError, ValueError):
-            break
-        if not line:
-            # EOF
-            await queue.put(None)
-            break
-        line = line.strip()
-        if not line:
-            continue
+            loop.call_soon_threadsafe(queue.put_nowait, item)
+        except RuntimeError:
+            pass
+
+    def _mark_finished() -> None:
         try:
-            cmd = json.loads(line)
-        except json.JSONDecodeError:
-            log.warning("sage run: stdin parse error on line: %r", line[:120])
-            continue
-        if not isinstance(cmd, dict) or "command" not in cmd:
-            log.warning("sage run: stdin command missing 'command' field: %r", line[:120])
-            continue
-        await queue.put(cmd)
+            loop.call_soon_threadsafe(finished.set)
+        except RuntimeError:
+            pass
+
+    def _reader() -> None:
+        try:
+            while not stop_event.is_set():
+                try:
+                    line = stdin.readline()
+                except (OSError, ValueError):
+                    break
+                if not line:
+                    _put(None)
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    cmd = json.loads(line)
+                except json.JSONDecodeError:
+                    log.warning("sage run: stdin parse error on line: %r", line[:120])
+                    continue
+                if not isinstance(cmd, dict) or "command" not in cmd:
+                    log.warning(
+                        "sage run: stdin command missing 'command' field: %r",
+                        line[:120],
+                    )
+                    continue
+                _put(cmd)
+        finally:
+            _mark_finished()
+
+    # Never use the loop's default executor for stdin.readline(): if the
+    # frontend keeps stdin open after cancel, Python waits for the default
+    # executor during asyncio.run() shutdown and the process hangs after the
+    # terminal cli_complete frame. A daemon reader can stay blocked on the pipe
+    # without delaying process exit; command delivery still happens through the
+    # event loop via call_soon_threadsafe.
+    reader = threading.Thread(
+        target=_reader,
+        name="sage-cli-stdin-reader",
+        daemon=True,
+    )
+    reader.start()
+    try:
+        await finished.wait()
+    except asyncio.CancelledError:
+        stop_event.set()
+        raise
 
 
 # ────────────────────────────────────────────────────────────────────────

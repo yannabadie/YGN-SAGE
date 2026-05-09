@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
@@ -87,6 +88,10 @@ async function collect(bridge: ReturnType<typeof createSageBridge>) {
 
 function fixturePath(): string {
   return path.join(process.cwd(), "test", "fixtures", "backend-fixture.mjs");
+}
+
+function realBackendCancelFixturePath(): string {
+  return path.join(process.cwd(), "test", "fixtures", "real-backend-cancel.stdout.jsonl");
 }
 
 test("runtime event catalog is the 15-event v0 catalog", () => {
@@ -193,6 +198,48 @@ test("parser accepts the documented cancel sequence", () => {
   ].join("");
   const events = parseAll(stream);
   assert.equal(payloadRecord(events.at(-1) as SageOutboundEvent)["outcome"], "cancelled");
+});
+
+test("parser accepts archived real backend cancel stdout fixture", () => {
+  const fixture = readFileSync(realBackendCancelFixturePath());
+  assert.equal(fixture.includes(0x0d), false);
+
+  const parser = new SageCliJsonlParser();
+  const events: SageOutboundEvent[] = [];
+  for (const byte of fixture) {
+    events.push(...parser.feed(Uint8Array.of(byte)));
+  }
+  const final = parser.finish();
+
+  assert.equal(events.at(0)?.event_type, "cli_started");
+  assert.deepEqual(
+    events.map((event) => event.seq),
+    events.map((_, idx) => idx),
+  );
+  assert.equal(final.event_type, "cli_complete");
+  assert.equal(payloadRecord(final)["outcome"], "cancelled");
+  assert.equal(payloadRecord(final)["exit_code"], 130);
+  assert.equal(payloadRecord(final)["final_seq"], (events.at(-2) as SageOutboundEvent).seq);
+
+  const cancelFailures = events.filter(
+    (event) =>
+      event.event_type === "failure" &&
+      event.kind === "cli_cancel" &&
+      event.error_type === "cancelled",
+  );
+  assert.equal(cancelFailures.length, 1);
+  assert.equal(events.at(-2), cancelFailures[0]);
+});
+
+test("parser rejects an appended frame after archived real backend cli_complete", () => {
+  const fixture = readFileSync(realBackendCancelFixturePath(), "utf8");
+  const parser = new SageCliJsonlParser();
+  assert.throws(
+    () => parser.feed(Buffer.from(fixture + frame("cli_progress", 4), "utf8")),
+    (error: unknown) =>
+      error instanceof SageBridgeProtocolError &&
+      error.code === "frame_after_complete",
+  );
 });
 
 test("parser rejects fail-closed stream violations", () => {

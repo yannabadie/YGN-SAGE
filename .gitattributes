@@ -1,5 +1,7 @@
 # Force LF line endings for files that CI checks
+.gitattributes text eol=lf
 *.rs text eol=lf
 *.toml text eol=lf
 Cargo.lock text eol=lf
 *.sh text eol=lf
+*.jsonl text eol=lf
