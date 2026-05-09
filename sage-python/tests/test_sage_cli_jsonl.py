@@ -90,6 +90,27 @@ def test_emit_cli_event_compact_separators() -> None:
     assert ": " not in line
 
 
+def test_emit_cli_cancel_failure_fallback_flat_shape() -> None:
+    """Fallback cancel frame preserves the flat runtime failure shape."""
+    buf = io.StringIO()
+    cli_run._emit_cli_cancel_failure_fallback(
+        buf,
+        run_id="01TESTRUN0000000000000101",
+        seq=5,
+        reason="operator cancelled",
+    )
+
+    frame = json.loads(buf.getvalue().rstrip("\n"))
+    assert frame["protocol_version"] == "v0"
+    assert frame["event_type"] == "failure"
+    assert frame["seq"] == 5
+    assert frame["payload_schema_version"] == "v1"
+    assert frame["kind"] == "cli_cancel"
+    assert frame["error_type"] == "cancelled"
+    assert "payload" not in frame
+    assert "operator cancelled" not in buf.getvalue()
+
+
 # ────────────────────────────────────────────────────────────────────
 # 2. Tee sink mirrors writes to both file and stdout
 # ────────────────────────────────────────────────────────────────────
@@ -140,10 +161,74 @@ def test_tee_sink_writes_file_verbatim_and_renumbers_stdout_seq() -> None:
 
     # File: byte-identical to RuntimeEventLog's emit (forensic preserved).
     assert file.writes == ['{"event_type":"task_started","seq":42}\n']
-    # Stdout: same fields but seq replaced with the next counter value (0).
-    assert stdout.getvalue() == '{"event_type":"task_started","seq":0}\n'
+    # Stdout: same fields but seq replaced with the next counter value (0),
+    # plus the CLI protocol envelope fields required by
+    # docs/contracts/SAGE_CLI_PROTOCOL.md.
+    stdout_frame = json.loads(stdout.getvalue())
+    assert stdout_frame["event_type"] == "task_started"
+    assert stdout_frame["seq"] == 0
+    assert stdout_frame["protocol_version"] == cli_run.CLI_PROTOCOL_VERSION
+    assert isinstance(stdout_frame["ts_ms"], int)
     # Mirror tracks the rewritten seq so cli_complete can pull final_seq.
     assert tee.last_stdout_seq == 0
+
+
+def test_tee_sink_adds_cli_envelope_fields_to_runtime_frames() -> None:
+    """Mirrored RuntimeEventLog frames must be valid CLI stdout frames.
+
+    RuntimeEventLog forensic files do not carry the CLI protocol envelope,
+    but stdout consumers require every frame to include protocol_version
+    and ts_ms. The file side must remain byte-identical.
+    """
+    file = _RecordingFile()
+    stdout = io.StringIO()
+    counter = cli_run._StdoutSeqCounter()
+    tee = cli_run._CliMirrorSinkHandle(file, stdout, counter)
+
+    runtime_line = json.dumps(
+        {
+            "event_type": "task_started",
+            "seq": 42,
+            "run_id": "01TESTRUN0000000000000100",
+            "timestamp_ns": 1_770_000_000_123_456_789,
+            "payload_schema_version": "v1",
+        }
+    ) + "\n"
+    tee.write(runtime_line)
+
+    assert file.writes == [runtime_line]
+    frame = json.loads(stdout.getvalue())
+    assert frame["seq"] == 0
+    assert frame["protocol_version"] == cli_run.CLI_PROTOCOL_VERSION
+    assert frame["ts_ms"] == 1_770_000_000_123
+
+
+def test_tee_sink_falls_back_to_wall_clock_ts_ms_for_invalid_timestamp_ns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Malformed timestamp_ns must not break stdout envelope repair."""
+    file = _RecordingFile()
+    stdout = io.StringIO()
+    counter = cli_run._StdoutSeqCounter()
+    tee = cli_run._CliMirrorSinkHandle(file, stdout, counter)
+    monkeypatch.setattr(cli_run.time, "time", lambda: 1_770_000_001.25)
+
+    tee.write(
+        json.dumps(
+            {
+                "event_type": "task_started",
+                "seq": 42,
+                "run_id": "01TESTRUN0000000000000102",
+                "timestamp_ns": True,
+                "payload_schema_version": "v1",
+            }
+        )
+        + "\n"
+    )
+
+    frame = json.loads(stdout.getvalue())
+    assert frame["protocol_version"] == cli_run.CLI_PROTOCOL_VERSION
+    assert frame["ts_ms"] == 1_770_000_001_250
 
 
 def test_tee_sink_flush_propagates_to_both() -> None:

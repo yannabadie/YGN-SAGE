@@ -212,6 +212,17 @@ class _CliMirrorSinkHandle:
             return value
         new_seq = self._stdout_seq_counter.next()
         frame["seq"] = new_seq
+        frame["protocol_version"] = CLI_PROTOCOL_VERSION
+        if "ts_ms" not in frame:
+            timestamp_ns = frame.get("timestamp_ns")
+            if (
+                isinstance(timestamp_ns, int)
+                and not isinstance(timestamp_ns, bool)
+                and timestamp_ns >= 0
+            ):
+                frame["ts_ms"] = timestamp_ns // 1_000_000
+            else:
+                frame["ts_ms"] = int(time.time() * 1000)
         self.last_stdout_seq = new_seq
         return json.dumps(frame, separators=(",", ":")) + suffix
 
@@ -326,6 +337,35 @@ def _emit_cli_event(
         progress_state.last_non_progress_frame_at = (
             now_fn() if now_fn is not None else time.monotonic()
         )
+
+
+def _emit_cli_cancel_failure_fallback(
+    stream: TextIO,
+    *,
+    run_id: str,
+    seq: int,
+    reason: str,
+) -> None:
+    """Emit the flat v0 cancel failure on stdout if RuntimeEventLog misses it."""
+    _ = reason  # operator-readable text is forensic-only on the primary path.
+    frame = {
+        "protocol_version": CLI_PROTOCOL_VERSION,
+        "event_type": "failure",
+        "seq": seq,
+        "run_id": run_id,
+        "ts_ms": int(time.time() * 1000),
+        "payload_schema_version": "v1",
+        "kind": "cli_cancel",
+        "error_type": "cancelled",
+        "node_id": "",
+        "redaction_state": "redacted",
+        "payload_hash": "",
+    }
+    stream.write(json.dumps(frame, separators=(",", ":")) + "\n")
+    try:
+        stream.flush()
+    except (OSError, ValueError):
+        pass
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -990,6 +1030,7 @@ async def run_jsonl_async(
         # only one frame fires even if the cancel handler ran multiple
         # times (idempotent stream contract).
         if outcome == "cancelled":
+            seq_before_cancel_failure = seq_counter.last
             try:
                 eventlog.emit_failure(
                     kind="cli_cancel",
@@ -998,6 +1039,13 @@ async def run_jsonl_async(
                 )
             except Exception:  # noqa: BLE001
                 pass
+            if seq_counter.last == seq_before_cancel_failure:
+                _emit_cli_cancel_failure_fallback(
+                    stdout,
+                    run_id=run_id,
+                    seq=seq_counter.next(),
+                    reason=cancel_reason[0] or "cancel requested",
+                )
 
         # Close eventlog (flushes the tee → final runtime events on stdout).
         try:
