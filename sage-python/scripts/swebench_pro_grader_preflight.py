@@ -25,6 +25,15 @@ DEFAULT_EXPECTED_GRADER_REMOTE = "github.com/scaleapi/SWE-bench_Pro-os"
 DEFAULT_EXPECTED_GRADER_COMMIT = "0c64e26f00b9c190432de7fc520c8ceed5c25518"
 DEFAULT_MIN_FREE_DISK_GB = 120.0
 
+# Block A3 (cgpro DESIGN 2026-05-10): mode-aware preflight.
+# - "local": preserve existing behavior 100%; host disk + docker required.
+# - "modal": skip host disk + docker blockers (kept in checks +
+#   all_potential_blockers for forensics), require modal CLI + token auth +
+#   pristine grader.
+# - "auto": pick "modal" if modal token authenticates AND grader is pristine,
+#   else fall back to "local".
+SUPPORTED_MODES = ("local", "modal", "auto")
+
 
 @dataclass
 class CommandResult:
@@ -212,14 +221,23 @@ def build_report(
     expected_grader_remote: str | None = DEFAULT_EXPECTED_GRADER_REMOTE,
     expected_grader_commit: str | None = DEFAULT_EXPECTED_GRADER_COMMIT,
     min_free_disk_gb: float = DEFAULT_MIN_FREE_DISK_GB,
+    mode: str = "local",
 ) -> dict[str, Any]:
-    blockers: list[str] = []
+    if mode not in SUPPORTED_MODES:
+        raise ValueError(
+            f"mode must be one of {SUPPORTED_MODES!r}, got {mode!r}"
+        )
+
+    # `potential_blockers` collects every detected obstacle regardless of mode.
+    # `blockers` (returned) is filtered against the effective mode so that
+    # e.g. host_disk_below_swebench_minimum doesn't gate a Modal-only run.
+    potential_blockers: list[str] = []
     checks: dict[str, Any] = {}
 
     resource_check = _host_resource_check(REPO_ROOT, min_free_disk_gb=min_free_disk_gb)
     checks["host_resources"] = resource_check
     if not resource_check["disk_ok"]:
-        blockers.append("host_disk_below_swebench_minimum")
+        potential_blockers.append("host_disk_below_swebench_minimum")
 
     docker_exe = shutil.which("docker")
     checks["docker_cli"] = {
@@ -227,7 +245,7 @@ def build_report(
         "path": docker_exe,
     }
     if docker_exe is None:
-        blockers.append("docker_cli_missing")
+        potential_blockers.append("docker_cli_missing")
         checks["docker_daemon"] = {
             "ok": False,
             "reason": "docker CLI not found on PATH",
@@ -240,7 +258,7 @@ def build_report(
         docker_context = _docker_context_check(docker_exe, timeout)
         checks["docker_context"] = docker_context
         if not docker_context["ok"]:
-            blockers.append("docker_remote_context_unverified")
+            potential_blockers.append("docker_remote_context_unverified")
         daemon = run_command(
             [docker_exe, "info", "--format", "{{json .ServerVersion}}"],
             timeout,
@@ -253,7 +271,7 @@ def build_report(
             "server_version": server_version or None,
         }
         if not daemon_ok:
-            blockers.append("docker_daemon_unreachable")
+            potential_blockers.append("docker_daemon_unreachable")
             checks["docker_ostype"] = {
                 "ok": False,
                 "reason": "not checked because docker daemon is unreachable",
@@ -271,7 +289,7 @@ def build_report(
                 "ostype": docker_ostype or None,
             }
             if not linux_ok:
-                blockers.append("docker_engine_not_linux")
+                potential_blockers.append("docker_engine_not_linux")
             else:
                 smoke = run_command(
                     [docker_exe, "run", "--rm", "hello-world"],
@@ -284,7 +302,7 @@ def build_report(
                     "image": "hello-world",
                 }
                 if not smoke_ok:
-                    blockers.append("docker_run_smoke_failed")
+                    potential_blockers.append("docker_run_smoke_failed")
 
     grader_check = _git_check(
         grader_repo,
@@ -294,15 +312,15 @@ def build_report(
     )
     checks["grader_repo"] = grader_check
     if not grader_check["exists"]:
-        blockers.append("grader_repo_missing")
+        potential_blockers.append("grader_repo_missing")
     elif not grader_check["eval_script_exists"]:
-        blockers.append("grader_eval_script_missing")
+        potential_blockers.append("grader_eval_script_missing")
     elif grader_check["remote_matches_expected"] is False:
-        blockers.append("grader_repo_remote_mismatch")
+        potential_blockers.append("grader_repo_remote_mismatch")
     elif grader_check["commit_matches_expected"] is False:
-        blockers.append("grader_repo_commit_mismatch")
+        potential_blockers.append("grader_repo_commit_mismatch")
     elif grader_check["dirty_status"]:
-        blockers.append("grader_repo_dirty")
+        potential_blockers.append("grader_repo_dirty")
 
     modal_exe = shutil.which("modal")
     checks["modal_cli"] = {
@@ -323,14 +341,58 @@ def build_report(
             "note": "auth only; SWE-bench Pro job wiring is not proven",
         }
 
-    if not blockers:
-        decision = "READY_LOCAL_DOCKER"
-    elif any(b.startswith("docker_") for b in blockers):
-        decision = "NO_GO_LOCAL_DOCKER"
-    elif "grader_repo_dirty" in blockers:
-        decision = "NO_GO_GRADER_REPO_DIRTY"
+    grader_pristine = not any(
+        b.startswith("grader_") for b in potential_blockers
+    )
+    modal_cli_available = checks.get("modal_cli", {}).get("available", False)
+    modal_token_ok = checks.get("modal_token", {}).get("ok", False)
+
+    if mode == "auto":
+        # Per cgpro DESIGN 2026-05-10: pick modal only when both CLI + token are
+        # ready AND grader is pristine. Otherwise fall back to local so the
+        # caller still sees the local-mode blockers explicitly.
+        if modal_cli_available and modal_token_ok and grader_pristine:
+            mode_effective = "modal"
+        else:
+            mode_effective = "local"
     else:
-        decision = "NO_GO_GRADER_REPO"
+        mode_effective = mode
+
+    blockers: list[str] = []
+    if mode_effective == "local":
+        blockers = list(potential_blockers)
+        if not blockers:
+            decision = "READY_LOCAL_DOCKER"
+        elif any(b.startswith("docker_") for b in blockers):
+            decision = "NO_GO_LOCAL_DOCKER"
+        elif "grader_repo_dirty" in blockers:
+            decision = "NO_GO_GRADER_REPO_DIRTY"
+        else:
+            decision = "NO_GO_GRADER_REPO"
+    else:
+        # modal mode: drop disk + docker (informational only); keep grader_*
+        # blockers; add modal-specific auth blockers.
+        blockers = [
+            b
+            for b in potential_blockers
+            if b != "host_disk_below_swebench_minimum"
+            and not b.startswith("docker_")
+        ]
+        if not modal_cli_available:
+            blockers.append("modal_cli_missing")
+        if not modal_token_ok:
+            blockers.append("modal_not_authenticated")
+
+        if not blockers:
+            decision = "READY_MODAL"
+        elif "grader_repo_dirty" in blockers:
+            decision = "NO_GO_GRADER_REPO_DIRTY"
+        elif any(b.startswith("grader_") for b in blockers):
+            decision = "NO_GO_GRADER_REPO"
+        elif any(b.startswith("modal_") for b in blockers):
+            decision = "NO_GO_MODAL_AUTH"
+        else:
+            decision = "NO_GO_MODAL"
 
     head = run_command(["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"], timeout)
     status = run_command(["git", "-C", str(REPO_ROOT), "status", "--short"], timeout)
@@ -344,16 +406,20 @@ def build_report(
             "dirty": bool(status.stdout.strip()) if status.returncode == 0 else None,
         },
         "grader_repo": str(grader_repo),
+        "mode_requested": mode,
+        "mode_effective": mode_effective,
         "local_grading_ready": decision == "READY_LOCAL_DOCKER",
+        "modal_grading_ready": decision == "READY_MODAL",
         "decision": decision,
         "blockers": blockers,
+        "all_potential_blockers": list(potential_blockers),
         "checks": checks,
         "next_action": (
             "Do not launch or label SWE-bench Pro N=5 as official locally until "
-            "decision is READY_LOCAL_DOCKER. Generate-only traces may continue "
-            "if marked ungraded. Otherwise move grading to a clean Linux Docker "
-            "runner with sufficient disk/RAM or a Modal setup with token auth "
-            "and job wiring verified."
+            "decision is READY_LOCAL_DOCKER or READY_MODAL. Generate-only traces "
+            "may continue if marked ungraded. Otherwise move grading to a clean "
+            "Linux Docker runner with sufficient disk/RAM or a Modal setup with "
+            "token auth and job wiring verified."
         ),
     }
 
@@ -395,6 +461,17 @@ def main(argv: list[str] | None = None) -> int:
         help="Minimum free disk space required before READY_LOCAL_DOCKER",
     )
     parser.add_argument(
+        "--mode",
+        choices=SUPPORTED_MODES,
+        default="local",
+        help=(
+            "Grader path under preflight. local (default) requires Linux "
+            "Docker + ≥120GB disk; modal skips disk/docker blockers but "
+            "requires modal CLI + authenticated token; auto picks modal "
+            "when token + pristine grader are ready, else local."
+        ),
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Print the JSON report to stdout",
@@ -407,6 +484,7 @@ def main(argv: list[str] | None = None) -> int:
         expected_grader_remote=args.expected_grader_remote or None,
         expected_grader_commit=args.expected_grader_commit or None,
         min_free_disk_gb=args.min_free_disk_gb,
+        mode=args.mode,
     )
     encoded = json.dumps(report, indent=2)
     if args.output is not None:
@@ -414,7 +492,7 @@ def main(argv: list[str] | None = None) -> int:
         args.output.write_text(encoded + "\n", encoding="utf-8")
     if args.json or args.output is None:
         print(encoded)
-    return 0 if report["local_grading_ready"] else 2
+    return 0 if report["decision"].startswith("READY_") else 2
 
 
 if __name__ == "__main__":
