@@ -176,6 +176,10 @@ class TaskPlanner:
             return self.plan_static(normalized)
 
         except Exception as exc:
+            from sage.pipeline_v2.provider_policy import ProviderPolicyViolation
+
+            if isinstance(exc, ProviderPolicyViolation):
+                raise
             log.warning("plan_auto fallback to single-node DAG: %s", exc)
             # Fallback: single-node DAG with the entire task
             return self.plan_static([{"id": "main", "description": task}])

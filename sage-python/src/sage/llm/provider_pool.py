@@ -51,6 +51,9 @@ class ProviderPool:
         self._providers: dict[str, LLMProvider] = providers or {}
         self._cache: dict[str, tuple[LLMProvider, LLMConfig]] = {}
         self._breakers: dict[str, CircuitBreaker] = {}
+        self._provider_policy_allowlist: frozenset[str] | None = None
+        self._provider_policy_denylist: frozenset[str] = frozenset()
+        self._provider_policy_source: str = ""
         # Time-bounded exclusion: provider_name → unix timestamp when it was
         # marked dead. reprobe_excluded_providers() re-tests entries older
         # than a TTL and removes them if they respond. Replaces the earlier
@@ -65,6 +68,50 @@ class ProviderPool:
         for _p in self._providers.values():
             if hasattr(_p, "_pool_ref"):
                 _p._pool_ref = self
+
+    def set_provider_policy(
+        self,
+        *,
+        allowlist: frozenset[str] | None,
+        denylist: frozenset[str],
+        source: str,
+    ) -> None:
+        """Install the effective runtime provider policy for resolve() guards."""
+        self._provider_policy_allowlist = allowlist
+        self._provider_policy_denylist = denylist
+        self._provider_policy_source = source
+
+    def _effective_provider_policy(self) -> Any:
+        from sage.pipeline_v2.provider_policy import (
+            ProviderPolicy,
+            provider_policy_from_env,
+        )
+
+        if self._provider_policy_source:
+            return ProviderPolicy(
+                allowlist=self._provider_policy_allowlist,
+                denylist=self._provider_policy_denylist,
+                source=self._provider_policy_source,
+            )
+        return provider_policy_from_env()
+
+    def _enforce_provider_policy(
+        self,
+        *,
+        model_id: str,
+        provider_name: str,
+    ) -> None:
+        from sage.pipeline_v2.provider_policy import ProviderPolicyViolation
+
+        policy = self._effective_provider_policy()
+        reason = policy.violation_reason(provider_name)
+        if reason is None:
+            return
+        raise ProviderPolicyViolation(
+            "provider policy violation: "
+            f"source={policy.source}; model_id={model_id!r}; "
+            f"provider_id={provider_name!r}; reason={reason}"
+        )
 
     # -- Boot-time health check -------------------------------------------
 
@@ -83,6 +130,7 @@ class ProviderPool:
         """
         import asyncio
         from sage.llm.base import Message, Role, LLMConfig as _Cfg
+        from sage.pipeline_v2.provider_policy import ProviderPolicyViolation
 
         results: dict[str, bool] = {}
         probe_msg = [Message(role=Role.USER, content="hi")]
@@ -90,6 +138,7 @@ class ProviderPool:
         for name, provider in list(self._providers.items()):
             try:
                 model_id = getattr(provider, "model_id", "") or getattr(provider, "model_string", "")
+                self._enforce_provider_policy(model_id=model_id, provider_name=name)
                 cfg = _Cfg(provider=name, model=model_id, max_tokens=10)
                 await asyncio.wait_for(
                     provider.generate(messages=probe_msg, config=cfg),
@@ -97,6 +146,10 @@ class ProviderPool:
                 )
                 results[name] = True
                 self.record_success(name)
+            except ProviderPolicyViolation as exc:
+                results[name] = False
+                self._dead_at[name] = time.time()
+                log.info("Health check skipped for policy-blocked provider %s: %s", name, exc)
             except Exception as exc:
                 exc_name = type(exc).__name__
                 exc_str = str(exc).lower()
@@ -186,6 +239,7 @@ class ProviderPool:
         """
         import asyncio
         from sage.llm.base import Message, Role, LLMConfig as _Cfg
+        from sage.pipeline_v2.provider_policy import ProviderPolicyViolation
 
         now = time.time()
         to_reprobe = [
@@ -205,6 +259,7 @@ class ProviderPool:
                 continue
             try:
                 model_id = getattr(provider, "model_id", "") or getattr(provider, "model_string", "")
+                self._enforce_provider_policy(model_id=model_id, provider_name=name)
                 cfg = _Cfg(provider=name, model=model_id, max_tokens=10)
                 await asyncio.wait_for(
                     provider.generate(messages=probe_msg, config=cfg),
@@ -214,6 +269,9 @@ class ProviderPool:
                 self.record_success(name)
                 self._dead_at.pop(name, None)
                 log.info("Reprobe RECOVERED provider %s — removed from exclusion list", name)
+            except ProviderPolicyViolation as exc:
+                results[name] = False
+                log.info("Reprobe skipped for policy-blocked provider %s: %s", name, exc)
             except Exception as exc:
                 exc_str = str(exc).lower()
                 exc_name = type(exc).__name__
@@ -340,10 +398,11 @@ class ProviderPool:
         """Resolve model_id to (provider, config). Falls back to default.
 
         Resolution order:
-        1. Return cached result if already resolved.
-        2. Look up model profile in registry via ``registry.get(model_id)``.
-        3. Match profile's provider name against injected ``providers`` dict.
-        4. Fall back to default_provider on any miss or error.
+        1. Check active provider policy before returning a provider.
+        2. Return cached result if already resolved.
+        3. Look up model profile in registry via ``registry.get(model_id)``.
+        4. Match profile's provider name against injected ``providers`` dict.
+        5. Fall back to default_provider on any miss or non-policy error.
 
         Parameters
         ----------
@@ -353,16 +412,46 @@ class ProviderPool:
         Returns
         -------
         tuple[LLMProvider, LLMConfig]
-            Always returns a valid pair — never raises.
+            Returns a valid pair unless an active provider policy blocks the
+            inferred provider or fallback provider.
         """
+        default_provider_name = (
+            getattr(self._default, "name", "")
+            or getattr(self._default, "provider_name", "")
+            or (
+                getattr(self._default_config, "provider", "")
+                if self._default_config is not None
+                else ""
+            )
+        )
         if not model_id:
+            self._enforce_provider_policy(
+                model_id=model_id,
+                provider_name=default_provider_name,
+            )
             return (
                 self._default,
                 self._default_config or LLMConfig(provider="default", model="default"),
             )
 
         if model_id in self._cache:
-            return self._cache[model_id]
+            cached_provider, cached_config = self._cache[model_id]
+            cached_provider_name = (
+                getattr(cached_config, "provider", "")
+                or getattr(cached_provider, "name", "")
+                or getattr(cached_provider, "provider_name", "")
+            )
+            self._enforce_provider_policy(
+                model_id=model_id,
+                provider_name=cached_provider_name,
+            )
+            return cached_provider, cached_config
+
+        inferred_provider = self.infer_provider(model_id)
+        self._enforce_provider_policy(
+            model_id=model_id,
+            provider_name=inferred_provider,
+        )
 
         try:
             profile = (
@@ -383,6 +472,10 @@ class ProviderPool:
                 inferred = None
                 for hint, pname in _PROVIDER_HINTS.items():
                     if hint in model_id.lower():
+                        self._enforce_provider_policy(
+                            model_id=model_id,
+                            provider_name=pname,
+                        )
                         inferred = self._providers.get(pname)
                         if inferred is not None:
                             log.debug(
@@ -397,12 +490,20 @@ class ProviderPool:
                     "ProviderPool: model_id=%s not found in registry, using default",
                     model_id,
                 )
+                self._enforce_provider_policy(
+                    model_id=model_id,
+                    provider_name=default_provider_name,
+                )
                 return (
                     self._default,
                     self._default_config or LLMConfig(provider="default", model=model_id),
                 )
 
             provider_name: str = getattr(profile, "provider", "")
+            self._enforce_provider_policy(
+                model_id=model_id,
+                provider_name=provider_name,
+            )
             cw = getattr(profile, "context_window", 128000) or 128000
             config = LLMConfig(provider=provider_name, model=model_id, context_window=cw)
 
@@ -420,6 +521,10 @@ class ProviderPool:
                     "ProviderPool: no live provider for provider_name=%s, using default",
                     provider_name,
                 )
+                self._enforce_provider_policy(
+                    model_id=model_id,
+                    provider_name=default_provider_name,
+                )
                 result = (self._default, config)
             else:
                 result = (provider, config)
@@ -430,8 +535,16 @@ class ProviderPool:
             return result
 
         except Exception as exc:
+            from sage.pipeline_v2.provider_policy import ProviderPolicyViolation
+
+            if isinstance(exc, ProviderPolicyViolation):
+                raise
             log.warning(
                 "ProviderPool: resolve(%s) failed: %s, using default", model_id, exc
+            )
+            self._enforce_provider_policy(
+                model_id=model_id,
+                provider_name=default_provider_name,
             )
             return (
                 self._default,

@@ -172,6 +172,19 @@ def get_available_providers() -> list[dict[str, Any]]:
     ]
 
 
+def _provider_allowed_by_runtime_policy(provider: str) -> bool:
+    """Return False when the env/CLI runtime provider policy blocks discovery."""
+    try:
+        from sage.pipeline_v2.provider_policy import provider_policy_from_env
+
+        policy = provider_policy_from_env()
+    except Exception:  # noqa: BLE001 - discovery must preserve legacy boot fallback.
+        return True
+    if not policy.active:
+        return True
+    return policy.violation_reason(provider) is None
+
+
 @dataclass
 class DiscoveredModel:
     """A model discovered from a provider API."""
@@ -206,6 +219,12 @@ class ProviderConnector:
 
         for cfg in self.configs:
             provider = cfg["provider"]
+            if not _provider_allowed_by_runtime_policy(provider):
+                logger.info(
+                    "Skipping %s discovery: blocked by runtime provider policy",
+                    provider,
+                )
+                continue
             api_key = os.environ.get(cfg["api_key_env"], "")
             # Fallback: also check legacy DEEP_SEEK_API_KEY spelling
             if not api_key and cfg["provider"] == "deepseek":

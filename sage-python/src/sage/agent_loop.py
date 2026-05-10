@@ -638,7 +638,19 @@ class AgentLoop:
             ):
                 collected_chunks.append(chunk)
                 yield chunk
-        except (RuntimeError, TimeoutError) as exc:
+        except RuntimeError as exc:
+            from sage.pipeline_v2.provider_policy import ProviderPolicyViolation
+
+            if isinstance(exc, ProviderPolicyViolation):
+                raise
+            log.warning("stream(): streaming failed (%s), falling back to run()", exc)
+            # If we already yielded partial content, the caller has
+            # inconsistent output -- but this is best-effort Phase 1.
+            if not collected_chunks:
+                result = await self.run(task)
+                yield result
+            return
+        except TimeoutError as exc:
             log.warning("stream(): streaming failed (%s), falling back to run()", exc)
             # If we already yielded partial content, the caller has
             # inconsistent output -- but this is best-effort Phase 1.

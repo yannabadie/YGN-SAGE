@@ -137,6 +137,29 @@ class TestProviderConnector:
         assert models[1].id == "model-b"
 
     @pytest.mark.asyncio
+    async def test_discover_skips_policy_blocked_provider_before_api_call(self, monkeypatch):
+        """Provider policy must block boot discovery before provider HTTP calls."""
+        monkeypatch.setenv("TEST_KEY", "fake-key")
+        monkeypatch.setenv("SAGE_PROVIDER_ALLOWLIST", "google,deepseek")
+        monkeypatch.setenv("SAGE_PROVIDER_DENYLIST", "openai")
+        monkeypatch.setattr("sage.providers.connector._read_cache", lambda *a, **kw: [])
+
+        def forbidden(*_args, **_kwargs):
+            raise AssertionError("OpenAI discovery should not be called")
+
+        connector = ProviderConnector(configs=[{
+            "provider": "openai",
+            "api_key_env": "TEST_KEY",
+            "base_url": "https://api.openai.com/v1",
+            "sdk": "openai",
+        }])
+        monkeypatch.setattr(connector, "_discover_openai_compat", forbidden)
+
+        models = await connector.discover_all()
+
+        assert models == []
+
+    @pytest.mark.asyncio
     async def test_discover_no_providers_without_keys(self, monkeypatch):
         """No models discovered when no API keys are set (Codex CLI removed)."""
         monkeypatch.setattr("shutil.which", lambda name: None)

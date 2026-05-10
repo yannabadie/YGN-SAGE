@@ -58,7 +58,14 @@ async def decompose(
                 ctx.dag_features = compute_dag_features(result.dag)
             else:
                 ctx.dag_features = DAGFeatures(omega=1, delta=1, gamma=0.0)
-        except (RuntimeError, TimeoutError) as exc:
+        except RuntimeError as exc:
+            from sage.pipeline_v2.provider_policy import ProviderPolicyViolation
+
+            if isinstance(exc, ProviderPolicyViolation):
+                raise
+            log.warning("Stage 1 decompose failed: %s, using single-node DAG", exc)
+            ctx.dag_features = DAGFeatures(omega=1, delta=1, gamma=0.0)
+        except TimeoutError as exc:
             log.warning("Stage 1 decompose failed: %s, using single-node DAG", exc)
             ctx.dag_features = DAGFeatures(omega=1, delta=1, gamma=0.0)
 

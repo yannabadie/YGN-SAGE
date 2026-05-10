@@ -161,6 +161,11 @@ def _event_audit_from_file(events_path: Path) -> dict[str, Any]:
     provider_final: str | None = None
     observed_model_ids: set[str] = set()
     observed_providers: set[str] = set()
+    assigned_providers: set[str] = set()
+    execution_providers: set[str] = set()
+    assigned_model_ids: set[str] = set()
+    execution_model_ids: set[str] = set()
+    provider_policy_failure_seen = False
     observed_cost_usd = 0.0
 
     if not events_path.is_file():
@@ -169,6 +174,11 @@ def _event_audit_from_file(events_path: Path) -> dict[str, Any]:
             "provider_final": None,
             "_observed_model_ids": [],
             "_observed_providers": [],
+            "_assigned_model_ids": [],
+            "_assigned_providers": [],
+            "_execution_model_ids": [],
+            "_execution_providers": [],
+            "_provider_policy_failure_seen": False,
             "_observed_event_cost_usd": 0.0,
         }
 
@@ -183,6 +193,11 @@ def _event_audit_from_file(events_path: Path) -> dict[str, Any]:
             if not isinstance(event, dict):
                 continue
             ev_type = event.get("event_type")
+            if ev_type == "failure":
+                kind = _event_value(event, "kind")
+                error_type = _event_value(event, "error_type")
+                if kind == "provider_policy" or error_type == "provider_policy_violation":
+                    provider_policy_failure_seen = True
             if ev_type in {
                 "routing_decision",
                 "model_assigned",
@@ -193,12 +208,20 @@ def _event_audit_from_file(events_path: Path) -> dict[str, Any]:
                 if isinstance(model_id, str) and model_id:
                     model_id_final = model_id
                     observed_model_ids.add(model_id)
+                    if ev_type == "model_assigned":
+                        assigned_model_ids.add(model_id)
+                    if ev_type in {"node_started", "node_completed"}:
+                        execution_model_ids.add(model_id)
                 provider_id = _event_value(event, "provider_id") or _event_value(
                     event, "provider"
                 )
                 if isinstance(provider_id, str) and provider_id:
                     provider_final = provider_id
                     observed_providers.add(provider_id)
+                    if ev_type == "model_assigned":
+                        assigned_providers.add(provider_id)
+                    if ev_type in {"node_started", "node_completed"}:
+                        execution_providers.add(provider_id)
             cost_usd = _event_value(event, "cost_usd")
             if isinstance(cost_usd, (int, float)) and not isinstance(cost_usd, bool):
                 observed_cost_usd += float(cost_usd)
@@ -208,6 +231,11 @@ def _event_audit_from_file(events_path: Path) -> dict[str, Any]:
         "provider_final": provider_final,
         "_observed_model_ids": sorted(observed_model_ids),
         "_observed_providers": sorted(observed_providers),
+        "_assigned_model_ids": sorted(assigned_model_ids),
+        "_assigned_providers": sorted(assigned_providers),
+        "_execution_model_ids": sorted(execution_model_ids),
+        "_execution_providers": sorted(execution_providers),
+        "_provider_policy_failure_seen": provider_policy_failure_seen,
         "_observed_event_cost_usd": observed_cost_usd,
     }
 
@@ -290,6 +318,8 @@ async def _run_sage_cli(
     budget_usd: float,
     output_events_path: Path,
     tier: str,
+    provider_allowlist: tuple[str, ...] = (),
+    provider_denylist: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Invoke `python -m sage.cli run --jsonl` as subprocess.
 
@@ -316,6 +346,10 @@ async def _run_sage_cli(
         sys.executable, "-m", "sage.cli", "run", "--jsonl",
         "--budget-usd", str(budget_usd),
     ]
+    if provider_allowlist:
+        cmd.extend(["--provider-allowlist", ",".join(provider_allowlist)])
+    if provider_denylist:
+        cmd.extend(["--provider-denylist", ",".join(provider_denylist)])
     log.info("Spawning sage CLI: %s", " ".join(cmd))
 
     start = time.monotonic()
@@ -434,6 +468,14 @@ async def _run_sage_cli(
         "provider_final": event_audit.get("provider_final") or provider_final,
         "_observed_model_ids": event_audit.get("_observed_model_ids", []),
         "_observed_providers": event_audit.get("_observed_providers", []),
+        "_assigned_model_ids": event_audit.get("_assigned_model_ids", []),
+        "_assigned_providers": event_audit.get("_assigned_providers", []),
+        "_execution_model_ids": event_audit.get("_execution_model_ids", []),
+        "_execution_providers": event_audit.get("_execution_providers", []),
+        "_provider_policy_failure_seen": event_audit.get(
+            "_provider_policy_failure_seen",
+            False,
+        ),
         "_observed_event_cost_usd": event_audit.get("_observed_event_cost_usd", 0.0),
         "trace_dir": (
             cli_complete_payload.get("trace_dir")
@@ -829,33 +871,73 @@ def _provider_gate(
             "provider_denylist": list(provider_denylist),
         }
     observed_set: set[str] = set()
+    assigned_set: set[str] = set()
+    execution_set: set[str] = set()
+    policy_failure_seen = False
     for summary in summaries:
         raw_observed = summary.get("_observed_providers")
         if isinstance(raw_observed, list):
             observed_set.update(str(item) for item in raw_observed if item)
         elif isinstance(raw_observed, tuple):
             observed_set.update(str(item) for item in raw_observed if item)
+        raw_assigned = summary.get("_assigned_providers")
+        if isinstance(raw_assigned, (list, tuple)):
+            assigned_set.update(str(item) for item in raw_assigned if item)
+        raw_execution = summary.get("_execution_providers")
+        if isinstance(raw_execution, (list, tuple)):
+            execution_set.update(str(item) for item in raw_execution if item)
+        policy_failure_seen = policy_failure_seen or bool(
+            summary.get("_provider_policy_failure_seen")
+        )
         provider_final = summary.get("provider_final")
         if provider_final:
             observed_set.add(str(provider_final))
     observed = sorted(observed_set)
+    assigned = sorted(assigned_set)
+    execution = sorted(execution_set)
     missing = [
         str(summary.get("instance_id"))
         for summary in summaries
-        if not summary.get("provider_final") or not summary.get("model_id_final")
+        if (
+            not summary.get("_provider_policy_failure_seen")
+            and (not summary.get("provider_final") or not summary.get("model_id_final"))
+        )
     ]
-    denied = [provider for provider in observed if provider in set(provider_denylist)]
-    outside_allowlist = [
-        provider for provider in observed if provider not in set(provider_allowlist)
+    denyset = set(provider_denylist)
+    allowset = set(provider_allowlist)
+    assigned_denied = [provider for provider in assigned if provider in denyset]
+    execution_denied = [provider for provider in execution if provider in denyset]
+    assigned_outside_allowlist = [
+        provider for provider in assigned if allowset and provider not in allowset
     ]
-    status = "NO_GO" if missing or denied or outside_allowlist else "PASS"
+    execution_outside_allowlist = [
+        provider for provider in execution if allowset and provider not in allowset
+    ]
+    assigned_policy_violation = bool(assigned_denied or assigned_outside_allowlist)
+    execution_policy_violation = bool(execution_denied or execution_outside_allowlist)
+    if execution_policy_violation or missing:
+        status = "NO_GO"
+    elif assigned_policy_violation and not policy_failure_seen:
+        status = "NO_GO"
+    else:
+        status = "PASS"
+    reason = None
+    if status == "NO_GO":
+        reason = "provider_audit_failed"
+    elif assigned_policy_violation and policy_failure_seen:
+        reason = "runtime_provider_policy_enforced"
     return {
         "status": status,
-        "reason": None if status == "PASS" else "provider_audit_failed",
+        "reason": reason,
         "observed_providers": observed,
+        "assigned_providers": assigned,
+        "execution_providers": execution,
+        "provider_policy_failure_seen": policy_failure_seen,
         "missing_provider_or_model": missing,
-        "denied_providers": denied,
-        "outside_allowlist": outside_allowlist,
+        "assigned_denied_providers": assigned_denied,
+        "execution_denied_providers": execution_denied,
+        "assigned_outside_allowlist": assigned_outside_allowlist,
+        "execution_outside_allowlist": execution_outside_allowlist,
         "provider_allowlist": list(provider_allowlist),
         "provider_denylist": list(provider_denylist),
     }
@@ -909,6 +991,14 @@ def _timeout_task_result(
         "provider_final": event_audit.get("provider_final"),
         "_observed_model_ids": event_audit.get("_observed_model_ids", []),
         "_observed_providers": event_audit.get("_observed_providers", []),
+        "_assigned_model_ids": event_audit.get("_assigned_model_ids", []),
+        "_assigned_providers": event_audit.get("_assigned_providers", []),
+        "_execution_model_ids": event_audit.get("_execution_model_ids", []),
+        "_execution_providers": event_audit.get("_execution_providers", []),
+        "_provider_policy_failure_seen": event_audit.get(
+            "_provider_policy_failure_seen",
+            False,
+        ),
         "_observed_event_cost_usd": event_audit.get("_observed_event_cost_usd", 0.0),
         "learning_evidence_boundary": _learning_evidence_no_go(
             reason_code="task_timeout",
@@ -932,6 +1022,8 @@ async def _run_one_task(
     mock: bool,
     budget_usd: float,
     tier: str,
+    provider_allowlist: tuple[str, ...],
+    provider_denylist: tuple[str, ...],
     prefix: str,
     fmt_module: Any,
     claim_default_pipeline_learning_evidence: bool,
@@ -988,6 +1080,8 @@ async def _run_one_task(
             budget_usd=budget_usd,
             output_events_path=per_task_events,
             tier=tier,
+            provider_allowlist=provider_allowlist,
+            provider_denylist=provider_denylist,
         )
 
         # Extract patch from final_result
@@ -1048,6 +1142,14 @@ async def _run_one_task(
             "provider_final": cli_result.get("provider_final"),
             "_observed_model_ids": cli_result.get("_observed_model_ids", []),
             "_observed_providers": cli_result.get("_observed_providers", []),
+            "_assigned_model_ids": cli_result.get("_assigned_model_ids", []),
+            "_assigned_providers": cli_result.get("_assigned_providers", []),
+            "_execution_model_ids": cli_result.get("_execution_model_ids", []),
+            "_execution_providers": cli_result.get("_execution_providers", []),
+            "_provider_policy_failure_seen": cli_result.get(
+                "_provider_policy_failure_seen",
+                False,
+            ),
             "_observed_event_cost_usd": cli_result.get("_observed_event_cost_usd", 0.0),
             "_verifier_repair_budget_usd": None,
             "_diff_verifier_mismatches": None,
@@ -1150,6 +1252,8 @@ async def run(
                     mock=mock,
                     budget_usd=budget_usd,
                     tier=tier,
+                    provider_allowlist=provider_allowlist,
+                    provider_denylist=provider_denylist,
                     prefix=prefix,
                     fmt_module=fmt_module,
                     claim_default_pipeline_learning_evidence=claim_default_pipeline_learning_evidence,
@@ -1352,12 +1456,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--provider-allowlist",
         default="google,deepseek",
-        help="comma-separated provider allowlist for canary audit metadata",
+        help="comma-separated provider allowlist forwarded to sage run and audit",
     )
     parser.add_argument(
         "--provider-denylist",
         default="openai",
-        help="comma-separated provider denylist for canary audit metadata",
+        help="comma-separated provider denylist forwarded to sage run and audit",
     )
     parser.add_argument(
         "--tier",

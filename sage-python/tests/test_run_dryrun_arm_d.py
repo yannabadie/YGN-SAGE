@@ -470,11 +470,12 @@ def test_run_sage_cli_sends_prompt_as_jsonl_command(monkeypatch, tmp_path) -> No
             self.killed = True
             self.returncode = -9
 
-    created: dict[str, _FakeProcess] = {}
+    created: dict[str, Any] = {}
 
     async def fake_create_subprocess_exec(*args, **kwargs):
         proc = _FakeProcess()
         created["proc"] = proc
+        created["args"] = args
         return proc
 
     monkeypatch.setattr(arm_d.asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
@@ -485,9 +486,16 @@ def test_run_sage_cli_sends_prompt_as_jsonl_command(monkeypatch, tmp_path) -> No
             budget_usd=5.0,
             output_events_path=tmp_path / "events.jsonl",
             tier="budget",
+            provider_allowlist=("google", "deepseek"),
+            provider_denylist=("openai",),
         )
     )
 
+    args = created["args"]
+    assert "--provider-allowlist" in args
+    assert args[args.index("--provider-allowlist") + 1] == "google,deepseek"
+    assert "--provider-denylist" in args
+    assert args[args.index("--provider-denylist") + 1] == "openai"
     written = created["proc"].stdin.data.decode("utf-8")
     command = json.loads(written)
     assert command == {
@@ -648,6 +656,8 @@ def test_run_provider_gate_blocks_denylisted_provider(monkeypatch, tmp_path) -> 
                 "mock": False,
                 "provider_final": "openai",
                 "model_id_final": "gpt-5.5-pro",
+                "_assigned_providers": ["openai"],
+                "_execution_providers": ["openai"],
                 "learning_evidence_boundary": {
                     "claimed": False,
                     "status": "skipped",
@@ -677,9 +687,9 @@ def test_run_provider_gate_blocks_denylisted_provider(monkeypatch, tmp_path) -> 
     summary = json.loads((tmp_path / "out" / "summary.json").read_text())
     assert exit_code == 0
     assert summary["acceptance_gate_results"]["provider_gate"]["status"] == "NO_GO"
-    assert summary["acceptance_gate_results"]["provider_gate"]["observed_providers"] == [
-        "openai"
-    ]
+    gate = summary["acceptance_gate_results"]["provider_gate"]
+    assert gate["observed_providers"] == ["openai"]
+    assert gate["execution_denied_providers"] == ["openai"]
     assert summary["canary_decision"] == "NO_GO"
 
 
@@ -705,6 +715,8 @@ def test_run_provider_gate_uses_all_observed_providers(monkeypatch, tmp_path) ->
                 "provider_final": "deepseek",
                 "model_id_final": "deepseek-v4-flash",
                 "_observed_providers": ["deepseek", "openai", "openrouter"],
+                "_assigned_providers": ["deepseek", "openai", "openrouter"],
+                "_execution_providers": ["deepseek", "openai", "openrouter"],
                 "_observed_model_ids": [
                     "deepseek-v4-flash",
                     "gpt-5.4",
@@ -742,8 +754,67 @@ def test_run_provider_gate_uses_all_observed_providers(monkeypatch, tmp_path) ->
     assert exit_code == 0
     assert gate["status"] == "NO_GO"
     assert gate["observed_providers"] == ["deepseek", "openai", "openrouter"]
-    assert gate["denied_providers"] == ["openai"]
-    assert gate["outside_allowlist"] == ["openai", "openrouter"]
+    assert gate["execution_denied_providers"] == ["openai"]
+    assert gate["execution_outside_allowlist"] == ["openai", "openrouter"]
+
+
+def test_run_provider_gate_accepts_runtime_policy_block(monkeypatch, tmp_path) -> None:
+    instances_json = tmp_path / "instances.json"
+    instances_json.write_text(
+        json.dumps([{"instance_id": "task-1", "problem_statement": "x"}]),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(arm_d, "_load_format_patch_module", _FakeFormatModule)
+
+    async def fake_run_one_task(*args, **kwargs):
+        return {
+            "summary": {
+                "instance_id": "task-1",
+                "exit_code": 1,
+                "latency_ms": 1,
+                "total_cost_usd": 0.0,
+                "extracted_patch_present": False,
+                "extracted_patch_chars": 0,
+                "mock": False,
+                "provider_final": "openai",
+                "model_id_final": "gpt-5.5-pro",
+                "_assigned_providers": ["openai"],
+                "_execution_providers": [],
+                "_provider_policy_failure_seen": True,
+                "learning_evidence_boundary": {
+                    "claimed": False,
+                    "status": "skipped",
+                    "reason_code": "not_claimed",
+                },
+            },
+            "record": {"instance_id": "task-1", "patch": "", "prefix": "test"},
+        }
+
+    monkeypatch.setattr(arm_d, "_run_one_task", fake_run_one_task)
+
+    exit_code = asyncio.run(
+        arm_d.run(
+            instances_json,
+            tmp_path / "out",
+            mock=False,
+            limit=1,
+            budget_usd=5.0,
+            global_budget_usd=25.0,
+            tier="budget",
+            prefix="test",
+            provider_allowlist=("google", "deepseek"),
+            provider_denylist=("openai",),
+        )
+    )
+
+    gate = json.loads((tmp_path / "out" / "summary.json").read_text())[
+        "acceptance_gate_results"
+    ]["provider_gate"]
+    assert exit_code == 0
+    assert gate["status"] == "PASS"
+    assert gate["reason"] == "runtime_provider_policy_enforced"
+    assert gate["assigned_denied_providers"] == ["openai"]
+    assert gate["execution_denied_providers"] == []
 
 
 def test_run_writes_aggregate_events_jsonl(tmp_path) -> None:
@@ -817,6 +888,8 @@ def test_timeout_task_result_appends_runner_timeout_to_partial_events(
     assert result["summary"]["model_id_final"] == "gpt-5.4"
     assert result["summary"]["provider_final"] == "openai"
     assert result["summary"]["_observed_providers"] == ["openai"]
+    assert result["summary"]["_assigned_providers"] == ["openai"]
+    assert result["summary"]["_execution_providers"] == []
     assert result["summary"]["learning_evidence_boundary"][
         "expect_default_pipeline_learn"
     ] is True
@@ -844,4 +917,7 @@ def test_event_audit_extracts_top_level_runtime_fields_and_cost(tmp_path) -> Non
         "gpt-5.5-pro",
     ]
     assert audit["_observed_providers"] == ["deepseek", "openai"]
+    assert audit["_assigned_providers"] == ["openai"]
+    assert audit["_execution_providers"] == ["deepseek"]
+    assert audit["_provider_policy_failure_seen"] is False
     assert audit["_observed_event_cost_usd"] == 0.02672

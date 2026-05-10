@@ -799,6 +799,8 @@ async def run_jsonl_async(
     *,
     budget_usd: float | None = None,
     system_hint: int | None = None,
+    provider_allowlist: tuple[str, ...] | None = None,
+    provider_denylist: tuple[str, ...] | None = None,
     stdin: TextIO | None = None,
     stdout: TextIO | None = None,
 ) -> int:
@@ -982,6 +984,14 @@ async def run_jsonl_async(
     total_latency_ms = 0.0
 
     pipeline_task: asyncio.Task[Any] | None = None
+    provider_policy_env_restore: dict[str, str | None] | None = None
+    if provider_allowlist is not None or provider_denylist is not None:
+        provider_policy_env_restore = {
+            "SAGE_PROVIDER_ALLOWLIST": os.environ.get("SAGE_PROVIDER_ALLOWLIST"),
+            "SAGE_PROVIDER_DENYLIST": os.environ.get("SAGE_PROVIDER_DENYLIST"),
+        }
+        os.environ["SAGE_PROVIDER_ALLOWLIST"] = ",".join(provider_allowlist or ())
+        os.environ["SAGE_PROVIDER_DENYLIST"] = ",".join(provider_denylist or ())
     try:
         # Boot the system. boot_agent_system returns a System object whose
         # .pipeline.run(task, ...) is the canonical entry point.
@@ -989,6 +999,20 @@ async def run_jsonl_async(
         pipeline = getattr(system, "pipeline", None)
         if pipeline is None:
             raise RuntimeError("boot_agent_system did not return a pipeline")
+        from sage.pipeline_v2.provider_policy import (
+            configure_pipeline_provider_policy,
+        )
+
+        configure_pipeline_provider_policy(
+            pipeline,
+            allowlist=provider_allowlist,
+            denylist=provider_denylist,
+            source=(
+                "cli"
+                if provider_allowlist is not None or provider_denylist is not None
+                else None
+            ),
+        )
         # Share the pipeline with the dispatcher so set_budget can reach
         # ``pipeline.tighten_budget`` (Stage B lock). The dispatcher reads
         # ``pipeline_for_dispatcher[0]`` lazily on each command, so runs
@@ -1139,6 +1163,12 @@ async def run_jsonl_async(
             },
             seq=seq_counter.next(),
         )
+        if provider_policy_env_restore is not None:
+            for key, value in provider_policy_env_restore.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
 
     return exit_code
 
@@ -1167,6 +1197,16 @@ def main(argv: list[str]) -> int:
         choices=(1, 2, 3),
         default=None,
         help="Optional Stage 0 routing override (S1=trivial, S2=code, S3=reasoner).",
+    )
+    parser.add_argument(
+        "--provider-allowlist",
+        default=None,
+        help="Comma-separated providers allowed for runtime model execution.",
+    )
+    parser.add_argument(
+        "--provider-denylist",
+        default=None,
+        help="Comma-separated providers forbidden for runtime model execution.",
     )
     parser.add_argument(
         "task",
@@ -1217,11 +1257,15 @@ def main(argv: list[str]) -> int:
                 return 2
 
     try:
+        from sage.pipeline_v2.provider_policy import parse_provider_csv
+
         return asyncio.run(
             run_jsonl_async(
                 task,
                 budget_usd=budget_usd,
                 system_hint=system_hint,
+                provider_allowlist=parse_provider_csv(args.provider_allowlist),
+                provider_denylist=parse_provider_csv(args.provider_denylist),
                 stdin=stdin_for_run,
             )
         )

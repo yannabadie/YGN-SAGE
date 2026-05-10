@@ -19,6 +19,7 @@ from typing import Any, AsyncIterator, Callable
 
 from sage._python import PYTHON
 from sage.llm.base import LLMConfig, LLMProvider, Message, Role
+from sage.pipeline_v2.provider_policy import ProviderPolicyViolation
 from sage.runtime.event_log import RuntimeEventLog
 from sage.runtime.run_frame.builder import _RunFrameBuilder
 from sage.runtime.state import StateApplyResult, StateDelta, StateFrame, apply_deltas
@@ -985,6 +986,8 @@ class TopologyRunner:
                 **_node_span_attrs,
             ):
                 result = await loop.run(full_task)
+        except ProviderPolicyViolation:
+            raise
         except (RuntimeError, TimeoutError, asyncio.TimeoutError, ConnectionError) as exc:
             if self._provider_pool and hasattr(self._provider_pool, "record_failure"):
                 try:
@@ -1269,6 +1272,8 @@ class TopologyRunner:
                     messages=messages, config=self._config,
                 )
                 output = response.content or ""
+            except ProviderPolicyViolation:
+                raise
             except Exception as exc:
                 log.warning("Solver node %d: LLM fallback failed: %s", node_idx, exc)
                 output = solver_answer or ""
@@ -1369,6 +1374,8 @@ class TopologyRunner:
                 fallback_provider, fallback_config = self._provider_pool.resolve(
                     fallback_model_id,
                 )
+            except ProviderPolicyViolation:
+                raise
             except (RuntimeError, ValueError, AttributeError):
                 excluded.add(fallback_model_id)
                 continue
@@ -1378,6 +1385,8 @@ class TopologyRunner:
                     fallback_provider.generate(messages=messages, config=fallback_config),
                     timeout=60.0,
                 )
+            except ProviderPolicyViolation:
+                raise
             except (RuntimeError, TimeoutError, asyncio.TimeoutError, ConnectionError) as exc:
                 fallback_provider_name = getattr(fallback_config, "provider", "unknown")
                 if hasattr(self._provider_pool, "record_failure"):
@@ -1554,6 +1563,8 @@ class TopologyRunner:
                             timeout=30.0,
                         )
                         context_msg.content = f"Context (summarized):\n{summary_resp.content or ''}"
+                    except ProviderPolicyViolation:
+                        raise
                     except (RuntimeError, TimeoutError, asyncio.TimeoutError) as exc:
                         # Compression failed — hard truncate as last resort
                         max_chars = int(context_window * 0.6 * 4)
@@ -1575,6 +1586,8 @@ class TopologyRunner:
                 provider_name = getattr(config, "provider", "unknown")
                 if self._provider_pool and hasattr(self._provider_pool, "record_success"):
                     self._provider_pool.record_success(provider_name)
+            except ProviderPolicyViolation:
+                raise
             except (RuntimeError, TimeoutError, asyncio.TimeoutError, ConnectionError) as exc:
                 provider_name = getattr(config, "provider", "unknown")
                 # Record failure in circuit breaker
@@ -1664,6 +1677,8 @@ class TopologyRunner:
             # Inject into node outputs
             existing = self._node_outputs.get(node_idx, "")
             self._node_outputs[node_idx] = f"{existing}\n[Sub-agent]: {sub_result}"
+        except ProviderPolicyViolation:
+            raise
         except (RuntimeError, TimeoutError, ValueError) as exc:
             log.warning("Sub-agent spawn failed: %s", exc)
 

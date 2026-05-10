@@ -345,6 +345,13 @@ async def cegar_repair(
         else:
             log.warning("CEGAR repair failed: %s", details)
             return None
-    except (RuntimeError, TimeoutError) as e:
+    except RuntimeError as e:
+        from sage.pipeline_v2.provider_policy import ProviderPolicyViolation
+
+        if isinstance(e, ProviderPolicyViolation):
+            raise
+        log.warning("CEGAR repair LLM call failed: %s", e)
+        return None
+    except TimeoutError as e:
         log.warning("CEGAR repair LLM call failed: %s", e)
         return None

@@ -1338,6 +1338,50 @@ def test_main_plain_stdin_batch_mode_preserved(
     ]
 
 
+def test_main_provider_policy_flags_pass_to_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    async def _fake_run_jsonl_async(
+        task: str,
+        *,
+        provider_allowlist: tuple[str, ...] | None = None,
+        provider_denylist: tuple[str, ...] | None = None,
+        **_kwargs: Any,
+    ) -> int:
+        calls.append(
+            {
+                "task": task,
+                "provider_allowlist": provider_allowlist,
+                "provider_denylist": provider_denylist,
+            }
+        )
+        return 0
+
+    monkeypatch.setattr(cli_run, "run_jsonl_async", _fake_run_jsonl_async)
+
+    rc = cli_run.main(
+        [
+            "--jsonl",
+            "--provider-allowlist",
+            "google,deepseek",
+            "--provider-denylist",
+            "openai",
+            "hello",
+        ]
+    )
+
+    assert rc == 0
+    assert calls == [
+        {
+            "task": "hello",
+            "provider_allowlist": ("google", "deepseek"),
+            "provider_denylist": ("openai",),
+        }
+    ]
+
+
 def test_main_first_stdin_command_must_be_prompt(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,

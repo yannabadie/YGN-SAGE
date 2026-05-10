@@ -111,6 +111,7 @@ async def run_internal(
     from sage.observability.spans import sage_span
     from sage.pipeline_v2 import memory_gate as memory_gate_mod
     from sage.pipeline_v2 import learning_side_effects as lse_mod
+    from sage.pipeline_v2 import provider_policy as provider_policy_mod
     from sage.pipeline_v2 import runtime_events as runtime_events_mod
     from sage.pipeline_v2.assign_models import assign_models
     from sage.pipeline_v2.classify import classify
@@ -296,6 +297,7 @@ async def run_internal(
             _set_cli_progress_stage(pipeline, "assign_models")
             ctx = assign_models(pipeline, ctx)
             runtime_events_mod.runtime_emit_model_assigned(pipeline, ctx, event_log, run_frame_builder)
+            provider_policy_mod.enforce_provider_policy(pipeline, ctx, event_log)
             pipeline._emit(
                 "ASSIGN_MODELS", {"assignments": ctx.assignments, "domain": ctx.domain}
             )

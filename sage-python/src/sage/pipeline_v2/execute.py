@@ -24,6 +24,7 @@ from sage.pipeline import (
 # calls resolve `<mod>_mod.<fn>` at call time and pick up
 # `monkeypatch.setattr("sage.pipeline_v2.<mod>.<fn>", ...)` from tests.
 from sage.pipeline_v2 import memory_gate as memory_gate_mod
+from sage.pipeline_v2 import provider_policy as provider_policy_mod
 from sage.pipeline_v2 import runtime_events as runtime_events_mod
 
 if TYPE_CHECKING:
@@ -183,6 +184,13 @@ async def execute(
                     bandit_provider=bandit_provider,
                     bandit_config=bandit_config,
                 )
+                provider_policy_mod.enforce_model_provider_policy(
+                    self,
+                    model_id=active_model_id,
+                    provider_id=getattr(selected_config, "provider", "") or "",
+                    event_log=event_log,
+                    node_id="single_agent",
+                )
 
                 # H6 drift callback - built AFTER active_model_id is finalized
                 # (legacy code captured _bypass_model_id BEFORE the bandit/Rust
@@ -248,6 +256,13 @@ async def execute(
                         or getattr(active_provider, "model_string", "")
                         or getattr(active_provider, "name", "")
                     )
+                provider_policy_mod.enforce_model_provider_policy(
+                    self,
+                    model_id=active_model_id,
+                    provider_id=getattr(active_config, "provider", "") or "",
+                    event_log=event_log,
+                    node_id="single_agent",
+                )
                 ctx.executed_model_id = active_model_id
                 ctx.executed_template = "single_agent"
 
@@ -463,6 +478,11 @@ async def execute(
                             event_log,
                             run_frame_builder,
                         )
+                        provider_policy_mod.enforce_provider_policy(
+                            self,
+                            ctx,
+                            event_log,
+                        )
                         from sage_core import TopologyExecutor as _TE  # type: ignore[import-not-found]
                         executor2 = _TE(ctx.topology)
                         runner3 = TopologyRunner(
@@ -481,6 +501,8 @@ async def execute(
                         if retry_result:
                             result = retry_result
                             log.info("Stage 4: FrugalGPT cascade succeeded on retry")
+                    except provider_policy_mod.ProviderPolicyViolation:
+                        raise
                     except (RuntimeError, TimeoutError) as exc:
                         log.debug("Stage 4: FrugalGPT cascade retry failed: %s", exc)
 
@@ -519,6 +541,27 @@ async def execute(
             if fallback_provider is not None:
                 try:
                     from sage.llm.base import Message, Role
+                    fallback_model_id = (
+                        getattr(fallback_config, "model", "")
+                        if fallback_config is not None
+                        else ""
+                    )
+                    fallback_provider_id = (
+                        getattr(fallback_config, "provider", "")
+                        if fallback_config is not None
+                        else ""
+                    ) or getattr(fallback_provider, "name", "") or getattr(
+                        fallback_provider,
+                        "provider_name",
+                        "",
+                    )
+                    provider_policy_mod.enforce_model_provider_policy(
+                        self,
+                        model_id=fallback_model_id,
+                        provider_id=fallback_provider_id,
+                        event_log=event_log,
+                        node_id="single_agent_fallback",
+                    )
                     response = await fallback_provider.generate(
                         messages=[Message(role=Role.USER, content=ctx.task)],
                         config=fallback_config or self.llm_config,
@@ -535,6 +578,8 @@ async def execute(
                         len(ctx.result),
                         getattr(fallback_provider, "name", type(fallback_provider).__name__),
                     )
+                except provider_policy_mod.ProviderPolicyViolation:
+                    raise
                 except (RuntimeError, TimeoutError) as fallback_exc:
                     log.error("Stage 4 fallback also failed: %s", fallback_exc)
                     ctx.result = ""
@@ -606,12 +651,28 @@ def pick_fallback_provider(
             return False
         return True
 
+    def _policy_allows(pname: str, model_id: str = "") -> bool:
+        try:
+            provider_policy_mod.enforce_model_provider_policy(
+                pipeline,
+                model_id=model_id,
+                provider_id=pname,
+            )
+        except provider_policy_mod.ProviderPolicyViolation:
+            return False
+        return True
+
     # 1. Try the default provider first if it's alive.
     default = pipeline.llm_provider
     default_name = ""
     if default is not None:
         default_name = getattr(default, "name", "") or getattr(default, "provider_name", "")
-        if default_name and _alive(default_name):
+        default_model = (
+            getattr(pipeline.llm_config, "model", "")
+            if pipeline.llm_config is not None
+            else ""
+        )
+        if default_name and _alive(default_name) and _policy_allows(default_name, default_model):
             return default, pipeline.llm_config
 
     # 2. Iterate the pool for any alive provider that's not the dead default.
@@ -623,6 +684,8 @@ def pick_fallback_provider(
             if not _alive(pname):
                 continue
             model_id = getattr(prov, "model_id", "") or getattr(prov, "model_string", "")
+            if not _policy_allows(pname, model_id):
+                continue
             from sage.llm.base import LLMConfig
             cfg = LLMConfig(
                 provider=pname,

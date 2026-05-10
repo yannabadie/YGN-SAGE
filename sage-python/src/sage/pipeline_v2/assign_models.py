@@ -118,8 +118,24 @@ def assign_models(
         # self-degrading loop (Audit2 + Audit3 confirmed). The bandit learns post-
         # execution in Stage 5 (LEARN) and naturally deprioritizes bad arms.
 
-        # Filter out models whose provider is dead (health check or circuit breaker)
-        if self.provider_pool and hasattr(self.provider_pool, 'is_model_available'):
+        provider_policy_blocks = False
+        try:
+            from sage.pipeline_v2.provider_policy import evaluate_provider_policy
+
+            policy_decision = evaluate_provider_policy(self, ctx)
+            setattr(ctx, "_provider_policy_decision", policy_decision.to_dict())
+            provider_policy_blocks = bool(policy_decision.violations)
+        except (ImportError, RuntimeError, TypeError, ValueError) as exc:
+            log.warning("Stage 3 provider policy precheck skipped: %s", exc)
+
+        # Filter out models whose provider is dead (health check or circuit breaker).
+        # If the raw assignment already violates an active provider policy, do not
+        # mask the assignment by silently falling back before the audit event fires.
+        if (
+            not provider_policy_blocks
+            and self.provider_pool
+            and hasattr(self.provider_pool, 'is_model_available')
+        ):
             for node_idx, model_id in list(ctx.assignments.items()):
                 if not model_id:
                     continue
