@@ -48,6 +48,12 @@ event/command catalogs from `src/index.ts`.
   budget.
 - `toSageDisplayEvent()` maps all 19 v0 event types to display metadata
   without converting them into pi-mono model/tool/topology side effects.
+- Contract tests include a controlled subprocess smoke that launches the real
+  Python CLI entrypoint (`python -m sage.cli run --jsonl`) through
+  `createSageBridge()`. The smoke replaces boot with a local slow pipeline in a
+  temporary cwd, waits for an active-pipeline sentinel before sending
+  `set_budget`, then verifies cancel/final-seq/exit-code reconciliation without
+  live provider/API spend.
 
 ## What Is Not Shipped Yet
 
@@ -57,7 +63,7 @@ event/command catalogs from `src/index.ts`.
 - No pi-mono API binding is imported yet.
 - No pi-mono UI extension is shipped.
 - No benchmark arm C/D result is claimed from this package.
-- No real-backend smoke is claimed unless a run artifact explicitly says so.
+- No live-provider backend smoke is claimed.
 
 ## Pinning Rules
 

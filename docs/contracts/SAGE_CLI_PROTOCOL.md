@@ -384,10 +384,15 @@ JSONL framing, and golden JSONL coverage under
   commands emit non-terminal `failure(kind="cli_command", ...)` frames.
 - 2026-05-09 (`9db4380f`): TypeScript adapter `clients/pi-ygn-sage/`
   implements a local strict subprocess JSONL bridge with `protocol_version="v0"`
-  pinned. Evidence: `cd clients/pi-ygn-sage && npm run typecheck && npm test`
-  (17 Node tests with fake backend fixture process). Not claimed: npm
-  publication, pi-mono UI extension, benchmark arm wiring, or real-backend
-  smoke.
+  pinned.
+- 2026-05-10 (`7b050946`): Adapter evidence strengthened with a controlled real
+  CLI-entrypoint subprocess smoke: `createSageBridge()` drives
+  `python -m sage.cli run --jsonl` through stdin/stdout, with boot replaced by
+  a local slow pipeline in a temporary cwd to avoid live provider/API spend.
+  Evidence: `cd clients/pi-ygn-sage && npm run typecheck && npm test` (25 Node
+  tests). Not claimed: npm publication, pi-mono UI extension, benchmark arm
+  wiring, live-provider backend smoke, or full per-event payload schema
+  validation.
 - TBD (cycle-13+): TypeScript adapter `clients/pi-ygn-sage/` published or
   loaded as a pi-mono UI extension with `protocol_version="v0"` pinned.
 - TBD: First `protocol_version="v1"` bump (any breaking change to the 19 events / 5 commands / 10 invariants).

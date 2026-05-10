@@ -6,7 +6,7 @@
 # Generated_at_utc is updated on every run; the canonical hashable diff is the
 # `claims:` array, which is sorted by id for stable output.
 
-_generated_at_utc: '2026-05-10T07:25:27+00:00'
+_generated_at_utc: '2026-05-10T07:59:49+00:00'
 _total_claims: 23
 claims:
 - id: benchmarks.bcb_hard_45_9
@@ -463,12 +463,18 @@ claims:
     typed pass-through events plus display metadata.'
   evidence_test: clients/pi-ygn-sage/test/contract.test.ts
   evidence_benchmark: n/a
-  evidence_commit: 9db4380f
-  last_verified_utc: '2026-05-09T16:20:51Z'
+  evidence_commit: 7b050946
+  last_verified_utc: '2026-05-10T07:59:18Z'
   owner: yann
   notes: 'Evidence command set: `cd clients/pi-ygn-sage && npm test`
 
-    (22 Node tests with fake backend subprocess fixture),
+    (25 Node tests: parser/fake-backend fixtures plus a controlled
+
+    real CLI-entrypoint subprocess smoke where createSageBridge drives
+
+    `python -m sage.cli run --jsonl` with boot replaced by a local slow
+
+    pipeline in a temporary cwd to avoid provider/API spend),
 
     `npm run typecheck`, `npm run build`, plus backend guard
 
@@ -476,21 +482,15 @@ claims:
 
     (54 tests after the stdout-envelope repair). Scope is deliberately
 
-    local-contract bridge only.
+    local-contract bridge plus controlled entrypoint/process compatibility.
 
     Not claimed: npm publication, pi-mono UI extension/API binding,
 
-    benchmark arm wiring/results, real sage run --jsonl smoke, or
+    benchmark arm wiring/results, live-provider backend smoke, or full
 
-    full per-event payload schema validation. Backend remains
+    per-event payload schema validation. Backend remains authoritative for
 
-    authoritative for exact remaining-budget state and all runtime
-
-    side effects. Real-backend cancel smoke is blocked/pending under
-
-    the documented v0 cooperative-cancellation limitation when it exceeds
-
-    the smoke cutoff or requires manual kill.
+    exact remaining-budget state and all runtime side effects.
 
     '
   _source_file: docs/claims/runtime.yaml
