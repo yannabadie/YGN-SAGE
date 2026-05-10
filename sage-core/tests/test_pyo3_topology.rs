@@ -123,6 +123,38 @@ fn test_engine_record_outcome_populates_smmu() {
     assert!(engine.smmu_chunk_count() > 0);
 }
 
+#[cfg(feature = "cognitive")]
+#[test]
+fn test_engine_save_load_restores_pyo3_smmu_state() {
+    let tmp = tempfile::tempdir().expect("create tempdir");
+    let state_dir = tmp.path().to_str().expect("utf-8 temp path");
+
+    let mut engine = PyTopologyEngine::new();
+    let result = engine.generate("persist smmu state", None, 2, 0.0).unwrap();
+    let topology = result.topology();
+    let topology_id = topology.id.clone();
+    engine.cache_topology(&topology);
+    engine.record_outcome(
+        &topology_id,
+        "persist smmu state completed",
+        vec!["persist".into(), "smmu".into()],
+        Some(vec![1.0, 0.0, 0.0, 0.0]),
+        0.92,
+        0.01,
+        100.0,
+    );
+    let before = engine.smmu_chunk_count();
+    assert!(before > 0);
+
+    engine.save_state(state_dir).unwrap();
+    assert!(tmp.path().join("smmu_state.json").exists());
+
+    let mut restored = PyTopologyEngine::new();
+    assert_eq!(restored.smmu_chunk_count(), 0);
+    restored.load_state(state_dir).unwrap();
+    assert_eq!(restored.smmu_chunk_count(), before);
+}
+
 #[test]
 fn test_engine_repr_format() {
     let engine = PyTopologyEngine::new();

@@ -104,6 +104,13 @@ pub struct TopologySmmuBridge {
     chunk_meta: HashMap<String, OutcomeMeta>,
 }
 
+/// Serializable bridge-side metadata needed to make restored S-MMU retrieval live.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TopologySmmuBridgeSnapshot {
+    pub version: u32,
+    pub chunk_meta: HashMap<String, OutcomeMeta>,
+}
+
 impl Default for TopologySmmuBridge {
     fn default() -> Self {
         Self::new()
@@ -115,6 +122,37 @@ impl TopologySmmuBridge {
         Self {
             chunk_meta: HashMap::new(),
         }
+    }
+
+    pub fn to_snapshot(&self) -> TopologySmmuBridgeSnapshot {
+        TopologySmmuBridgeSnapshot {
+            version: 1,
+            chunk_meta: self.chunk_meta.clone(),
+        }
+    }
+
+    pub fn from_snapshot(
+        snapshot: TopologySmmuBridgeSnapshot,
+        smmu: &MultiViewMMU,
+    ) -> Result<Self, String> {
+        if snapshot.version != 1 {
+            return Err(format!(
+                "unsupported topology S-MMU bridge snapshot version {}",
+                snapshot.version
+            ));
+        }
+
+        for chunk_id in snapshot.chunk_meta.keys() {
+            if !smmu.contains_chunk_id(chunk_id) {
+                return Err(format!(
+                    "topology S-MMU bridge references missing chunk_id {chunk_id}"
+                ));
+            }
+        }
+
+        Ok(Self {
+            chunk_meta: snapshot.chunk_meta,
+        })
     }
 
     /// Store a topology outcome in S-MMU.

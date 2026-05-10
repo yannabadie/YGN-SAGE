@@ -13,8 +13,9 @@ pub const POSTERIOR_EPOCH_FILENAME: &str = "posterior_epoch.json";
 pub const CONTAMINATED_MARKER_FILENAME: &str = "_CONTAMINATED.json";
 pub const TOPOLOGY_STATE_MANIFEST_FILENAME: &str = "topology_state_manifest.json";
 pub const TOPOLOGY_STATE_MANIFEST_TYPE: &str = "YGN-SAGE_A14_ACTIVE_TOPOLOGY_STATE_MANIFEST";
+pub const SMMU_STATE_FILENAME: &str = "smmu_state.json";
 
-const A14_TOPOLOGY_STATE_FILES: [&str; 7] = [
+const A14_TOPOLOGY_STATE_FILES: [&str; 8] = [
     "bandit_state.db",
     "bandit_state.db-wal",
     "bandit_state.db-shm",
@@ -22,6 +23,7 @@ const A14_TOPOLOGY_STATE_FILES: [&str; 7] = [
     "archive_state.db-wal",
     "archive_state.db-shm",
     "engine_extras.json",
+    SMMU_STATE_FILENAME,
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]

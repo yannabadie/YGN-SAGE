@@ -11,6 +11,7 @@ use petgraph::visit::EdgeRef;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::io::Write;
 use std::path::Path;
 use ulid::Ulid;
 
@@ -90,6 +91,11 @@ impl MultiViewMMU {
     /// Number of chunks registered in the S-MMU.
     pub fn chunk_count(&self) -> usize {
         self.chunk_map.len()
+    }
+
+    /// True when a chunk id exists in the S-MMU graph.
+    pub fn contains_chunk_id(&self, chunk_id: &str) -> bool {
+        self.chunk_map.contains_key(chunk_id)
     }
 
     /// Capacity threshold: auto-evict when chunk count reaches this.
@@ -529,10 +535,7 @@ impl MultiViewMMU {
     /// Persist the current S-MMU state to a JSON file.
     pub fn save_json(&self, path: &Path) -> Result<(), String> {
         let snapshot = self.to_snapshot();
-        let bytes = serde_json::to_vec_pretty(&snapshot)
-            .map_err(|e| format!("serialize smmu snapshot: {e}"))?;
-        std::fs::write(path, bytes)
-            .map_err(|e| format!("write smmu snapshot {}: {e}", path.display()))
+        write_json_atomic(path, &snapshot, "smmu snapshot")
     }
 
     /// Load an S-MMU from a JSON file.
@@ -543,6 +546,48 @@ impl MultiViewMMU {
             serde_json::from_slice(&raw).map_err(|e| format!("parse smmu snapshot: {e}"))?;
         Self::from_snapshot(snapshot)
     }
+}
+
+pub(crate) fn write_json_atomic<T>(path: &Path, value: &T, label: &str) -> Result<(), String>
+where
+    T: Serialize + ?Sized,
+{
+    let mut bytes =
+        serde_json::to_vec_pretty(value).map_err(|e| format!("serialize {label}: {e}"))?;
+    bytes.push(b'\n');
+    write_bytes_atomic(path, &bytes)
+}
+
+fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let tmp_path = path.with_file_name(format!(
+        ".{}.{}.tmp",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("smmu_state"),
+        Ulid::new()
+    ));
+
+    let result: Result<(), String> = (|| {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp_path)
+            .map_err(|err| format!("create temp file {}: {}", tmp_path.display(), err))?;
+        file.write_all(bytes)
+            .map_err(|err| format!("write temp file {}: {}", tmp_path.display(), err))?;
+        file.sync_all()
+            .map_err(|err| format!("sync temp file {}: {}", tmp_path.display(), err))?;
+        drop(file);
+        std::fs::rename(&tmp_path, path)
+            .map_err(|err| format!("install {}: {}", path.display(), err))?;
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp_path);
+    }
+
+    result
 }
 
 // ---------------------------------------------------------------------------

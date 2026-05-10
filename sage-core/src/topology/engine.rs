@@ -17,7 +17,7 @@ use rand::Rng;
 use std::collections::HashMap;
 use tracing::{debug, info, info_span, warn};
 
-use crate::memory::smmu::MultiViewMMU;
+use crate::memory::smmu::{write_json_atomic, MultiViewMMU, MultiViewMMUSnapshot};
 use crate::routing::bandit::ContextualBandit;
 
 use super::cma_me::{CmaEmitter, DimensionBounds};
@@ -35,7 +35,7 @@ use super::mutations::{apply_mutation_tracked, MutationResult, MutationStats};
 // features clippy clean while preserving the cognitive-feature build.
 #[allow(unused_imports)]
 use super::posterior_epoch;
-use super::smmu_bridge::{TopologyOutcome, TopologySmmuBridge};
+use super::smmu_bridge::{TopologyOutcome, TopologySmmuBridge, TopologySmmuBridgeSnapshot};
 use super::templates;
 use super::topology_graph::{TopologyGraph, TopologyNode};
 use super::verifier::HybridVerifier;
@@ -1120,6 +1120,50 @@ impl TopologyEngine {
         std::fs::create_dir_all(dir_path).map_err(|e| format!("create dir {}: {}", dir, e))?;
         posterior_epoch::validate_epoch_for_save(dir_path)?;
 
+        self.save_core_state_files(dir_path)?;
+        remove_smmu_state_if_present(dir_path)?;
+        posterior_epoch::write_topology_state_manifest(dir_path, "TopologyEngine::save_state")?;
+
+        info!(
+            dir = dir,
+            bandit_arms = self.bandit.arm_count(),
+            archive_cells = self.archive.cell_count(),
+            cma_generation = self.cma_emitter.generation,
+            "engine_state_saved"
+        );
+
+        Ok(())
+    }
+
+    /// Save topology state plus the caller-owned S-MMU graph/bridge metadata.
+    ///
+    /// This is the contract used by the PyO3 wrapper, where `PyTopologyEngine`
+    /// owns the live `MultiViewMMU` alongside the core engine. A14 validation
+    /// remains first, and the manifest is written only after every state file
+    /// has been installed.
+    pub fn save_state_with_smmu(&self, dir: &str, smmu: &MultiViewMMU) -> Result<(), String> {
+        let dir_path = std::path::Path::new(dir);
+        std::fs::create_dir_all(dir_path).map_err(|e| format!("create dir {}: {}", dir, e))?;
+        posterior_epoch::validate_epoch_for_save(dir_path)?;
+
+        self.save_core_state_files(dir_path)?;
+        self.write_smmu_state_file(dir_path, smmu)?;
+        posterior_epoch::write_topology_state_manifest(dir_path, "TopologyEngine::save_state")?;
+
+        info!(
+            dir = dir,
+            bandit_arms = self.bandit.arm_count(),
+            archive_cells = self.archive.cell_count(),
+            cma_generation = self.cma_emitter.generation,
+            smmu_chunks = smmu.chunk_count(),
+            bridge_chunks = self.bridge.chunk_count(),
+            "engine_state_saved"
+        );
+
+        Ok(())
+    }
+
+    fn save_core_state_files(&self, dir_path: &std::path::Path) -> Result<(), String> {
         let bandit_path = dir_path.join("bandit_state.db");
         let archive_path = dir_path.join("archive_state.db");
         let extras_path = dir_path.join("engine_extras.json");
@@ -1150,17 +1194,24 @@ impl TopologyEngine {
         std::fs::write(&extras_path, extras_json)
             .map_err(|e| format!("write engine extras: {}", e))?;
 
-        posterior_epoch::write_topology_state_manifest(dir_path, "TopologyEngine::save_state")?;
-
-        info!(
-            dir = dir,
-            bandit_arms = self.bandit.arm_count(),
-            archive_cells = self.archive.cell_count(),
-            cma_generation = self.cma_emitter.generation,
-            "engine_state_saved"
-        );
-
         Ok(())
+    }
+
+    fn write_smmu_state_file(
+        &self,
+        dir_path: &std::path::Path,
+        smmu: &MultiViewMMU,
+    ) -> Result<(), String> {
+        let snapshot = TopologySmmuStateSnapshot {
+            version: 1,
+            multi_view_mmu: smmu.to_snapshot(),
+            topology_bridge: self.bridge.to_snapshot(),
+        };
+        write_json_atomic(
+            &dir_path.join(posterior_epoch::SMMU_STATE_FILENAME),
+            &snapshot,
+            "topology smmu state",
+        )
     }
 
     /// Load bandit posteriors and MAP-Elites archive from a directory.
@@ -1172,6 +1223,49 @@ impl TopologyEngine {
         let dir_path = std::path::Path::new(dir);
         posterior_epoch::validate_epoch_for_load(dir_path)?;
 
+        let counts = self.load_core_state_files(dir_path)?;
+        self.bridge = TopologySmmuBridge::new();
+        self.rebuild_topology_cache_from_archive();
+
+        info!(
+            dir = dir,
+            bandit_arms = counts.0,
+            archive_cells = counts.1,
+            "engine_state_loaded"
+        );
+
+        Ok(counts)
+    }
+
+    /// Load topology state and restore the caller-owned S-MMU graph/bridge metadata.
+    pub fn load_state_with_smmu(
+        &mut self,
+        dir: &str,
+        smmu: &mut MultiViewMMU,
+    ) -> Result<(usize, usize), String> {
+        let dir_path = std::path::Path::new(dir);
+        posterior_epoch::validate_epoch_for_load(dir_path)?;
+
+        let counts = self.load_core_state_files(dir_path)?;
+        self.load_smmu_state_file_if_present(dir_path, smmu)?;
+        self.rebuild_topology_cache_from_archive();
+
+        info!(
+            dir = dir,
+            bandit_arms = counts.0,
+            archive_cells = counts.1,
+            smmu_chunks = smmu.chunk_count(),
+            bridge_chunks = self.bridge.chunk_count(),
+            "engine_state_loaded"
+        );
+
+        Ok(counts)
+    }
+
+    fn load_core_state_files(
+        &mut self,
+        dir_path: &std::path::Path,
+    ) -> Result<(usize, usize), String> {
         let mut bandit_arms = 0usize;
         let mut archive_cells = 0usize;
 
@@ -1224,14 +1318,74 @@ impl TopologyEngine {
             debug!(path = ?extras_path, "engine_extras_file_not_found_cold_start");
         }
 
+        Ok((bandit_arms, archive_cells))
+    }
+
+    fn load_smmu_state_file_if_present(
+        &mut self,
+        dir_path: &std::path::Path,
+        smmu: &mut MultiViewMMU,
+    ) -> Result<(), String> {
+        let smmu_path = dir_path.join(posterior_epoch::SMMU_STATE_FILENAME);
+        if !smmu_path.exists() {
+            *smmu = MultiViewMMU::new();
+            self.bridge = TopologySmmuBridge::new();
+            debug!(path = ?smmu_path, "smmu_state_file_not_found_cold_start");
+            return Ok(());
+        }
+
+        let raw = std::fs::read(&smmu_path).map_err(|e| format!("read smmu state: {}", e))?;
+        let snapshot: TopologySmmuStateSnapshot =
+            serde_json::from_slice(&raw).map_err(|e| format!("deserialize smmu state: {}", e))?;
+        if snapshot.version != 1 {
+            return Err(format!(
+                "unsupported topology S-MMU state version {}",
+                snapshot.version
+            ));
+        }
+
+        let restored_smmu = MultiViewMMU::from_snapshot(snapshot.multi_view_mmu)?;
+        let restored_bridge =
+            TopologySmmuBridge::from_snapshot(snapshot.topology_bridge, &restored_smmu)?;
+        let restored_chunks = restored_smmu.chunk_count();
+        let restored_bridge_chunks = restored_bridge.chunk_count();
+        *smmu = restored_smmu;
+        self.bridge = restored_bridge;
+
         info!(
-            dir = dir,
-            bandit_arms = bandit_arms,
-            archive_cells = archive_cells,
-            "engine_state_loaded"
+            smmu_chunks = restored_chunks,
+            bridge_chunks = restored_bridge_chunks,
+            "smmu_state_loaded"
         );
 
-        Ok((bandit_arms, archive_cells))
+        Ok(())
+    }
+
+    fn rebuild_topology_cache_from_archive(&mut self) {
+        self.topology_cache.clear();
+        let graphs: Vec<TopologyGraph> = self
+            .archive
+            .all_entries()
+            .into_iter()
+            .map(|(_, entry)| entry.graph.clone())
+            .collect();
+        for graph in graphs {
+            self.cache_topology(graph);
+        }
+    }
+}
+
+#[cfg(feature = "cognitive")]
+fn remove_smmu_state_if_present(dir_path: &std::path::Path) -> Result<(), String> {
+    let path = dir_path.join(posterior_epoch::SMMU_STATE_FILENAME);
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(format!(
+            "remove stale smmu state {}: {}",
+            path.display(),
+            err
+        )),
     }
 }
 
@@ -1242,6 +1396,14 @@ impl TopologyEngine {
 struct EngineExtras {
     cma_emitter: CmaEmitter,
     mutation_stats: MutationStats,
+}
+
+#[cfg(feature = "cognitive")]
+#[derive(serde::Serialize, serde::Deserialize)]
+struct TopologySmmuStateSnapshot {
+    version: u32,
+    multi_view_mmu: MultiViewMMUSnapshot,
+    topology_bridge: TopologySmmuBridgeSnapshot,
 }
 
 impl Default for TopologyEngine {

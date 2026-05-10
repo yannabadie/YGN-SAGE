@@ -42,6 +42,8 @@ from pathlib import Path
 
 import pytest
 
+from sage.posterior_epoch import write_topology_state_manifest
+
 import sage_core
 
 
@@ -53,6 +55,43 @@ _REBUILD_HINT = (
     "(Per CLAUDE.md 'Quick Commands' block. CI builds fresh wheels per "
     "commit so this test passes on every CI run.)"
 )
+
+
+def _write_epoch_marker(state_dir: Path, reason: str) -> None:
+    (state_dir / "posterior_epoch.json").write_text(
+        json.dumps(
+            {
+                "epoch": 1,
+                "started_utc": "2026-05-10T00:00:00Z",
+                "reason": reason,
+                "policy": "test",
+                "audit_dump": "",
+                "commit_at_reset": "",
+                "predecessor_state": "",
+                "first_clean_run_after": None,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _engine_with_smmu_outcome() -> tuple[sage_core.TopologyEngine, int]:
+    engine = sage_core.TopologyEngine()
+    result = engine.generate("Write a merge sort function", None, 2, 0.0)
+    topology = result.topology
+    engine.cache_topology(topology)
+    engine.record_outcome(
+        topology.id,
+        "merge sort completed successfully",
+        ["sort", "merge", "algorithm"],
+        None,
+        0.93,
+        0.008,
+        120.0,
+    )
+    chunk_count = engine.smmu_chunk_count()
+    assert chunk_count > 0, "fixture must populate the internal PyO3 S-MMU"
+    return engine, chunk_count
 
 
 def test_save_state_writes_topology_state_manifest(tmp_path: Path) -> None:
@@ -156,6 +195,180 @@ def test_save_state_writes_topology_state_manifest(tmp_path: Path) -> None:
             f"manifest size_bytes mismatch for {name}: "
             f"manifest={expected_size} actual={actual_size}"
         )
+
+
+def test_save_state_writes_smmu_snapshot_and_manifest_binding(tmp_path: Path) -> None:
+    """TopologyEngine.save_state must persist its internal PyO3-owned S-MMU.
+
+    Standalone MultiViewMMU.save_json/load_json is not enough for runtime
+    integrity: the S-MMU that feeds TopologyEngine's smmu_hit path is owned
+    inside the PyO3 wrapper. A save_state claim is only truthful if that
+    wrapper-owned S-MMU is written to state and fingerprinted in the A14
+    manifest.
+    """
+    state_dir = tmp_path / "save_state_smmu_probe"
+    state_dir.mkdir()
+    _write_epoch_marker(state_dir, "regression test for save_state smmu contract")
+
+    engine, chunk_count = _engine_with_smmu_outcome()
+    engine.save_state(str(state_dir))
+
+    smmu_path = state_dir / "smmu_state.json"
+    assert smmu_path.exists(), (
+        "save_state did not persist the internal PyO3 S-MMU as "
+        "smmu_state.json. Standalone MultiViewMMU.save_json evidence is "
+        "insufficient for TopologyEngine.save_state.\n\n"
+        f"{_REBUILD_HINT}"
+    )
+
+    smmu_snapshot = json.loads(smmu_path.read_text(encoding="utf-8"))
+    assert smmu_snapshot["version"] == 1
+    assert len(smmu_snapshot["multi_view_mmu"]["chunks"]) == chunk_count
+    assert len(smmu_snapshot["topology_bridge"]["chunk_meta"]) == chunk_count
+
+    manifest = json.loads(
+        (state_dir / "topology_state_manifest.json").read_text(encoding="utf-8")
+    )
+    smmu_entries = [
+        entry for entry in manifest["state_files"] if entry["name"] == "smmu_state.json"
+    ]
+    assert len(smmu_entries) == 1, (
+        "topology_state_manifest.json must include exactly one smmu_state.json "
+        f"entry. Got: {[entry['name'] for entry in manifest['state_files']]}"
+    )
+    entry = smmu_entries[0]
+    actual = smmu_path.read_bytes()
+    assert entry["size_bytes"] == len(actual)
+    assert entry["sha256"] == hashlib.sha256(actual).hexdigest()
+
+
+def test_load_state_restores_internal_smmu(tmp_path: Path) -> None:
+    """Fresh PyTopologyEngine.load_state must restore S-MMU chunks."""
+    state_dir = tmp_path / "load_state_smmu_probe"
+    state_dir.mkdir()
+    _write_epoch_marker(state_dir, "regression test for load_state smmu contract")
+
+    engine, chunk_count = _engine_with_smmu_outcome()
+    engine.save_state(str(state_dir))
+
+    restored = sage_core.TopologyEngine()
+    assert restored.smmu_chunk_count() == 0
+    restored.load_state(str(state_dir))
+    assert restored.smmu_chunk_count() == chunk_count
+
+
+def test_load_state_fails_closed_on_smmu_manifest_hash_mismatch(tmp_path: Path) -> None:
+    """A tampered S-MMU snapshot must trip A14 before state is accepted."""
+    state_dir = tmp_path / "smmu_hash_mismatch_probe"
+    state_dir.mkdir()
+    _write_epoch_marker(state_dir, "regression test for smmu manifest hash mismatch")
+
+    engine, _chunk_count = _engine_with_smmu_outcome()
+    engine.save_state(str(state_dir))
+
+    smmu_path = state_dir / "smmu_state.json"
+    smmu_path.write_text(
+        smmu_path.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+
+    restored = sage_core.TopologyEngine()
+    with pytest.raises(Exception) as exc:
+        restored.load_state(str(state_dir))
+
+    message = str(exc.value)
+    assert "smmu_state.json" in message
+    assert "sha256" in message or "size" in message
+    assert restored.smmu_chunk_count() == 0
+
+
+def test_load_state_restores_functional_smmu_hit_path(tmp_path: Path) -> None:
+    """Restored S-MMU must be usable by the live smmu_hit generation path."""
+    state_dir = tmp_path / "smmu_hit_after_reload_probe"
+    state_dir.mkdir()
+    _write_epoch_marker(state_dir, "regression test for live smmu hit after reload")
+
+    engine = sage_core.TopologyEngine()
+    embedding = [1.0, 0.0, 0.0, 0.0]
+
+    first = engine.generate("debug rust memory graph baseline", None, 2, 0.0)
+    engine.cache_topology(first.topology)
+    engine.record_outcome(
+        first.topology.id,
+        "debug rust memory graph baseline",
+        ["debug", "rust", "memory"],
+        embedding,
+        0.95,
+        0.005,
+        100.0,
+    )
+
+    second = engine.generate("debug rust memory graph followup", None, 2, 0.0)
+    engine.cache_topology(second.topology)
+    engine.record_outcome(
+        second.topology.id,
+        "debug rust memory graph followup",
+        ["debug", "rust", "memory"],
+        embedding,
+        0.70,
+        0.02,
+        120.0,
+    )
+    assert engine.smmu_chunk_count() == 2
+
+    engine.save_state(str(state_dir))
+
+    restored = sage_core.TopologyEngine()
+    restored.load_state(str(state_dir))
+
+    result = restored.generate_with_options(
+        "debug rust memory graph next",
+        None,
+        2,
+        0.0,
+        True,
+        False,
+        False,
+        False,
+        False,
+    )
+    assert result.source == "smmu_hit"
+    assert result.topology.node_count() > 0
+
+
+def test_save_state_refuses_smmu_write_under_a14_bypass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Forensic A14 bypass remains load-only and must not write S-MMU state."""
+    state_dir = tmp_path / "smmu_bypass_save_probe"
+    state_dir.mkdir()
+    _write_epoch_marker(state_dir, "regression test for bypass save refusal")
+
+    engine, _chunk_count = _engine_with_smmu_outcome()
+    monkeypatch.setenv("SAGE_BOOT_BYPASS_EPOCH_GUARD", "1")
+
+    with pytest.raises(Exception) as exc:
+        engine.save_state(str(state_dir))
+
+    assert "bypass" in str(exc.value).lower()
+    assert not (state_dir / "smmu_state.json").exists()
+
+
+def test_load_old_checkpoint_without_smmu_clears_warm_smmu(tmp_path: Path) -> None:
+    """Backward-compatible absence means cold S-MMU, not retained warm memory."""
+    state_dir = tmp_path / "old_checkpoint_without_smmu_probe"
+    state_dir.mkdir()
+    _write_epoch_marker(state_dir, "regression test for old checkpoint compatibility")
+
+    source, _chunk_count = _engine_with_smmu_outcome()
+    source.save_state(str(state_dir))
+    (state_dir / "smmu_state.json").unlink()
+    write_topology_state_manifest(state_dir, writer="test-old-checkpoint")
+
+    warm, _warm_chunk_count = _engine_with_smmu_outcome()
+    assert warm.smmu_chunk_count() > 0
+    warm.load_state(str(state_dir))
+    assert warm.smmu_chunk_count() == 0
 
 
 def test_save_state_manifest_survives_round_trip_load(tmp_path: Path) -> None:

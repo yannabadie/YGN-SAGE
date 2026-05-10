@@ -381,26 +381,29 @@ impl PyTopologyEngine {
         self.smmu.chunk_count()
     }
 
-    /// Save bandit posteriors + MAP-Elites archive to a directory.
+    /// Save bandit posteriors + MAP-Elites archive + internal S-MMU to a directory.
     ///
-    /// Creates `{dir}/bandit_state.db` and `{dir}/archive_state.db`.
+    /// Creates `{dir}/bandit_state.db`, `{dir}/archive_state.db`,
+    /// `{dir}/engine_extras.json`, `{dir}/smmu_state.json`, and the
+    /// A14 `topology_state_manifest.json` binding.
     /// Requires the `cognitive` feature (SQLite persistence).
     #[cfg(feature = "cognitive")]
     pub fn save_state(&self, dir: &str) -> PyResult<()> {
         self.inner
-            .save_state(dir)
+            .save_state_with_smmu(dir, &self.smmu)
             .map_err(pyo3::exceptions::PyIOError::new_err)
     }
 
-    /// Load bandit posteriors + MAP-Elites archive from a directory.
+    /// Load bandit posteriors + MAP-Elites archive + internal S-MMU from a directory.
     ///
-    /// Looks for `{dir}/bandit_state.db` and `{dir}/archive_state.db`.
-    /// Missing files are silently skipped (cold start).
+    /// Looks for `{dir}/bandit_state.db`, `{dir}/archive_state.db`,
+    /// `{dir}/engine_extras.json`, and optional legacy `{dir}/smmu_state.json`.
+    /// Missing S-MMU state is treated as a cold S-MMU start, not retained memory.
     /// Returns `(bandit_arms, archive_cells)` loaded.
     #[cfg(feature = "cognitive")]
     pub fn load_state(&mut self, dir: &str) -> PyResult<(usize, usize)> {
         self.inner
-            .load_state(dir)
+            .load_state_with_smmu(dir, &mut self.smmu)
             .map_err(pyo3::exceptions::PyIOError::new_err)
     }
 

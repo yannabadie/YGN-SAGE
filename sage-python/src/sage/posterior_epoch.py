@@ -19,6 +19,7 @@ POSTERIOR_EPOCH_FILENAME = "posterior_epoch.json"
 CONTAMINATED_MARKER_FILENAME = "_CONTAMINATED.json"
 TOPOLOGY_STATE_MANIFEST_FILENAME = "topology_state_manifest.json"
 TOPOLOGY_STATE_MANIFEST_TYPE = "YGN-SAGE_A14_ACTIVE_TOPOLOGY_STATE_MANIFEST"
+SMMU_STATE_FILENAME = "smmu_state.json"
 
 _TOPOLOGY_STATE_FILES: tuple[str, ...] = (
     "bandit_state.db",
@@ -28,6 +29,7 @@ _TOPOLOGY_STATE_FILES: tuple[str, ...] = (
     "archive_state.db-wal",
     "archive_state.db-shm",
     "engine_extras.json",
+    SMMU_STATE_FILENAME,
 )
 
 _EpochStatus = Literal["missing", "match", "mismatch", "malformed"]
