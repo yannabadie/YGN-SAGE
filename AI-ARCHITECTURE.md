@@ -519,9 +519,9 @@ Pipeline emits *_event with payload :
 | EpisodicMemory | SQLite WAL | `~/.sage/episodic.db` | Persistant cross-session | Runtime |
 | SemanticMemory | SQLite + in-memory | Per-agent | Persistant | Runtime |
 | CausalMemory | SQLite + in-memory | Per-agent | Persistant | Runtime |
-| **A14 state files** | bandit_state.db, archive_state.db, engine_extras.json, **topology_state_manifest.json** | `~/.sage/` | Persistant + epoch-bound | Runtime |
+| **A14 state files** | bandit_state.db, archive_state.db, engine_extras.json, smmu_state.json, **topology_state_manifest.json** | `~/.sage/` | Persistant + epoch-bound | Runtime |
 | posterior_epoch | JSON | `~/.sage/posterior_epoch.json` | Persistant | Runtime |
-| S-MMU | In-memory petgraph | Global | Process-life | Runtime |
+| S-MMU | In-memory petgraph + A14-bound `smmu_state.json` for TopologyEngine | Global | Process-life + topology persistence | Runtime |
 | MAP-Elites Archive | In-memory + SQLite (cognitive) | TopologyEngine.archive | Cross-session via persistence | Runtime |
 | Bandit Posteriors | In-memory + SQLite (cognitive) | ContextualBandit | Cross-session via persistence | Runtime |
 | ModelRegistry | TOML (cards.toml) + live discovery | `sage-core/config/cards.toml` | Statique (23 modèles) | Runtime |
@@ -540,7 +540,7 @@ Pipeline emits *_event with payload :
 | Episodic memory écrite ET relue à runtime | `Réel et validé` | `agent_loop.py` + `phases/perceive.py` |
 | Semantic memory écrite ET relue à runtime | `Réel et validé` | T2 cycle-9 wiring (`886597de`) |
 | Causal memory écrite via memory_agent | `Réel et validé` | T2 wiring shipped |
-| S-MMU relue pour Path 1 sélection topologie | `Réel et validé` | `TopologyEngine.generate()` |
+| S-MMU relue pour Path 1 sélection topologie | `Réel et validé` | `TopologyEngine.generate()` + save/load contract `a75af341` |
 | MAP-Elites persiste entre sessions | `Réel et validé` (NEW) | Persistence via feature `cognitive` (default) |
 | Bandit posteriors persistent (incl. context_sum/count) | `Réel et validé` (NEW) | `restore_arm` fix (`d9b0b659`, cgpro find) |
 | A14 epoch fail-closed | `Réel et validé` (cycle-8) | `posterior_epoch.json` + manifest SHA-256 binding (`f9521616`) |

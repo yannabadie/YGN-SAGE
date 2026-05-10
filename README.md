@@ -190,6 +190,7 @@ Plus:
 - Utility-based eviction (recency × access_count)
 - Auto-GC at 10K chunks
 - Composite write gate (5 signals: salience 25%, novelty 30%, reliability 20%, recency 10%, relevance 15%) — [arXiv 2603.15994](https://arxiv.org/abs/2603.15994): 100% precision vs 13% without gate
+- TopologyEngine S-MMU persistence via A14-bound `smmu_state.json` (MultiViewMMU snapshot + topology bridge metadata), tested for manifest hash binding and `smmu_hit` viability after reload
 
 **Causal wiring**: agent_loop traces tool call → result → decision chains. The causal graph is injected into LLM prompts for informed reasoning. Based on [AMA-Bench 2602.22769](https://arxiv.org/abs/2602.22769): memory fails without causality.
 

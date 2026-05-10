@@ -42,6 +42,12 @@ These 10 invariants are **conceptually a family** but **physically deliberately 
 
 > "payload_schemas.py est naturellement couplé à runtime/event_log, tandis que posterior_epoch est naturellement couplé à topology et aux fichiers bandit_state.db, archive_state.db, engine_extras.json. Un refactor physique maintenant créerait surtout churn/import risk sans benchmark gain."
 
+Cycle 2026-05-10 extends the same posterior-epoch binding to `smmu_state.json`
+for the Python-facing `TopologyEngine.save_state/load_state` path. The file is
+treated as an A14 topology-state file only when present, so old checkpoints
+without S-MMU state load as cold S-MMU rather than retaining warm process
+memory.
+
 Phase 2 / v0.2 may add re-export aliases (`sage.runtime.integrity.epoch`, `sage.runtime.integrity.schemas`) without moving the actual files. **Do not relocate modules in cycle 9.**
 
 ## Adversarial threats this ledger defends against

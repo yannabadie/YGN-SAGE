@@ -3,15 +3,25 @@
 claims:
   - id: memory.smmu_persistence
     status: delivered
-    description: "MultiViewMMU (S-MMU) save/load JSON roundtrip with retrieval equivalence."
-    evidence_test: "sage-python/tests/test_smmu_persistence_contract.py"
+    description: "S-MMU save/load JSON roundtrip plus TopologyEngine.save_state/load_state wiring."
+    evidence_test: "sage-python/tests/test_save_state_manifest_contract.py"
     evidence_benchmark: "n/a"
-    evidence_commit: "f3abcde7"
-    last_verified_utc: "2026-05-08T00:00:00Z"
+    evidence_commit: "a75af34118e40ca0a17707a7a3f4b4c3eba4ddbc"
+    last_verified_utc: "2026-05-10T07:04:55Z"
     owner: "yann"
     notes: |
       Phase 3 (2026-05-07): MultiViewMMUSnapshot + serde derives +
       to_snapshot/from_snapshot/save_json/load_json on MultiViewMMU.
       PyO3 wrappers: save_json(path) + load_json(path) (staticmethod).
       2 Rust tests (snapshot retrieval eq, JSON roundtrip) + 4 Python
-      boundary tests. Not yet wired into TopologyEngine.save_state.
+      boundary tests.
+
+      Cycle 2026-05-10: Python-facing sage_core.TopologyEngine.save_state/load_state
+      now writes and restores smmu_state.json, fingerprinted by
+      topology_state_manifest.json. The file contains MultiViewMMUSnapshot plus
+      TopologySmmuBridge metadata so restored S-MMU state remains live for the
+      smmu_hit path, not just counted. Boundary tests assert exact manifest
+      SHA256/size binding, fresh-engine S-MMU restoration, tamper fail-closed
+      behavior, S-MMU hit viability after reload, bypass save refusal, and
+      backward-compatible cold S-MMU semantics for old checkpoints without
+      smmu_state.json.
