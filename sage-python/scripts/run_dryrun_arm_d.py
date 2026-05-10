@@ -793,12 +793,17 @@ def _timeout_task_result(
     prefix: str,
     fmt_module: Any,
     task_timeout_s: float,
+    expect_default_pipeline_learn: bool,
 ) -> dict[str, Any]:
     instance_id = task["instance_id"]
     per_task_events = output_dir / "per_task" / f"{instance_id}.events.jsonl"
     per_task_events.parent.mkdir(parents=True, exist_ok=True)
-    per_task_events.write_text(
-        json.dumps(
+    needs_leading_newline = False
+    if per_task_events.is_file() and per_task_events.stat().st_size > 0:
+        with per_task_events.open("rb") as existing:
+            existing.seek(-1, os.SEEK_END)
+            needs_leading_newline = existing.read(1) not in {b"\n", b"\r"}
+    timeout_line = json.dumps(
             {
                 "event_type": "runner_timeout",
                 "instance_id": instance_id,
@@ -807,10 +812,10 @@ def _timeout_task_result(
             ensure_ascii=False,
             sort_keys=True,
         )
-        + "\n",
-        encoding="utf-8",
-        newline="\n",
-    )
+    with per_task_events.open("a", encoding="utf-8", newline="\n") as handle:
+        if needs_leading_newline:
+            handle.write("\n")
+        handle.write(timeout_line + "\n")
     summary = {
         "instance_id": instance_id,
         "exit_code": None,
@@ -832,7 +837,7 @@ def _timeout_task_result(
             run_id=None,
             source_trace_dir=None,
             archived_trace_dir=None,
-            expect_default_pipeline_learn=False,
+            expect_default_pipeline_learn=expect_default_pipeline_learn,
         ),
     }
     return {
@@ -1078,6 +1083,7 @@ async def run(
                 prefix=prefix,
                 fmt_module=fmt_module,
                 task_timeout_s=task_timeout_s,
+                expect_default_pipeline_learn=expect_default_pipeline_learn,
             )
         summaries.append(result["summary"])
         records.append(result["record"])

@@ -715,3 +715,36 @@ def test_run_writes_aggregate_events_jsonl(tmp_path) -> None:
         if line.strip()
     ]
     assert rows[0]["event_type"] == "synthetic_mock"
+
+
+def test_timeout_task_result_appends_runner_timeout_to_partial_events(
+    tmp_path,
+) -> None:
+    output_dir = tmp_path / "out"
+    instance_id = "task-1"
+    per_task_events = output_dir / "per_task" / f"{instance_id}.events.jsonl"
+    per_task_events.parent.mkdir(parents=True)
+    per_task_events.write_text(
+        '{"event_type":"cli_started"}\n',
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    result = arm_d._timeout_task_result(
+        {"instance_id": instance_id},
+        output_dir,
+        prefix="test",
+        fmt_module=_FakeFormatModule(),
+        task_timeout_s=120.0,
+        expect_default_pipeline_learn=True,
+    )
+
+    rows = [
+        json.loads(line)
+        for line in per_task_events.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert [row["event_type"] for row in rows] == ["cli_started", "runner_timeout"]
+    assert result["summary"]["learning_evidence_boundary"][
+        "expect_default_pipeline_learn"
+    ] is True
