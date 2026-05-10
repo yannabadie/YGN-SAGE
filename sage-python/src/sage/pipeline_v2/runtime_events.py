@@ -209,10 +209,11 @@ def runtime_provider_id_for_model(
     model_id: str,
     ctx: "PipelineContext",
 ) -> str:
-    """Resolve a model_id to its provider_id using assignments + provider_pool + default config."""
-    for node_idx, assigned_model in ctx.assignments.items():
-        if assigned_model == model_id and node_idx in ctx.provider_hints:
-            return str(ctx.provider_hints[node_idx])
+    """Resolve a model_id to its authoritative provider_id.
+
+    ``ctx.provider_hints`` is diagnostic input to assignment, not an
+    authorization source. It must not relabel audit events.
+    """
     if pipeline.provider_pool is not None and hasattr(pipeline.provider_pool, "infer_provider"):
         try:
             provider_id = pipeline.provider_pool.infer_provider(model_id)

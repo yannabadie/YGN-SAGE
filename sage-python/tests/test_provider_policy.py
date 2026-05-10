@@ -16,6 +16,7 @@ from sage.pipeline_v2.provider_policy import (
     evaluate_provider_policy,
     install_provider_call_guards,
 )
+from sage.pipeline_v2.runtime_events import runtime_provider_id_for_model
 from sage.runtime.event_log import RuntimeEventLog, install_event_log
 
 
@@ -100,6 +101,17 @@ def test_provider_policy_ignores_spoofed_provider_hint() -> None:
     assert violation.provider_id == "openai"
     assert violation.hint_provider_id == "google"
     assert violation.reason == "denylist"
+
+
+def test_model_assigned_provider_id_ignores_spoofed_provider_hint() -> None:
+    pipeline = _make_pipeline()
+    ctx = PipelineContext(task="x", budget=5.0)
+    ctx.assignments = {0: "gpt-5.5-pro"}
+    ctx.provider_hints = {0: "google"}
+
+    provider_id = runtime_provider_id_for_model(pipeline, "gpt-5.5-pro", ctx)
+
+    assert provider_id == "openai"
 
 
 @pytest.mark.asyncio
