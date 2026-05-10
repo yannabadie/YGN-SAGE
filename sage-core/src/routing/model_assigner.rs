@@ -1,6 +1,7 @@
 //! ModelAssigner — per-node model assignment using ModelCard scoring.
 
 use std::cmp::Ordering;
+use std::collections::HashSet;
 use std::sync::Mutex;
 
 use pyo3::prelude::*;
@@ -21,6 +22,62 @@ const PROVIDER_HINT_BONUS: f32 = 0.15;
 
 /// Fixed token estimate for cost normalization (input, output).
 const COST_ESTIMATE_TOKENS: (u32, u32) = (1000, 500);
+
+#[derive(Debug, Clone, Default)]
+struct ProviderPolicyFilter {
+    allowlist: Option<HashSet<String>>,
+    denylist: HashSet<String>,
+}
+
+impl ProviderPolicyFilter {
+    fn inactive() -> Self {
+        Self::default()
+    }
+
+    fn from_slices(allowlist: Option<&[String]>, denylist: Option<&[String]>) -> Self {
+        let allow = normalize_provider_set(allowlist);
+        Self {
+            allowlist: if allow.is_empty() { None } else { Some(allow) },
+            denylist: normalize_provider_set(denylist),
+        }
+    }
+
+    fn active(&self) -> bool {
+        self.allowlist.is_some() || !self.denylist.is_empty()
+    }
+
+    fn violation_reason(&self, provider: &str) -> Option<&'static str> {
+        if !self.active() {
+            return None;
+        }
+        let normalized = normalize_provider(provider);
+        if normalized.is_empty() {
+            return Some("provider_policy_unknown_provider");
+        }
+        if self.denylist.contains(&normalized) {
+            return Some("provider_policy_denylist");
+        }
+        if let Some(allowlist) = &self.allowlist {
+            if !allowlist.contains(&normalized) {
+                return Some("provider_policy_outside_allowlist");
+            }
+        }
+        None
+    }
+}
+
+fn normalize_provider(provider: &str) -> String {
+    provider.trim().to_ascii_lowercase()
+}
+
+fn normalize_provider_set(values: Option<&[String]>) -> HashSet<String> {
+    values
+        .unwrap_or(&[])
+        .iter()
+        .map(|value| normalize_provider(value))
+        .filter(|value| !value.is_empty())
+        .collect()
+}
 
 /// Roles that templates.rs explicitly marks as "sink" (final-stage
 /// forwarder) by assigning `SINK_NODE_PROMPT` to them. Single source of
@@ -281,6 +338,25 @@ impl ModelAssigner {
         provider_hints: &[(usize, String)],
         task_system: Option<CognitiveSystem>,
     ) -> usize {
+        self.assign_models_with_policy_inner(
+            graph,
+            task_domain,
+            budget_usd,
+            provider_hints,
+            task_system,
+            &ProviderPolicyFilter::inactive(),
+        )
+    }
+
+    fn assign_models_with_policy_inner(
+        &self,
+        graph: &mut TopologyGraph,
+        task_domain: &str,
+        budget_usd: f32,
+        provider_hints: &[(usize, String)],
+        task_system: Option<CognitiveSystem>,
+        provider_policy: &ProviderPolicyFilter,
+    ) -> usize {
         self.clear_last_assignment_trace();
         let node_count = graph.node_count();
         let mut remaining_budget = budget_usd;
@@ -298,7 +374,11 @@ impl ModelAssigner {
             .iter()
             .map(|c| c.estimate_cost(input_tok, output_tok))
             .collect();
-        let max_cost = model_costs.iter().fold(0.001_f32, |a, &b| a.max(b));
+        let max_cost = all_models
+            .iter()
+            .zip(model_costs.iter())
+            .filter(|(card, _)| provider_policy.violation_reason(&card.provider).is_none())
+            .fold(0.001_f32, |acc, (_, &cost)| acc.max(cost));
 
         // Build provider hint lookup
         let hint_map: std::collections::HashMap<usize, &str> = provider_hints
@@ -333,8 +413,24 @@ impl ModelAssigner {
             // Respect pre-assigned model_id from template (e.g., formal_solver
             // pins formalizer to "deepseek-chat"). Only override if empty.
             if !node.model_id.is_empty() {
-                assigned += 1;
-                continue;
+                let policy_reason = if provider_policy.active() {
+                    match self.registry.get(&node.model_id) {
+                        Some(card) => provider_policy.violation_reason(&card.provider),
+                        None => Some("provider_policy_unknown_provider"),
+                    }
+                } else {
+                    None
+                };
+                if policy_reason.is_none() {
+                    assigned += 1;
+                    continue;
+                }
+                warn!(
+                    node = idx,
+                    model = %node.model_id,
+                    reason = policy_reason.unwrap_or("provider_policy_violation"),
+                    "preassigned_model_policy_filtered"
+                );
             }
 
             let local_system = match node.system {
@@ -367,6 +463,9 @@ impl ModelAssigner {
             let mut node_candidates: Vec<(usize, PyModelCandidateTrace)> = Vec::new();
 
             for (card_idx, card) in all_models.iter().enumerate() {
+                if provider_policy.violation_reason(&card.provider).is_some() {
+                    continue;
+                }
                 // Skip models from excluded providers (dead at boot health check)
                 if self.excluded_providers.iter().any(|p| p == &card.provider) {
                     continue;
@@ -504,6 +603,27 @@ impl ModelAssigner {
         exclude_ids: Option<&[String]>,
         task_system: Option<CognitiveSystem>,
     ) -> Option<String> {
+        self.assign_single_node_with_policy_inner(
+            graph,
+            node_idx,
+            task_domain,
+            budget_usd,
+            exclude_ids,
+            task_system,
+            &ProviderPolicyFilter::inactive(),
+        )
+    }
+
+    fn assign_single_node_with_policy_inner(
+        &self,
+        graph: &mut TopologyGraph,
+        node_idx: usize,
+        task_domain: &str,
+        budget_usd: f32,
+        exclude_ids: Option<&[String]>,
+        task_system: Option<CognitiveSystem>,
+        provider_policy: &ProviderPolicyFilter,
+    ) -> Option<String> {
         let node = graph.try_get_node(node_idx).ok()?;
         let local_system = match node.system {
             1 => CognitiveSystem::S1,
@@ -521,11 +641,18 @@ impl ModelAssigner {
             .iter()
             .map(|c| c.estimate_cost(input_tok, output_tok))
             .collect();
-        let max_cost = model_costs.iter().fold(0.001_f32, |a, &b| a.max(b));
+        let max_cost = all_models
+            .iter()
+            .zip(model_costs.iter())
+            .filter(|(card, _)| provider_policy.violation_reason(&card.provider).is_none())
+            .fold(0.001_f32, |acc, (_, &cost)| acc.max(cost));
 
         let mut best_id: Option<String> = None;
         let mut best_score: f32 = f32::NEG_INFINITY;
         for (card_idx, card) in all_models.iter().enumerate() {
+            if provider_policy.violation_reason(&card.provider).is_some() {
+                continue;
+            }
             // Skip models from excluded providers (dead at boot health check)
             if self.excluded_providers.iter().any(|p| p == &card.provider) {
                 continue;
@@ -594,7 +721,7 @@ impl ModelAssigner {
     /// and drives role-aware tier promotion (see `effective_system`). When
     /// omitted, behaviour is unchanged from the legacy per-node-only
     /// scoring — same path every bench that existed pre-F7 ran.
-    #[pyo3(signature = (graph, task_domain, budget_usd, provider_hints=None, task_system=None))]
+    #[pyo3(signature = (graph, task_domain, budget_usd, provider_hints=None, task_system=None, provider_allowlist=None, provider_denylist=None))]
     fn assign_models(
         &self,
         graph: &mut TopologyGraph,
@@ -602,6 +729,8 @@ impl ModelAssigner {
         budget_usd: f32,
         provider_hints: Option<Vec<(usize, String)>>,
         task_system: Option<u8>,
+        provider_allowlist: Option<Vec<String>>,
+        provider_denylist: Option<Vec<String>>,
     ) -> PyResult<usize> {
         let task_sys = task_system.and_then(|n| match n {
             1 => Some(CognitiveSystem::S1),
@@ -613,7 +742,18 @@ impl ModelAssigner {
             Some(h) => h.as_slice(),
             None => &[],
         };
-        Ok(self.assign_models_with_hints_inner(graph, task_domain, budget_usd, hints, task_sys))
+        let provider_policy = ProviderPolicyFilter::from_slices(
+            provider_allowlist.as_deref(),
+            provider_denylist.as_deref(),
+        );
+        Ok(self.assign_models_with_policy_inner(
+            graph,
+            task_domain,
+            budget_usd,
+            hints,
+            task_sys,
+            &provider_policy,
+        ))
     }
 
     /// Exclude dead providers from all future assignments.
@@ -626,7 +766,7 @@ impl ModelAssigner {
     /// Assign a model to a single node. Optional ``exclude_model_ids`` skips
     /// specific models (used by FrugalGPT cascade to force an upgrade).
     /// `task_system` drives role-aware tier promotion (see `effective_system`).
-    #[pyo3(signature = (graph, node_idx, task_domain, budget_usd, exclude_model_ids=None, task_system=None))]
+    #[pyo3(signature = (graph, node_idx, task_domain, budget_usd, exclude_model_ids=None, task_system=None, provider_allowlist=None, provider_denylist=None))]
     fn assign_single_node(
         &self,
         graph: &mut TopologyGraph,
@@ -635,6 +775,8 @@ impl ModelAssigner {
         budget_usd: f32,
         exclude_model_ids: Option<Vec<String>>,
         task_system: Option<u8>,
+        provider_allowlist: Option<Vec<String>>,
+        provider_denylist: Option<Vec<String>>,
     ) -> PyResult<String> {
         let task_sys = task_system.and_then(|n| match n {
             1 => Some(CognitiveSystem::S1),
@@ -642,13 +784,18 @@ impl ModelAssigner {
             3 => Some(CognitiveSystem::S3),
             _ => None,
         });
-        self.assign_single_node_inner(
+        let provider_policy = ProviderPolicyFilter::from_slices(
+            provider_allowlist.as_deref(),
+            provider_denylist.as_deref(),
+        );
+        self.assign_single_node_with_policy_inner(
             graph,
             node_idx,
             task_domain,
             budget_usd,
             exclude_model_ids.as_deref(),
             task_sys,
+            &provider_policy,
         )
         .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("No candidate found"))
     }
@@ -883,6 +1030,146 @@ mod tests {
             "Provider hint for {} should flip selection from {} to {}",
             other_provider, assigned_no_hint, expected_with_hint
         );
+    }
+
+    fn provider_policy_registry() -> ModelRegistry {
+        let toml = r#"
+            [[models]]
+            id = "gpt-best"
+            provider = "openai"
+            family = "test"
+            code_score = 0.95
+            reasoning_score = 0.95
+            tool_use_score = 0.95
+            math_score = 0.95
+            formal_z3_strength = 0.7
+            cost_input_per_m = 0.1
+            cost_output_per_m = 0.2
+            latency_ttft_ms = 100.0
+            tokens_per_sec = 200.0
+            s1_affinity = 0.95
+            s2_affinity = 0.95
+            s3_affinity = 0.95
+            recommended_topologies = ["sequential"]
+            supports_tools = true
+            supports_json_mode = true
+            supports_vision = false
+            context_window = 128000
+            [models.domain_scores]
+            code = 0.95
+
+            [[models]]
+            id = "gemini-ok"
+            provider = "google"
+            family = "test"
+            code_score = 0.70
+            reasoning_score = 0.70
+            tool_use_score = 0.70
+            math_score = 0.70
+            formal_z3_strength = 0.5
+            cost_input_per_m = 0.1
+            cost_output_per_m = 0.2
+            latency_ttft_ms = 100.0
+            tokens_per_sec = 200.0
+            s1_affinity = 0.70
+            s2_affinity = 0.70
+            s3_affinity = 0.70
+            recommended_topologies = ["sequential"]
+            supports_tools = true
+            supports_json_mode = true
+            supports_vision = false
+            context_window = 128000
+            [models.domain_scores]
+            code = 0.70
+        "#;
+        ModelRegistry::from_toml_str(toml).unwrap()
+    }
+
+    fn one_policy_node(model_id: &str) -> TopologyGraph {
+        let mut graph = TopologyGraph::try_new("sequential").unwrap();
+        graph.add_node(TopologyNode::new(
+            "worker".into(),
+            model_id.into(),
+            2,
+            vec![],
+            0,
+            10.0,
+            60.0,
+        ));
+        graph
+    }
+
+    #[test]
+    fn test_provider_policy_denylist_filters_highest_candidate() {
+        let registry = provider_policy_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+        let mut baseline = one_policy_node("");
+        assigner.assign_models_inner(&mut baseline, "code", 10.0);
+        assert_eq!(baseline.try_get_node(0).unwrap().model_id, "gpt-best");
+
+        let deny = vec!["openai".to_string()];
+        let policy = ProviderPolicyFilter::from_slices(None, Some(&deny));
+        let mut graph = one_policy_node("");
+        let n =
+            assigner.assign_models_with_policy_inner(&mut graph, "code", 10.0, &[], None, &policy);
+
+        assert_eq!(n, 1);
+        assert_eq!(graph.try_get_node(0).unwrap().model_id, "gemini-ok");
+    }
+
+    #[test]
+    fn test_provider_policy_allowlist_filters_outside_candidates() {
+        let registry = provider_policy_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+        let allow = vec!["google".to_string()];
+        let policy = ProviderPolicyFilter::from_slices(Some(&allow), None);
+        let mut graph = one_policy_node("");
+
+        assigner.assign_models_with_policy_inner(&mut graph, "code", 10.0, &[], None, &policy);
+
+        assert_eq!(graph.try_get_node(0).unwrap().model_id, "gemini-ok");
+    }
+
+    #[test]
+    fn test_provider_hint_does_not_authorize_policy_denied_provider() {
+        let registry = provider_policy_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+        let deny = vec!["openai".to_string()];
+        let policy = ProviderPolicyFilter::from_slices(None, Some(&deny));
+        let hints = vec![(0usize, "openai".to_string())];
+        let mut graph = one_policy_node("");
+
+        assigner.assign_models_with_policy_inner(&mut graph, "code", 10.0, &hints, None, &policy);
+
+        assert_eq!(graph.try_get_node(0).unwrap().model_id, "gemini-ok");
+    }
+
+    #[test]
+    fn test_preassigned_denied_model_is_reassigned_under_provider_policy() {
+        let registry = provider_policy_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+        let deny = vec!["openai".to_string()];
+        let policy = ProviderPolicyFilter::from_slices(None, Some(&deny));
+        let mut graph = one_policy_node("gpt-best");
+
+        assigner.assign_models_with_policy_inner(&mut graph, "code", 10.0, &[], None, &policy);
+
+        assert_eq!(graph.try_get_node(0).unwrap().model_id, "gemini-ok");
+    }
+
+    #[test]
+    fn test_assign_single_node_filters_provider_policy() {
+        let registry = provider_policy_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+        let deny = vec!["openai".to_string()];
+        let policy = ProviderPolicyFilter::from_slices(None, Some(&deny));
+        let mut graph = one_policy_node("");
+
+        let selected = assigner
+            .assign_single_node_with_policy_inner(&mut graph, 0, "code", 10.0, None, None, &policy);
+
+        assert_eq!(selected.as_deref(), Some("gemini-ok"));
+        assert_eq!(graph.try_get_node(0).unwrap().model_id, "gemini-ok");
     }
 
     #[test]

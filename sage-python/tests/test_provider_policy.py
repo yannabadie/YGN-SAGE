@@ -114,6 +114,30 @@ def test_model_assigned_provider_id_ignores_spoofed_provider_hint() -> None:
     assert provider_id == "openai"
 
 
+def test_assign_models_forwards_active_provider_policy_to_assigner() -> None:
+    from sage.pipeline_v2.assign_models import assign_models
+
+    class _Assigner:
+        kwargs: dict[str, Any]
+
+        def assign_models(self, *_args: Any, **kwargs: Any) -> int:
+            self.kwargs = kwargs
+            return 1
+
+    assigner = _Assigner()
+    pipeline = _make_pipeline()
+    pipeline.assigner = assigner
+    _install_policy(pipeline)
+    ctx = PipelineContext(task="x", budget=5.0)
+    ctx.topology = _FakeTopology()
+    ctx.domain = "code"
+
+    assign_models(pipeline, ctx)
+
+    assert assigner.kwargs["provider_allowlist"] == ["deepseek", "google"]
+    assert assigner.kwargs["provider_denylist"] == ["openai"]
+
+
 @pytest.mark.asyncio
 async def test_provider_call_guard_blocks_direct_default_provider() -> None:
     provider = _MustNotBeCalledProvider()

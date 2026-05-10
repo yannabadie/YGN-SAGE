@@ -1347,6 +1347,9 @@ class TopologyRunner:
 
         while True:
             try:
+                from sage.pipeline_v2.provider_policy import provider_policy_assigner_kwargs
+
+                policy_kwargs = provider_policy_assigner_kwargs()
                 fallback_model_id = self._assigner.assign_single_node(
                     self.graph,
                     node_idx,
@@ -1354,7 +1357,51 @@ class TopologyRunner:
                     budget_usd=self._remaining_budget_usd(),
                     exclude_model_ids=sorted(excluded) or None,
                     task_system=getattr(node, "system", None),
+                    **policy_kwargs,
                 )
+            except TypeError:
+                if policy_kwargs:
+                    try:
+                        fallback_model_id = self._assigner.assign_single_node(
+                            self.graph,
+                            node_idx,
+                            task_domain=self._task_domain,
+                            budget_usd=self._remaining_budget_usd(),
+                            exclude_model_ids=sorted(excluded) or None,
+                            task_system=getattr(node, "system", None),
+                        )
+                    except TypeError:
+                        try:
+                            fallback_model_id = self._assigner.assign_single_node(
+                                self.graph,
+                                node_idx,
+                                task_domain=self._task_domain,
+                                budget_usd=self._remaining_budget_usd(),
+                                exclude_model_ids=sorted(excluded) or None,
+                            )
+                        except ValueError:
+                            if original_model_id and hasattr(self.graph, "set_node_model_id"):
+                                try:
+                                    self.graph.set_node_model_id(node_idx, original_model_id)
+                                except Exception:  # noqa: BLE001
+                                    pass
+                            return None
+                else:
+                    try:
+                        fallback_model_id = self._assigner.assign_single_node(
+                            self.graph,
+                            node_idx,
+                            task_domain=self._task_domain,
+                            budget_usd=self._remaining_budget_usd(),
+                            exclude_model_ids=sorted(excluded) or None,
+                        )
+                    except ValueError:
+                        if original_model_id and hasattr(self.graph, "set_node_model_id"):
+                            try:
+                                self.graph.set_node_model_id(node_idx, original_model_id)
+                            except Exception:  # noqa: BLE001
+                                pass
+                        return None
             except ValueError:
                 if original_model_id and hasattr(self.graph, "set_node_model_id"):
                     try:

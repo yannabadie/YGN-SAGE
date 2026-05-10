@@ -74,13 +74,25 @@ def assign_models(
                     task_system, _max_system, _tier or "default",
                 )
                 task_system = _max_system
-            n_assigned = self.assigner.assign_models(
-                ctx.topology,
-                ctx.domain,
-                ctx.budget,
-                hints_list,
-                task_system,
-            )
+            try:
+                from sage.pipeline_v2.provider_policy import provider_policy_assigner_kwargs
+
+                n_assigned = self.assigner.assign_models(
+                    ctx.topology,
+                    ctx.domain,
+                    ctx.budget,
+                    hints_list,
+                    task_system,
+                    **provider_policy_assigner_kwargs(self),
+                )
+            except TypeError:
+                n_assigned = self.assigner.assign_models(
+                    ctx.topology,
+                    ctx.domain,
+                    ctx.budget,
+                    hints_list,
+                    task_system,
+                )
             log.info(
                 "Assigned models to %d nodes (domain=%s, budget=%.2f, task_system=%s, provider_hints=%d)",
                 n_assigned,

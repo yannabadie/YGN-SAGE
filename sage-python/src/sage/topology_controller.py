@@ -560,6 +560,9 @@ class TopologyController:
             ctx_system = self._ctx_value(ctx, "system", None)
             task_system = ctx_system if isinstance(ctx_system, int) and ctx_system in (1, 2, 3) else None
             try:
+                from sage.pipeline_v2.provider_policy import provider_policy_assigner_kwargs
+
+                policy_kwargs = provider_policy_assigner_kwargs()
                 candidate = self._assigner.assign_single_node(
                     topology,
                     node_idx,
@@ -567,21 +570,42 @@ class TopologyController:
                     budget_usd,
                     excluded,
                     task_system=task_system,
+                    **policy_kwargs,
                 )
             except TypeError:
-                try:
-                    # Older Rust .pyd / Python fallback that doesn't
-                    # know task_system — drop it and retry.
-                    candidate = self._assigner.assign_single_node(
-                        topology,
-                        node_idx,
-                        task_domain,
-                        budget_usd,
-                        excluded,
-                    )
-                except Exception as exc:
-                    log.debug("assign_single_node retry (no task_system) failed: %s", exc)
-                    candidate = None
+                if policy_kwargs:
+                    try:
+                        candidate = self._assigner.assign_single_node(
+                            topology,
+                            node_idx,
+                            task_domain,
+                            budget_usd,
+                            excluded,
+                            task_system=task_system,
+                        )
+                    except TypeError:
+                        candidate = self._assigner.assign_single_node(
+                            topology,
+                            node_idx,
+                            task_domain,
+                            budget_usd,
+                            excluded,
+                        )
+                    except Exception as exc:
+                        log.debug("assign_single_node retry (no provider policy) failed: %s", exc)
+                        candidate = None
+                else:
+                    try:
+                        candidate = self._assigner.assign_single_node(
+                            topology,
+                            node_idx,
+                            task_domain,
+                            budget_usd,
+                            excluded,
+                        )
+                    except Exception as exc:
+                        log.debug("assign_single_node retry (no task_system) failed: %s", exc)
+                        candidate = None
             except Exception as exc:
                 log.debug("assign_single_node failed for node %d: %s", node_idx, exc)
                 candidate = None

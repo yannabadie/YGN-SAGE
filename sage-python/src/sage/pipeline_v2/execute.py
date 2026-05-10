@@ -444,22 +444,47 @@ async def execute(
                                         and ctx.system in (1, 2, 3) else None
                                     )
                                     try:
+                                        from sage.pipeline_v2.provider_policy import (
+                                            provider_policy_assigner_kwargs,
+                                        )
+
+                                        policy_kwargs = provider_policy_assigner_kwargs(self)
                                         self.assigner.assign_single_node(
                                             ctx.topology, i, ctx.domain,
                                             ctx.budget * 1.5,
                                             exclude_model_ids=[current_model] if current_model else None,
                                             task_system=cascade_task_system,
+                                            **policy_kwargs,
                                         )
                                     except TypeError:
-                                        # Older binding without task_system kwarg.
-                                        try:
-                                            self.assigner.assign_single_node(
-                                                ctx.topology, i, ctx.domain,
-                                                ctx.budget * 1.5,
-                                                exclude_model_ids=[current_model] if current_model else None,
-                                            )
-                                        except (ValueError, RuntimeError):
-                                            pass
+                                        if policy_kwargs:
+                                            try:
+                                                self.assigner.assign_single_node(
+                                                    ctx.topology, i, ctx.domain,
+                                                    ctx.budget * 1.5,
+                                                    exclude_model_ids=[current_model] if current_model else None,
+                                                    task_system=cascade_task_system,
+                                                )
+                                            except TypeError:
+                                                try:
+                                                    self.assigner.assign_single_node(
+                                                        ctx.topology, i, ctx.domain,
+                                                        ctx.budget * 1.5,
+                                                        exclude_model_ids=[current_model] if current_model else None,
+                                                    )
+                                                except (ValueError, RuntimeError):
+                                                    pass
+                                            except (ValueError, RuntimeError):
+                                                pass
+                                        else:
+                                            try:
+                                                self.assigner.assign_single_node(
+                                                    ctx.topology, i, ctx.domain,
+                                                    ctx.budget * 1.5,
+                                                    exclude_model_ids=[current_model] if current_model else None,
+                                                )
+                                            except (ValueError, RuntimeError):
+                                                pass
                                     except (ValueError, RuntimeError):
                                         pass
                                 # Verify upgraded model has an available provider

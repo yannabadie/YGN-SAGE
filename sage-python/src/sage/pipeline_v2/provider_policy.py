@@ -193,6 +193,19 @@ def configure_pipeline_provider_policy(
     return policy
 
 
+def provider_policy_assigner_kwargs(
+    pipeline: "CognitiveOrchestrationPipeline | None" = None,
+) -> dict[str, list[str] | None]:
+    """Return normalized provider-policy kwargs for assigner bindings."""
+    policy = effective_provider_policy(pipeline) if pipeline is not None else provider_policy_from_env()
+    if not policy.active:
+        return {}
+    return {
+        "provider_allowlist": sorted(policy.allowlist) if policy.allowlist is not None else None,
+        "provider_denylist": sorted(policy.denylist) if policy.denylist else None,
+    }
+
+
 def provider_id_for_model(
     pipeline: "CognitiveOrchestrationPipeline",
     model_id: str,
