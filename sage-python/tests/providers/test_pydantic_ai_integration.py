@@ -327,6 +327,206 @@ async def test_circuit_breaker_fires_on_pydantic_ai_rate_limit() -> None:
     assert recorded[0][0] == "deepseek"
 
 
+@pytest.mark.asyncio
+async def test_generate_passes_llm_config_to_pydantic_model_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Call-level LLMConfig limits must reach Pydantic AI."""
+    from pydantic_ai.messages import ModelResponse, TextPart
+
+    from sage.llm.base import LLMConfig, Message, Role
+    from sage.providers.pydantic_ai_provider import PydanticAIProvider
+
+    captured: dict[str, object] = {}
+
+    async def _fake_model_request(*args: object, **kwargs: object) -> ModelResponse:
+        captured["model_settings"] = kwargs.get("model_settings")
+        captured["model_request_parameters"] = kwargs.get("model_request_parameters")
+        return ModelResponse(parts=[TextPart(content="ok")])
+
+    import pydantic_ai.direct as _direct
+
+    monkeypatch.setattr(_direct, "model_request", _fake_model_request)
+
+    p = PydanticAIProvider.for_sage_provider("deepseek", "deepseek-v4-flash", "k")
+    response = await p.generate(
+        [Message(role=Role.USER, content="hi")],
+        config=LLMConfig(
+            provider="deepseek",
+            model="deepseek-v4-flash",
+            max_tokens=123,
+            temperature=0.2,
+            top_p=0.7,
+            extra={"timeout": 9.5},
+        ),
+    )
+
+    assert response.content == "ok"
+    settings = captured["model_settings"]
+    assert isinstance(settings, dict)
+    assert settings["max_tokens"] == 123
+    assert settings["extra_body"] == {"thinking": {"type": "disabled"}}
+    assert "temperature" not in settings
+    assert "top_p" not in settings
+    assert settings["timeout"] == 9.5
+    assert captured["model_request_parameters"] is not None
+
+
+def test_kimi_model_settings_omit_fixed_sampling_knobs() -> None:
+    """Kimi K2 thinking mode documents fixed temperature/top_p values."""
+    from sage.llm.base import LLMConfig
+    from sage.providers.pydantic_ai_provider import _model_settings_from_config
+
+    settings = _model_settings_from_config(
+        LLMConfig(
+            provider="kimi",
+            model="kimi-k2.6",
+            max_tokens=321,
+            temperature=0.2,
+            top_p=0.7,
+        ),
+        "kimi",
+    )
+
+    assert isinstance(settings, dict)
+    assert settings["max_tokens"] == 321
+    assert "temperature" not in settings
+    assert "top_p" not in settings
+
+
+def test_openai_gpt5_model_settings_omit_unsupported_sampling_knobs() -> None:
+    """Pydantic AI warns that sampling knobs are ignored for GPT-5 reasoning."""
+    from sage.llm.base import LLMConfig
+    from sage.providers.pydantic_ai_provider import _model_settings_from_config
+
+    settings = _model_settings_from_config(
+        LLMConfig(
+            provider="openai",
+            model="gpt-5.5-pro",
+            max_tokens=321,
+            temperature=0.2,
+            top_p=0.7,
+        ),
+        "openai",
+    )
+
+    assert isinstance(settings, dict)
+    assert settings["max_tokens"] == 321
+    assert "temperature" not in settings
+    assert "top_p" not in settings
+
+
+def test_deepseek_thinking_setting_uses_extra_body() -> None:
+    """DeepSeek V4 thinking mode is sent through OpenAI extra_body."""
+    from sage.llm.base import LLMConfig
+    from sage.providers.pydantic_ai_provider import _model_settings_from_config
+
+    settings = _model_settings_from_config(
+        LLMConfig(
+            provider="deepseek",
+            model="deepseek-v4-flash",
+            max_tokens=321,
+            temperature=0.2,
+            top_p=0.7,
+            extra={"thinking": "disabled"},
+        ),
+        "deepseek",
+    )
+
+    assert isinstance(settings, dict)
+    assert settings["max_tokens"] == 321
+    assert settings["extra_body"] == {"thinking": {"type": "disabled"}}
+    assert "temperature" not in settings
+    assert "top_p" not in settings
+
+
+def test_deepseek_v4_pro_defaults_to_thinking_mode() -> None:
+    """DeepSeek V4 Pro is a real active model, not a legacy alias target."""
+    from sage.llm.base import LLMConfig
+    from sage.providers.pydantic_ai_provider import _model_settings_from_config
+
+    settings = _model_settings_from_config(
+        LLMConfig(
+            provider="deepseek",
+            model="deepseek-v4-pro",
+            max_tokens=321,
+            temperature=0.2,
+            top_p=0.7,
+        ),
+        "deepseek",
+    )
+
+    assert isinstance(settings, dict)
+    assert settings["extra_body"] == {"thinking": {"type": "enabled"}}
+    assert "temperature" not in settings
+    assert "top_p" not in settings
+
+
+def test_deepseek_reasoning_effort_does_not_leak_to_openai_setting() -> None:
+    """DeepSeek uses extra_body.thinking, not OpenAI reasoning_effort."""
+    from sage.llm.base import LLMConfig
+    from sage.providers.pydantic_ai_provider import _model_settings_from_config
+
+    settings = _model_settings_from_config(
+        LLMConfig(
+            provider="deepseek",
+            model="deepseek-v4-pro",
+            max_tokens=321,
+            extra={"thinking": "enabled", "reasoning_effort": "high"},
+        ),
+        "deepseek",
+    )
+
+    assert isinstance(settings, dict)
+    assert settings["extra_body"] == {"thinking": {"type": "enabled"}}
+    assert "openai_reasoning_effort" not in settings
+
+
+@pytest.mark.asyncio
+async def test_deepseek_final_openai_kwargs_use_extra_body_without_sampling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Capture final OpenAI-compatible kwargs, not only direct.model_request args."""
+    from pydantic_ai.messages import ModelResponse, TextPart
+    from pydantic_ai.models.openai import OMIT
+
+    from sage.llm.base import LLMConfig, Message, Role
+    from sage.providers.pydantic_ai_provider import PydanticAIProvider
+
+    captured: dict[str, object] = {}
+    provider = PydanticAIProvider.for_sage_provider(
+        "deepseek", "deepseek-v4-flash", "k"
+    )
+    model_obj = provider._get_or_build_model("deepseek-v4-flash")
+
+    async def _fake_create(**kwargs: object) -> ModelResponse:
+        captured.update(kwargs)
+        return ModelResponse(parts=[TextPart(content="ok")])
+
+    monkeypatch.setattr(model_obj.client.chat.completions, "create", _fake_create)
+
+    response = await provider.generate(
+        [Message(role=Role.USER, content="hi")],
+        config=LLMConfig(
+            provider="deepseek",
+            model="deepseek-v4-flash",
+            max_tokens=123,
+            temperature=0.2,
+            top_p=0.7,
+            extra={"thinking": "disabled", "reasoning_effort": "high"},
+        ),
+    )
+
+    assert response.content == "ok"
+    assert captured["model"] == "deepseek-v4-flash"
+    assert captured["extra_body"] == {"thinking": {"type": "disabled"}}
+    assert captured["temperature"] is OMIT
+    assert captured["top_p"] is OMIT
+    assert captured["presence_penalty"] is OMIT
+    assert captured["frequency_penalty"] is OMIT
+    assert captured["reasoning_effort"] is OMIT
+
+
 # ---------------------------------------------------------------------------
 # A8 Phase 2 (2026-04-24) — reasoning_content / ThinkingPart roundtrip
 # ---------------------------------------------------------------------------

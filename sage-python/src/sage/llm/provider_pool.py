@@ -34,6 +34,18 @@ def _provider_name(provider: Any, config: LLMConfig | None = None) -> str:
     )
 
 
+def _settings_dict(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return {str(k): v for k, v in raw.items()}
+    items = getattr(raw, "items", None)
+    if callable(items):
+        try:
+            return {str(k): v for k, v in items()}
+        except Exception:  # noqa: BLE001
+            return {}
+    return {}
+
+
 class ProviderPool:
     """Resolve model_id → (LLMProvider, LLMConfig) with caching + fallback.
 
@@ -407,6 +419,40 @@ class ProviderPool:
 
     # -- Resolution --------------------------------------------------------
 
+    def _catalog_runtime_resolution(
+        self,
+        model_id: str,
+    ) -> tuple[str, Any | None, dict[str, Any], str]:
+        """Resolve catalog aliases to executable ids before provider lookup."""
+        if self._registry is None or not hasattr(self._registry, "get"):
+            return model_id, None, {}, ""
+
+        profile = self._registry.get(model_id)
+        if profile is None:
+            return model_id, None, {}, ""
+
+        extra = _settings_dict(getattr(profile, "runtime_settings", {}) or {})
+        if getattr(profile, "runtime_selectable", True) is not False:
+            return model_id, profile, extra, ""
+
+        replacement = str(getattr(profile, "runtime_replacement", "") or "").strip()
+        if not replacement:
+            return model_id, profile, extra, ""
+
+        replacement_profile = self._registry.get(replacement)
+        if replacement_profile is None:
+            return model_id, profile, extra, ""
+
+        runtime_extra = _settings_dict(
+            getattr(profile, "runtime_replacement_settings", {}) or {}
+        )
+        if not runtime_extra:
+            runtime_extra = _settings_dict(
+                getattr(replacement_profile, "runtime_settings", {}) or {}
+            )
+        runtime_extra["alias_from"] = model_id
+        return replacement, replacement_profile, runtime_extra, model_id
+
     def resolve(self, model_id: str) -> tuple[LLMProvider, LLMConfig]:
         """Resolve model_id to (provider, config). Falls back to default.
 
@@ -439,8 +485,10 @@ class ProviderPool:
                 self._default_config or LLMConfig(provider="default", model="default"),
             )
 
-        if model_id in self._cache:
-            cached_provider, cached_config = self._cache[model_id]
+        requested_model_id = model_id
+
+        if requested_model_id in self._cache:
+            cached_provider, cached_config = self._cache[requested_model_id]
             cached_provider_name = _provider_name(cached_provider, cached_config)
             self._enforce_provider_policy(
                 model_id=model_id,
@@ -449,9 +497,7 @@ class ProviderPool:
             return cached_provider, cached_config
 
         try:
-            profile = (
-                self._registry.get(model_id) if self._registry is not None else None
-            )
+            model_id, profile, runtime_extra, alias_from = self._catalog_runtime_resolution(model_id)
 
             if profile is None:
                 # Try to infer provider from model_id prefix before falling back
@@ -478,7 +524,7 @@ class ProviderPool:
                                 pname, model_id,
                             )
                             result = (inferred, LLMConfig(provider=pname, model=model_id))
-                            self._cache[model_id] = result
+                            self._cache[requested_model_id] = result
                             return result
 
                 log.debug(
@@ -500,7 +546,18 @@ class ProviderPool:
                 provider_name=provider_name,
             )
             cw = getattr(profile, "context_window", 128000) or 128000
-            config = LLMConfig(provider=provider_name, model=model_id, context_window=cw)
+            config = LLMConfig(
+                provider=provider_name,
+                model=model_id,
+                context_window=cw,
+                extra=dict(runtime_extra),
+            )
+            if alias_from:
+                log.info(
+                    "ProviderPool: model alias rewritten requested=%s runtime=%s",
+                    alias_from,
+                    model_id,
+                )
 
             provider = self._providers.get(provider_name)
             circuit_open = False
@@ -526,7 +583,7 @@ class ProviderPool:
 
             # Don't cache when circuit is open — allow recovery after cooldown
             if not circuit_open:
-                self._cache[model_id] = result
+                self._cache[requested_model_id] = result
             return result
 
         except Exception as exc:

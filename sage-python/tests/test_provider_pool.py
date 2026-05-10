@@ -153,6 +153,84 @@ class TestProviderPool:
         assert config.provider == "openai"
         assert config.model == "gpt-5.4-pro"
 
+    def test_resolve_runtime_alias_before_cache(self):
+        """Compatibility aliases are rewritten to executable catalog ids."""
+        legacy = _make_profile("deepseek-chat", "deepseek")
+        legacy.runtime_selectable = False
+        legacy.runtime_replacement = "deepseek-v4-flash"
+        legacy.runtime_replacement_settings = {"thinking": "disabled"}
+        current = _make_profile("deepseek-v4-flash", "deepseek")
+        current.runtime_settings = {"thinking": "disabled"}
+        current.context_window = 1_000_000
+
+        registry = MagicMock()
+        registry.get.side_effect = lambda mid: {
+            "deepseek-chat": legacy,
+            "deepseek-v4-flash": current,
+        }.get(mid)
+        deepseek_provider = _make_provider("deepseek")
+        pool = ProviderPool(
+            default_provider=_make_provider("default"),
+            registry=registry,
+            providers={"deepseek": deepseek_provider},
+        )
+
+        provider, config = pool.resolve("deepseek-chat")
+
+        assert provider is deepseek_provider
+        assert config.provider == "deepseek"
+        assert config.model == "deepseek-v4-flash"
+        assert config.extra["thinking"] == "disabled"
+        assert config.extra["alias_from"] == "deepseek-chat"
+        assert "deepseek-chat" in pool._cache
+        assert "deepseek-v4-flash" not in pool._cache
+
+    def test_resolve_active_card_applies_runtime_settings(self):
+        """Active V4 cards can declare mode settings without using aliases."""
+        profile = _make_profile("deepseek-v4-flash", "deepseek")
+        profile.runtime_settings = {"thinking": "disabled"}
+        registry = _make_registry(profile)
+        deepseek_provider = _make_provider("deepseek")
+        pool = ProviderPool(
+            default_provider=_make_provider("default"),
+            registry=registry,
+            providers={"deepseek": deepseek_provider},
+        )
+
+        provider, config = pool.resolve("deepseek-v4-flash")
+
+        assert provider is deepseek_provider
+        assert config.model == "deepseek-v4-flash"
+        assert config.extra["thinking"] == "disabled"
+
+    def test_resolve_minimax_lowercase_alias(self):
+        """Old lowercase MiniMax configs keep working through a non-selectable alias."""
+        legacy = _make_profile("minimax-m2.7", "minimax")
+        legacy.runtime_selectable = False
+        legacy.runtime_replacement = "MiniMax-M2.7"
+        legacy.runtime_replacement_settings = {}
+        current = _make_profile("MiniMax-M2.7", "minimax")
+        current.runtime_settings = {}
+
+        registry = MagicMock()
+        registry.get.side_effect = lambda mid: {
+            "minimax-m2.7": legacy,
+            "MiniMax-M2.7": current,
+        }.get(mid)
+        minimax_provider = _make_provider("minimax")
+        pool = ProviderPool(
+            default_provider=_make_provider("default"),
+            registry=registry,
+            providers={"minimax": minimax_provider},
+        )
+
+        provider, config = pool.resolve("minimax-m2.7")
+
+        assert provider is minimax_provider
+        assert config.provider == "minimax"
+        assert config.model == "MiniMax-M2.7"
+        assert config.extra["alias_from"] == "minimax-m2.7"
+
 
 # --- Quota-aware health_check tests (Codex item F, 2026-04-18) ---
 

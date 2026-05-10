@@ -1,9 +1,10 @@
-import sys, types
+import sys
+import types
+
 if "sage_core" not in sys.modules:
     sys.modules["sage_core"] = types.ModuleType("sage_core")
 
-import pytest
-from sage.llm.base import LLMConfig, Message, Role, LLMResponse
+from sage.llm.base import LLMConfig
 
 def test_llm_config_has_json_schema():
     cfg = LLMConfig(provider="google", model="gemini-3-flash-preview")
@@ -30,6 +31,8 @@ def test_model_router_tiers():
 
     budget = ModelRouter.get_config("budget")
     assert budget.model  # budget model is configured (may be deepseek-chat or lite)
+    if budget.provider == "deepseek" and budget.model == "deepseek-v4-flash":
+        assert budget.extra["thinking"] == "disabled"
 
 def test_model_router_with_schema():
     from sage.llm.router import ModelRouter
@@ -40,6 +43,8 @@ def test_model_router_fallback_tier():
     from sage.llm.router import ModelRouter
     fb = ModelRouter.get_config("fallback")
     assert fb.model  # fallback model is configured (may be deepseek-chat, flash, etc.)
+    if fb.provider == "deepseek" and fb.model == "deepseek-v4-flash":
+        assert fb.extra["thinking"] == "disabled"
 
 def test_model_router_critical_maps_to_reasoner():
     from sage.llm.router import ModelRouter

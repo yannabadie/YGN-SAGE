@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/ygn-sage/"><img src="https://img.shields.io/pypi/v/ygn-sage?style=flat-square" alt="PyPI"></a>
-  <img src="https://img.shields.io/badge/tests-3400%20Py%20%2B%20560%20Rust-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-3476%20Py%20%2B%20571%20Rust-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/status-research%20preview-yellow?style=flat-square" alt="Status">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
@@ -308,19 +308,27 @@ The optional learned-policy path (legacy env-var name `SAGE_ENABLE_PATH6`; sibli
 
 ## Multi-Provider Architecture
 
-All provider configurations are in `sage-python/src/sage/providers/connector.py` (single source of truth):
+Provider connection settings live in `sage-python/src/sage/providers/connector.py`;
+model IDs, costs, context windows, and runtime-selectability live in
+`sage-core/config/cards.toml`.
 
 | Provider | API URL | Default Model | Status |
 |----------|---------|---------------|--------|
 | DeepSeek | api.deepseek.com/v1 | deepseek-v4-flash | Primary (cheapest, no rate limits) |
-| Google | native SDK | gemini-3.1-flash-lite | Reliable fallback |
+| Google | native SDK | gemini-3.1-flash-lite-preview | Reliable fallback |
 | OpenAI | api.openai.com/v1 | gpt-5.4 | Best quality |
 | xAI | api.x.ai/v1 | grok-4-1-fast-reasoning | Fast reasoning |
-| Kimi | api.moonshot.ai/v1 | kimi-k2.5 | Vision + reasoning |
-| MiniMax | api.minimax.io/v1 | minimax-m2.7 | 4M token context |
-| OpenRouter | openrouter.ai/api/v1 | qwen/qwen3.5-plus | Access to 200+ models |
+| Kimi | api.moonshot.ai/v1 | kimi-k2.6 | Vision + reasoning |
+| MiniMax | api.minimax.io/v1 | MiniMax-M2.7 | 204.8k token context |
+| OpenRouter | openrouter.ai/api/v1 | qwen/qwen3.5-plus-02-15 | Access to 200+ models |
 
 Each topology node can use a different provider. The policy model can express `provider_hint` to bias selection. The circuit breaker auto-fails over when a provider is down.
+
+2026-05-10 provider/model-catalog evidence is summarized in
+[`docs/status/2026-05-10-current-state.md`](docs/status/2026-05-10-current-state.md).
+The live provider preflight was 10/10 OK for small responses, including
+OpenAI `gpt-5.4` and `gpt-5.5-pro`; this is provider reachability evidence,
+not benchmark-quality evidence.
 
 ## Benchmark Results
 
@@ -341,11 +349,11 @@ Live counts canonicalized at `docs/status/current.json` (regenerated via `python
 
 | Suite | Result |
 |-------|--------|
-| Python (`sage-python`) | **3400 collected** (source of truth = `docs/status/current.json`). Full local suite with `.env` verified on 2026-05-09: **3329 passed, 71 skipped**. |
-| Rust (`sage-core`) | **560 listed** with `--features smt,cognitive,sandbox,cranelift,tool-executor`. `sandbox`/`cranelift`/`tool-executor`/`cognitive` are Cargo default features (ADR-013 §5 flip). |
+| Python (`sage-python`) | **3476 collected** (source of truth = `docs/status/current.json`). 2026-05-10 provider/model-catalog ticket ran targeted provider/routing tests, ruff, and mypy; the full suite was not re-run after that ticket. |
+| Rust (`sage-core`) | **571 listed** with `--features smt,cognitive,sandbox,cranelift,tool-executor`. `sandbox`/`cranelift`/`tool-executor`/`cognitive` are Cargo default features (ADR-013 §5 flip). Targeted `routing::model_assigner` tests passed on 2026-05-10. |
 | Discovery (`sage-discover`) | **100 collected** |
 | CI | `.github/workflows/ci.yml` runs 10 jobs (`build-wasm-sandbox`, `python-constraints`, `rust`, `otel-bridge`, `otel-bridge-windows`, `rust-features`, `python-sage`, `python-discover`, `windows-pytest`, `integration-smoke`) + 3 supporting workflows (`security.yml` pip-audit/SBOM, `latest-deps.yml` weekly drift, `stochastic-empirical.yml` scheduled). |
-| Static analysis | mypy 0 errors / 261 source files; ruff clean (per local gate) |
+| Static analysis | mypy 0 errors / 263 source files; ruff clean (per local gate) |
 
 ## sage-discover — Knowledge Discovery Engine
 

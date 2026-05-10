@@ -4,30 +4,51 @@ type: architecture
 tags:
   - architecture
   - providers
-updated: 2026-04-18
+updated: 2026-05-10
 ---
 
-# 7 Providers — Architecture Multi-Fournisseur
+# 7 Providers - Architecture Multi-Fournisseur
 
-Source de verite : `sage-python/src/sage/providers/connector.py`
+Source de verite modele : `sage-core/config/cards.toml`
+
+Source de verite connexion : `sage-python/src/sage/providers/connector.py`
+
+Etat courant detaille : `docs/status/2026-05-10-current-state.md`
 
 ## Providers
 
 | Provider | API URL | Modele par defaut | Role |
 |----------|---------|-------------------|------|
-| DeepSeek | api.deepseek.com/v1 | deepseek-chat | **Primaire** (moins cher, pas de rate limits) |
-| Google | native SDK | gemini-3.1-flash-lite | Fallback fiable |
+| DeepSeek | api.deepseek.com/v1 | deepseek-v4-flash | Budget primaire; thinking disabled |
+| Google | native SDK | gemini-3.1-flash-lite-preview | Fallback fiable |
 | OpenAI | api.openai.com/v1 | gpt-5.4 | Meilleure qualite |
 | xAI | api.x.ai/v1 | grok-4-1-fast-reasoning | Raisonnement rapide |
-| Kimi | api.moonshot.ai/v1 | kimi-k2.5 | Vision + raisonnement |
-| MiniMax | api.minimax.io/v1 | minimax-m2.7 | Contexte 4M tokens, SWE-bench coder (Apr 17+) |
-| OpenRouter | openrouter.ai/api/v1 | qwen/qwen3.5-plus | Acces 200+ modeles — require `openrouter/` prefix (Apr 18 fix) |
+| Kimi | api.moonshot.ai/v1 | kimi-k2.6 | Vision + raisonnement |
+| MiniMax | api.minimax.io/v1 | MiniMax-M2.7 | Contexte texte 204.8k |
+| OpenRouter | openrouter.ai/api/v1 | qwen/qwen3.5-plus-02-15 | Acces 200+ modeles |
+
+## Etat verifie 2026-05-10
+
+- `cards.toml` contient 24 model cards et 7 API providers.
+- DeepSeek expose actuellement `deepseek-v4-flash` et `deepseek-v4-pro`.
+- `deepseek-chat` et `deepseek-reasoner` sont des aliases legacy non
+  selectionnables au runtime; ils sont remappes vers `deepseek-v4-flash`.
+- MiniMax utilise l'orthographe officielle `MiniMax-M2.7` et un contexte texte
+  204.8k; `models.list` MiniMax renvoie 0 ID mais le smoke generation live
+  fonctionne.
+- L'ancien `minimax-m2.7` reste dans `cards.toml` comme alias de compatibilite
+  non selectionnable et remappe vers `MiniMax-M2.7`.
+- Smoke provider live: 10/10 OK dans
+  `docs/benchmarks/2026-05-10-provider-preflight-post-model-catalog.json`.
+  Chaque ligne est `evidence_scope=liveness_only`. Cela prouve la
+  connectivite/configuration, pas la qualite benchmark ni le respect strict
+  d'instruction.
 
 ## Fonctionnement
 
 - Chaque noeud de topologie peut utiliser un provider different
 - La policy model peut exprimer `provider_hint` pour biaiser la selection (+0.15)
-- **Per-model routing réel** (Apr 18, c9ff902) : `LiteLLMProvider.generate()` honore `config.model` ; avant, `self.model_string` (adapter default) était utilisé, ignorant silencieusement les décisions du `ModelAssigner` depuis `cards.toml`
+- **Per-model routing réel** (Apr 18, c9ff902) : le provider honore `config.model`; avant, l'adapter default ignorait silencieusement les décisions du `ModelAssigner` depuis `cards.toml`
 - **Provider inference** (Apr 18, 4a2c038 + f754535) : `_infer_provider_from_model_id()` reconnaît `gemini-*`/`gpt-*`/`deepseek-*`/`grok-*`/`minimax-*`/`kimi-*`/`x/y` → openrouter. `"unknown"` de ModelRegistry est remplacé par inférence.
 - **Health check au boot** : probe tous les providers, circuit breaker pour les morts
 - **Health check quota-aware** (Apr 18, fe66d52) : connexion error + 429 `insufficient_quota` → DEAD ; 401/400/429 transient sans quota wording → ALIVE (probe params misconfig, pas outage)
@@ -50,7 +71,8 @@ Variables d'environnement (au moins une requise) :
 
 ## Modeles (cards.toml)
 
-20 modeles configures dans `sage-core/config/cards.toml` avec :
+24 modeles configures dans `sage-core/config/cards.toml` avec :
 - Scores d'affinite (s1, s2, s3)
 - Scores de domaine (math, code, reasoning, etc.)
 - Cout, latence, fenetre de contexte
+- Selectabilite runtime et remplacements d'aliases legacy

@@ -1,0 +1,57 @@
+{
+  "schema_version": "swebench_pro_canary_launch_v1",
+  "generated_at_utc": "2026-05-10T13:13:46.704816+00:00",
+  "repo": {
+    "path": "C:\\Code\\YGN-SAGE",
+    "head": "76f5a54be4293d8845b08ed0d95b72e0d43fcb27",
+    "dirty": true,
+    "status_short": " M CGPRO.md\n M Cargo.lock\n?? docs/benchmarks/2026-05-08-provider-preflight.json\n?? docs/benchmarks/2026-05-09-canary-n3-v2/\n?? docs/benchmarks/2026-05-09-canary-n3-v4/\n?? docs/benchmarks/2026-05-09-canary-n3-v5/\n?? docs/benchmarks/2026-05-09-canary-n3-v6/\n?? docs/benchmarks/2026-05-09-canary-n3/\n?? docs/benchmarks/2026-05-10-canary-harness-mock/\n?? docs/benchmarks/2026-05-10-canary-n1-preflight-76f5a54b/\n?? docs/benchmarks/2026-05-10-canary-n1-preflight-8848714e/\n?? docs/benchmarks/2026-05-10-canary-n5-real-8844c42e/\n?? docs/benchmarks/2026-05-10-canary-n5-real-8848714e/\n?? docs/benchmarks/2026-05-10-canary-n5-real-ec0b775e/\n?? docs/benchmarks/2026-05-10-grader-preflight-76f5a54b.json\n?? docs/benchmarks/2026-05-10-grader-preflight-8848714e.json\n?? docs/benchmarks/2026-05-10-provider-preflight.json\n?? sage-python/docs/benchmarks/2026-05-10-e2e-campaign.json\n"
+  },
+  "inputs": {
+    "instances_json": {
+      "path": "docs\\benchmarks\\2026-05-10-canary-n5-real-8848714e\\input\\instances.json",
+      "sha256": "6070d6e62ec4274a8abd3bc7bb1834ab21096e245c2e62e0bedfb29d54dd0894"
+    },
+    "manifest": {
+      "path": "docs\\benchmarks\\2026-05-10-canary-n1-preflight-76f5a54b\\cycle-13-canary-launch-manifest.md",
+      "exists": true,
+      "sha256": "c4cbeb4ef95676d7fc4c1382176d20d9a331374340a31744a6782435d054ab81",
+      "declared_commit": "76f5a54be4293d8845b08ed0d95b72e0d43fcb27",
+      "copied_to": "launch_manifest.md"
+    }
+  },
+  "budget": {
+    "budget_usd_per_task": 5.0,
+    "global_budget_usd": 5.0,
+    "task_timeout_s": 120.0
+  },
+  "providers": {
+    "allowlist": [
+      "google",
+      "deepseek"
+    ],
+    "denylist": [
+      "openai"
+    ]
+  },
+  "manifest_gate": {
+    "status": "PASS",
+    "reasons": []
+  },
+  "grading_gate": {
+    "status": "BLOCKED",
+    "reason": "grader_preflight_not_ready",
+    "path": "docs\\benchmarks\\2026-05-10-grader-preflight-76f5a54b.json",
+    "sha256": "0d47afa5c84012d6e507aae590addeb6ae152a9d5dbf197980c1f14d73598ef2",
+    "decision": "NO_GO_GRADER_REPO_DIRTY",
+    "blockers": [
+      "host_disk_below_swebench_minimum",
+      "grader_repo_dirty"
+    ]
+  },
+  "ci_gate": {
+    "status": "BLOCKED",
+    "reason": "ci_green_artifact_not_supplied",
+    "path": null
+  }
+}

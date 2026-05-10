@@ -24,21 +24,28 @@ For httpx (HuggingFace Hub), also pass `verify="C:/Code/certs/ca-bundle.pem"` to
 
 **NEVER use verify=False when ca-bundle.pem is available.** Use the proper certificate instead.
 
-## Active Models (March 20, 2026)
+## Active Models (May 10, 2026)
 | Tier | Model ID | Provider | Notes |
 |------|----------|----------|-------|
-| codex | gpt-5.3-codex | OpenAI | SOTA coding |
+| codex | gpt-5.4 | OpenAI | Runtime chat/coding tier in `sage-python/src/sage/llm/router.py` |
+| codex_max | gpt-5.4-pro | OpenAI | Higher-cost OpenAI tier |
 | reasoner | gemini-3.1-pro-preview | Google | Complex evaluation ($2.00/$12.00) |
 | fast | gemini-3.1-flash-lite-preview | Google | Low-latency ($0.25/$1.50) |
-| budget | deepseek-chat | DeepSeek | Best cost/quality ($0.28/$0.42, no rate limits) |
+| budget | deepseek-v4-flash | DeepSeek | Budget default; thinking disabled via runtime settings |
+| budget-pro | deepseek-v4-pro | DeepSeek | Active V4 Pro; thinking enabled via runtime settings |
 | budget-alt | grok-4-1-fast-reasoning | xAI | 2M context, $0.20/$0.50 |
 | topology-sft | gpt-5.4 | OpenAI | SFT data generation |
 | topology-policy | nvidia/Nemotron-Orchestrator-8B | veRL training | NVIDIA Open Model License, Qwen3 architecture, GRPO-trained orchestrator. GiGPO on RunPod H100 |
-| new | minimax-m2.7 | MiniMax | Self-evolving, $0.30/$1.20 |
+| new | MiniMax-M2.7 | MiniMax | Official capitalization; 204.8k text context |
 | new | qwen/qwen3.5-plus-02-15 | OpenRouter | Qwen3.5-Plus via OpenRouter ($0.26/$1.56) |
+| new | kimi-k2.6 | Kimi/Moonshot | Current Kimi model card |
 | new | gpt-5.4-mini | OpenAI | Budget frontier ($0.75/$4.50) |
 
-## API Keys (all 7 + Codex CLI)
+DeepSeek legacy aliases `deepseek-chat` and `deepseek-reasoner` are not
+runtime-selectable. They rewrite to `deepseek-v4-flash` per
+`sage-core/config/cards.toml`.
+
+## API Keys (7 API providers; Codex/OpenAI tiers use OpenAI routing)
 ```
 GOOGLE_API_KEY        # Required
 OPENAI_API_KEY        # Required
@@ -49,10 +56,11 @@ MINIMAX_API_KEY       # Optional
 OPEN_ROUTER_API_KEY   # For Qwen3.5-Plus
 ```
 
-## cards.toml (20 models, 8 providers)
-- Single source of truth: sage-core/config/cards.toml
+## cards.toml (24 model cards, 7 API providers)
+- Single source of truth for model IDs, costs, context windows, runtime selectability, and runtime settings: sage-core/config/cards.toml
+- Provider connection settings live in sage-python/src/sage/providers/connector.py
 - sage-python/config/cards.toml is a SYMLINK
-- Providers: google, openai, deepseek, xai, minimax, kimi, openrouter, codex
+- Providers: google, openai, deepseek, xai, minimax, kimi, openrouter
 
 ## Discovery Cache
 ~/.sage/discovery_cache/ — 24h TTL. Delete to force refresh.

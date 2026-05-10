@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, cast
 
 from sage.llm.base import (
     LLMConfig,
@@ -397,6 +397,80 @@ def _pydantic_response_to_ours(
     )
 
 
+def _model_settings_from_config(
+    config: LLMConfig | None,
+    provider_name: str,
+) -> Any | None:
+    """Translate SAGE call-level config into Pydantic AI ModelSettings.
+
+    `LLMConfig` carries budget-relevant limits; dropping them at the
+    Pydantic AI boundary makes canary and provider smokes much less
+    controllable. Keep Kimi temperature/top_p omitted because K2 thinking
+    mode documents fixed sampling parameters. DeepSeek V4 uses OpenAI
+    ChatCompletions with its thinking toggle in extra_body; make that
+    explicit so API defaults cannot silently change runtime behavior.
+    """
+    if config is None:
+        return None
+
+    values: dict[str, Any] = {"max_tokens": config.max_tokens}
+    timeout = config.extra.get("timeout") or config.extra.get("request_timeout")
+    if timeout is not None:
+        values["timeout"] = timeout
+
+    pname = provider_name.lower()
+    model_id = config.model.lower()
+    thinking = config.extra.get("thinking")
+    if thinking is None and pname == "deepseek":
+        if model_id == "deepseek-v4-flash":
+            thinking = "disabled"
+        elif model_id == "deepseek-v4-pro":
+            thinking = "enabled"
+
+    if thinking is not None:
+        if isinstance(thinking, bool):
+            thinking_value = "enabled" if thinking else "disabled"
+        else:
+            thinking_value = str(thinking).lower()
+        if pname == "deepseek":
+            if thinking_value in {"true", "1", "yes", "on"}:
+                thinking_value = "enabled"
+            elif thinking_value in {"false", "0", "no", "off"}:
+                thinking_value = "disabled"
+            if thinking_value not in {"enabled", "disabled"}:
+                raise ValueError(
+                    "DeepSeek thinking must be 'enabled' or 'disabled'; "
+                    f"got {thinking!r}"
+                )
+            values["extra_body"] = {"thinking": {"type": thinking_value}}
+        else:
+            if thinking_value in {"enabled", "true", "1", "yes", "on"}:
+                values["thinking"] = True
+            elif thinking_value in {"disabled", "false", "0", "no", "off"}:
+                values["thinking"] = False
+            else:
+                values["thinking"] = thinking_value
+
+    reasoning_effort = (
+        config.extra.get("openai_reasoning_effort")
+        or config.extra.get("reasoning_effort")
+    )
+    if pname == "openai" and reasoning_effort is not None:
+        values["openai_reasoning_effort"] = str(reasoning_effort).lower()
+
+    omit_sampling = (
+        pname == "kimi"
+        or (pname == "deepseek" and thinking is not None)
+        or (pname == "openai" and model_id.startswith("gpt-5"))
+    )
+
+    if not omit_sampling:
+        values["temperature"] = config.temperature
+        values["top_p"] = config.top_p
+
+    return cast(Any, values)
+
+
 def _our_tools_to_pydantic(tools: list[Any]) -> list[Any]:
     """Translate tool defs to Pydantic AI ``ToolDefinition`` list.
 
@@ -523,11 +597,13 @@ class PydanticAIProvider:
             function_tools=_our_tools_to_pydantic(tools) if tools else [],
             allow_text_output=True,
         )
+        model_settings = _model_settings_from_config(config, self.provider_name)
 
         try:
             response = await model_request(
                 model_obj,
                 history,
+                model_settings=model_settings,
                 model_request_parameters=params,
             )
         except Exception as exc:

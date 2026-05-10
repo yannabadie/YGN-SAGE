@@ -1,0 +1,135 @@
+{
+  "generated_at_utc": "2026-05-10T14:27:34Z",
+  "results": [
+    {
+      "provider": "google",
+      "model_id": "gemini-2.5-flash",
+      "status": "ok",
+      "evidence_scope": "liveness_only",
+      "warnings": [],
+      "latency_ms": 3114.645299996482,
+      "output_length": 2,
+      "cost_usd": 1.0890000427141786e-05,
+      "error_type": null,
+      "error_message": null
+    },
+    {
+      "provider": "google",
+      "model_id": "gemini-3.1-flash-lite-preview",
+      "status": "ok",
+      "evidence_scope": "liveness_only",
+      "warnings": [],
+      "latency_ms": 638.0739999876823,
+      "output_length": 2,
+      "cost_usd": 1.6500000022351741e-06,
+      "error_type": null,
+      "error_message": null
+    },
+    {
+      "provider": "deepseek",
+      "model_id": "deepseek-v4-flash",
+      "status": "ok",
+      "evidence_scope": "liveness_only",
+      "warnings": [],
+      "latency_ms": 1597.1662999945693,
+      "output_length": 2,
+      "cost_usd": 1.540000006556511e-06,
+      "error_type": null,
+      "error_message": null
+    },
+    {
+      "provider": "deepseek",
+      "model_id": "deepseek-v4-pro",
+      "status": "ok",
+      "evidence_scope": "liveness_only",
+      "warnings": [],
+      "latency_ms": 2641.490400012117,
+      "output_length": 2,
+      "cost_usd": 0.00018618000102043152,
+      "error_type": null,
+      "error_message": null
+    },
+    {
+      "provider": "xai",
+      "model_id": "grok-code-fast-1",
+      "status": "ok",
+      "evidence_scope": "liveness_only",
+      "warnings": [
+        "xAI lists grok-code-fast-1 for retirement on 2026-05-15T19:00:00Z; treat this as short-lived liveness evidence."
+      ],
+      "latency_ms": 19995.011799997883,
+      "output_length": 2,
+      "cost_usd": 4.2300000622868536e-05,
+      "error_type": null,
+      "error_message": null
+    },
+    {
+      "provider": "kimi",
+      "model_id": "kimi-k2.6",
+      "status": "ok",
+      "evidence_scope": "liveness_only",
+      "warnings": [],
+      "latency_ms": 2273.9231000014115,
+      "output_length": 2,
+      "cost_usd": 9.72000002861023e-05,
+      "error_type": null,
+      "error_message": null
+    },
+    {
+      "provider": "minimax",
+      "model_id": "MiniMax-M2.7",
+      "status": "ok",
+      "evidence_scope": "liveness_only",
+      "warnings": [
+        "Smoke output was non-empty but not exactly 'ok'; preflight remains liveness-only, not instruction-following evidence."
+      ],
+      "latency_ms": 2398.6108000099193,
+      "output_length": 210,
+      "cost_usd": 0.0,
+      "error_type": null,
+      "error_message": null
+    },
+    {
+      "provider": "openrouter",
+      "model_id": "qwen/qwen3.5-plus-02-15",
+      "status": "ok",
+      "evidence_scope": "liveness_only",
+      "warnings": [],
+      "latency_ms": 7538.836299994728,
+      "output_length": 2,
+      "cost_usd": 0.0,
+      "error_type": null,
+      "error_message": null
+    },
+    {
+      "provider": "openai",
+      "model_id": "gpt-5.4",
+      "status": "ok",
+      "evidence_scope": "liveness_only",
+      "warnings": [],
+      "latency_ms": 2031.517099996563,
+      "output_length": 2,
+      "cost_usd": 8.75e-05,
+      "error_type": null,
+      "error_message": null
+    },
+    {
+      "provider": "openai",
+      "model_id": "gpt-5.5-pro",
+      "status": "ok",
+      "evidence_scope": "liveness_only",
+      "warnings": [],
+      "latency_ms": 10862.905299989507,
+      "output_length": 2,
+      "cost_usd": 0.0033900000000000002,
+      "error_type": null,
+      "error_message": null
+    }
+  ],
+  "summary": {
+    "ok": 10,
+    "error": 0,
+    "timeout": 0,
+    "skipped": 0
+  }
+}

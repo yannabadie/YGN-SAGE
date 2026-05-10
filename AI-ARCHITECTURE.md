@@ -50,10 +50,10 @@ YGN-SAGE est un **Agent Development Kit (ADK)** structuré en 3 packages : un no
 | **Branche analysée** | `main` |
 | **HEAD commit** | `a6f869c4` (2026-05-04) |
 | **Langages** | Rust 1.94 (sage-core), Python 3.13 (sage-python, sage-discover) |
-| **Tests Python collected** | **3400** (canonical : `docs/status/current.json`) |
-| **Tests Rust** | **560** (`cargo test --features smt,cognitive,sandbox,cranelift,tool-executor`) |
+| **Tests Python collected** | **3476** (canonical : `docs/status/current.json`) |
+| **Tests Rust** | **571** (`cargo test --features smt,cognitive,sandbox,cranelift,tool-executor`) |
 | **Tests sage-discover** | **100** |
-| **mypy / ruff** | mypy 0 errors / 261 source files, ruff clean, type:ignore ceiling 54/54 |
+| **mypy / ruff** | mypy 0 errors / 263 source files, ruff clean, type:ignore ceiling 54/54 |
 | **CI** | GitHub Actions : 11 jobs (Rust no-default, rust-features, Python SDK Linux, Python SDK Windows, Python Discover, OTel Linux, OTel Windows MSVC, integration-smoke, build-wasm-sandbox, Trap-E matrix, Security pip-audit/SBOM) |
 | **Feature flags Rust (default)** | `extension-module`, `sandbox`, `cranelift`, `tool-executor`, `cognitive` |
 | **Feature flags Rust (opt-in)** | `onnx` (ort, tokenizers, ndarray + DLL), `smt` (oxiz), `otel` (B1.b Rust span bridge) |
@@ -142,7 +142,7 @@ graph TB
     SAGE -->|patch eval| DOCKER
     SAGE -->|spans| OTEL
 ```
-[Evidence: `sage-core/config/cards.toml` (23 modèles), `sage-python/src/sage/providers/`, `sage-python/src/sage/observability/`, `docker-compose.yml`] [Statut: Observé] [Reachability: Runtime] [Validation: CI + tests]
+[Evidence: `sage-core/config/cards.toml` (24 modèles), `sage-python/src/sage/providers/`, `sage-python/src/sage/observability/`, `docker-compose.yml`] [Statut: Observé] [Reachability: Runtime] [Validation: CI + tests]
 
 **Note** : le sandbox d'exécution n'utilise PLUS Docker au runtime (sauf pour SWE-bench Docker grading). Depuis ADR-013 §5 (2026-04-22), `validate_and_execute` exécute par défaut dans RustPython wasm32-wasip1 deny-by-default, embarqué dans `sage_core`.
 
@@ -248,7 +248,7 @@ graph LR
 | `ContextualBandit` | `#[pyclass]` | Thompson sampling per-arm Beta/Gamma, persistence SQLite (cycle `cognitive`) | Runtime | `restore_arm` corrige context_sum/count (`d9b0b659`) |
 | `RustKnnRouter` | `#[pyclass]` | kNN cosine sur exemplars NPZ, OOD rejection | Runtime | floor: `routing.knn_92pct` `delivered` ≥50/60 LOO-CV (historique 92% sur ancien 50-task GT, provenance only) |
 | `ModelAssigner` | `#[pyclass]` | Assigne model_id par nœud topologie | Runtime | Domain-aware, budget-aware |
-| `ModelRegistry` | `#[pyclass]` | Catalogue TOML 23 modèles | Runtime | `cards.toml` |
+| `ModelRegistry` | `#[pyclass]` | Catalogue TOML 24 modèles | Runtime | `cards.toml` |
 | `ModelCard` | `#[pyclass]` | Profil par modèle (scores, coûts, affinités) | Runtime | s1/s2/s3 affinity + domain scores |
 | `RustCompositeWriteGate` | `#[pyclass]` | 5-signal memory write gate (cycle-8 T2) | Runtime | salience + tier + conf + nov + rel |
 | `RustQualityEstimator` | `#[pyclass]` | 5-signal quality (lexical, fast) | Runtime | Port Rust |
@@ -395,7 +395,7 @@ graph LR
 
 ```
 1. boot_agent_system(llm_tier="auto") construit AgentSystem :
-   - Rust SystemRouter + ModelRegistry (cards.toml, 23 modèles)
+   - Rust SystemRouter + ModelRegistry (cards.toml, 24 modèles)
    - Rust TopologyEngine + ContextualBandit + persistence (cognitive)
    - Python AdaptiveRouter (kNN + structural)
    - CognitiveOrchestrationPipeline (avec llm_tier passé pour Fix C)
@@ -524,7 +524,7 @@ Pipeline emits *_event with payload :
 | S-MMU | In-memory petgraph + A14-bound `smmu_state.json` for TopologyEngine | Global | Process-life + topology persistence | Runtime |
 | MAP-Elites Archive | In-memory + SQLite (cognitive) | TopologyEngine.archive | Cross-session via persistence | Runtime |
 | Bandit Posteriors | In-memory + SQLite (cognitive) | ContextualBandit | Cross-session via persistence | Runtime |
-| ModelRegistry | TOML (cards.toml) + live discovery | `sage-core/config/cards.toml` | Statique (23 modèles) | Runtime |
+| ModelRegistry | TOML (cards.toml) + live discovery | `sage-core/config/cards.toml` | Statique (24 modèles) | Runtime |
 | Routing Exemplars | NPZ | `config/routing_exemplars.npz` | Statique | Runtime |
 | Wasm cache | `.cwasm` files | `$HOME/.sage/wasm_python_cache/` | Per-build, self-invalidate | Runtime |
 | ExoCortex | Google File Search | Cloud | Persistant indéfini | Runtime |
@@ -552,29 +552,31 @@ Pipeline emits *_event with payload :
 
 ## 11. Models, Routing, and Providers
 
-### 11.1 Modèles LLM dans `cards.toml` (23 modèles, 8 providers)
+### 11.1 Modèles LLM dans `cards.toml` (24 modèles, 7 API providers)
 
 Source de vérité : `sage-core/config/cards.toml` (symlink depuis `sage-python/config/cards.toml`).
+Connection settings live in `sage-python/src/sage/providers/connector.py`.
+Current 2026-05-10 provider evidence: `docs/status/2026-05-10-current-state.md`.
 
 | Tier | Model ID | Provider | Coût input/M$ | Notes |
 |---|---|---|---|---|
-| **codex** | `gpt-5.3-codex` | OpenAI | — | SOTA coding |
+| **codex** | `gpt-5.4` | OpenAI | — | Runtime chat/coding tier. `gpt-5.3-codex` exists in live OpenAI discovery but is not a `cards.toml` chat card. |
 | **reasoner** | `gemini-3.1-pro-preview` | Google | $2.00 | Évaluation complexe |
 | **fast** | `gemini-3.1-flash-lite-preview` | Google | $0.25 | Low-latency S1 |
 | **budget** | **`deepseek-v4-flash`** | DeepSeek | (cycle-9 migration `24f97f3c`) | Successeur non-thinking de deepseek-chat (sunset 2026-07-24). Budget bench tier. |
 | **budget-alt** | `grok-4-1-fast-reasoning` | xAI | $0.20 | 2M context |
 | **topology-sft** | `gpt-5.4` | OpenAI | — | SFT data generation |
 | **topology-policy** | `nvidia/Nemotron-Orchestrator-8B` | veRL training | — | Qwen3 architecture, GRPO orchestrator. RunPod H100 |
-| Autres budget | `deepseek-v4-pro`, `deepseek-reasoner` | DeepSeek | — | |
+| Autres budget | `deepseek-v4-pro`; legacy aliases `deepseek-chat`, `deepseek-reasoner` | DeepSeek | — | Active DeepSeek IDs are `deepseek-v4-flash` and `deepseek-v4-pro`. Legacy aliases are non-selectable and rewrite to `deepseek-v4-flash`; thinking mode is controlled by runtime settings. |
 | Autres frontier | `gpt-5.4-pro`, `gpt-5.5`, `gpt-5.5-pro` | OpenAI | — | Cycle-12+ |
 | Autres frontier | `gemini-2.5-flash`, `gemini-3-flash-preview` | Google | — | |
 | Autres budget | `gpt-5.4-mini`, `gpt-5.4-nano` | OpenAI | $0.30-1.20 | |
-| Autres | `MiniMax-M2.5`, `MiniMax-M2.5-highspeed`, `minimax-m2.7` | MiniMax | $0.30/$1.20 | Self-evolving |
+| Autres | `MiniMax-M2.7`, `MiniMax-M2.5`, `MiniMax-M2.5-highspeed`; alias `minimax-m2.7` | MiniMax | $0.30/$1.20 | Official 204.8k text context; lowercase alias is non-selectable and rewrites to `MiniMax-M2.7` |
 | Autres | `kimi-k2.6` | Kimi/Moonshot | — | Native PydanticAI OpenAIModelProfile (cycle A8 Phase 3) |
 | Autres | `qwen/qwen3.5-plus-02-15` | OpenRouter | $0.26/$1.56 | |
 | Autres | `grok-3`, `grok-code-fast-1` | xAI | — | |
 
-[Evidence: `sage-core/config/cards.toml` — 23 entrées `[[models]]`] [Statut: Observé]
+[Evidence: `sage-core/config/cards.toml` — 24 entrées `[[models]]`] [Statut: Observé]
 
 ### 11.2 Chaîne de routage
 
@@ -954,8 +956,8 @@ CONTROLLER (ADR-012, Rust-primary):
   Fix C (a23e196b): _effective_controller=None when llm_tier=="budget"
 
 PROVIDERS: 7 actifs (Google, OpenAI, DeepSeek, xAI, Kimi, MiniMax, OpenRouter) + Codex
-  cards.toml: 23 modèles
-  Tiers: codex (gpt-5.3-codex), reasoner (gemini-3.1-pro), fast (gemini-3.1-flash-lite), budget (deepseek-v4-flash, A33 multi-turn safety)
+  cards.toml: 24 modèles
+  Tiers: codex (gpt-5.4), codex_max (gpt-5.4-pro), reasoner (gemini-3.1-pro-preview), fast (gemini-3.1-flash-lite-preview), budget (deepseek-v4-flash, thinking disabled)
   ProviderPool TTL'd 300s exclusion + re-probe + CircuitBreaker
 
 MEMORY:
@@ -1058,7 +1060,7 @@ POINTS D'ATTENTION (cycle-10 carry-over):
 | `sage-core/src/topology/posterior_epoch.rs` | A14 epoch guard | Haute |
 | `sage-core/src/sandbox/` | tree-sitter + Wasm-python JIT cache | Haute |
 | `sage-core/src/observability/` | OTel bridge B1.b | Moyenne |
-| `sage-core/config/cards.toml` | 23 modèles | Haute |
+| `sage-core/config/cards.toml` | 24 modèles | Haute |
 | `docs/contracts/runtime-integrity-ledger.md` | 10 invariants | **Critique** |
 | `docs/contracts/rust-python-boundary.md` | Ownership matrix | Haute |
 | `docs/contracts/runtime-event-log.md` | Event-log contract matrix | Haute |

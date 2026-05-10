@@ -55,3 +55,57 @@ def test_cost_from_usage_object_shape() -> None:
     )
 
     assert cost == pytest.approx(0.000018)
+
+
+def test_provider_result_labels_preflight_as_liveness_only() -> None:
+    result = provider_preflight.ProviderResult(
+        provider="openai",
+        model_id="gpt-5.5-pro",
+        status="ok",
+    )
+
+    as_dict = result.as_dict()
+
+    assert as_dict["evidence_scope"] == "liveness_only"
+
+
+def test_xai_grok_code_fast_warns_before_retirement() -> None:
+    warnings = provider_preflight._preflight_warnings("xai", "grok-code-fast-1")
+
+    assert warnings
+    assert "2026-05-15T19:00:00Z" in warnings[0]
+
+
+@pytest.mark.asyncio
+async def test_non_exact_smoke_output_warns_but_stays_liveness_ok(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResponse:
+        content = "ok plus explanation"
+        usage = {}
+
+    class FakeProvider:
+        async def generate(self, **_kwargs):
+            return FakeResponse()
+
+    class FakePydanticProvider:
+        @classmethod
+        def for_sage_provider(cls, *_args, **_kwargs):
+            return FakeProvider()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "sage.providers.pydantic_ai_provider",
+        SimpleNamespace(
+            PydanticAIProvider=FakePydanticProvider,
+            _lookup_cost_per_token=lambda _provider, _model: (0.0, 0.0),
+        ),
+    )
+
+    result = await provider_preflight._test_one(
+        "minimax", "MiniMax-M2.7", "key", timeout=1.0
+    )
+
+    assert result.status == "ok"
+    assert result.evidence_scope == "liveness_only"
+    assert any("not exactly 'ok'" in warning for warning in result.warnings)

@@ -164,6 +164,7 @@ def test_init_llm_provider_uses_policy_allowed_fallback_when_tier_provider_denie
     assert provider.name == "deepseek"
     assert llm_config.provider == "deepseek"
     assert llm_config.model == "deepseek-v4-flash"
+    assert llm_config.extra["thinking"] == "disabled"
 
 
 def test_init_llm_provider_fails_closed_when_only_denied_provider_available(

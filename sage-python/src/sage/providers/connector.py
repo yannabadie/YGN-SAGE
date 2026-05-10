@@ -102,8 +102,8 @@ PROVIDER_CONFIGS: list[dict[str, Any]] = [
         "api_key_env": "MINIMAX_API_KEY",
         "base_url": "https://api.minimax.io/v1",
         "sdk": "openai",
-        "default_model": "minimax-m2.7",
-        "hardcoded_models": ["minimax-m2.7"],
+        "default_model": "MiniMax-M2.7",
+        "hardcoded_models": ["MiniMax-M2.7", "MiniMax-M2.5", "MiniMax-M2.5-highspeed"],
     },
     {
         "provider": "openrouter",

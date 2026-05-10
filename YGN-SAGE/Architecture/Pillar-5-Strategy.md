@@ -58,7 +58,7 @@ updated: 2026-04-07
 - Score : `0.4 * affinity + 0.4 * domain + 0.2 * (1 - cost)`
 - Provider hints : +0.15 bonus
 - Override bandit : ecrase si quality < 0.4
-- Source : `cards.toml` (20 modeles, 7 providers)
+- Source : `cards.toml` (24 model cards, 7 API providers as of 2026-05-10)
 
 ## Cascade Routing 4-etape
 

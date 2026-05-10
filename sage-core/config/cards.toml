@@ -435,8 +435,10 @@ recommended_topologies = ["avr", "self-moa"]
 supports_tools = true
 supports_json_mode = true
 supports_vision = false
-context_window = 131072
+context_window = 256000
 safety_rating = 0.75
+runtime_evidence = "xAI model docs checked 2026-05-10; live preflight docs/benchmarks/2026-05-10-provider-preflight-post-model-catalog.json"
+runtime_retire_after = "2026-05-15T19:00:00Z"
 [models.domain_scores]
 math = 0.63
 code = 0.78
@@ -502,6 +504,7 @@ factual = 0.30
 id = "deepseek-v4-flash"
 provider = "deepseek"
 family = "deepseek-v4"
+runtime_settings = { thinking = "disabled" }
 code_score = 0.74
 reasoning_score = 0.77
 tool_use_score = 0.72
@@ -549,6 +552,7 @@ factual = 0.53
 id = "deepseek-v4-pro"
 provider = "deepseek"
 family = "deepseek-v4"
+runtime_settings = { thinking = "enabled" }
 code_score = 0.77
 reasoning_score = 0.92
 tool_use_score = 0.72
@@ -580,10 +584,17 @@ factual = 0.54
 # LEGACY — deprecates 2026-07-24 per DeepSeek API docs. See A11.
 # Corresponds to non-thinking mode of deepseek-v4-flash. Keep until
 # sunset so bandit history stays valid and downstream fixtures
-# that pin this id continue working.
+# that pin this id continue working. Runtime selection is disabled:
+# 2026-05-10 live `models.list` evidence returned only `deepseek-v4-flash`
+# and `deepseek-v4-pro` for this account, while official DeepSeek docs
+# describe this id as a compatibility alias.
 id = "deepseek-chat"
 provider = "deepseek"
 family = "deepseek-v3.2"
+runtime_selectable = false
+runtime_replacement = "deepseek-v4-flash"
+runtime_evidence = "docs/benchmarks/2026-05-10-live-model-discovery.json"
+runtime_replacement_settings = { thinking = "disabled" }
 code_score = 0.72
 reasoning_score = 0.75
 tool_use_score = 0.70
@@ -613,10 +624,15 @@ factual = 0.53
 
 [[models]]
 # LEGACY — deprecates 2026-07-24. See A11. Corresponds to thinking
-# mode of deepseek-v4-flash.
+# mode of deepseek-v4-flash. Runtime selection is disabled for new
+# assignment; keep the card for historical bandit/cost compatibility.
 id = "deepseek-reasoner"
 provider = "deepseek"
 family = "deepseek-v3.2"
+runtime_selectable = false
+runtime_replacement = "deepseek-v4-flash"
+runtime_evidence = "docs/benchmarks/2026-05-10-live-model-discovery.json"
+runtime_replacement_settings = { thinking = "enabled" }
 code_score = 0.75
 reasoning_score = 0.90
 tool_use_score = 0.70
@@ -647,6 +663,37 @@ factual = 0.54
 # --- MiniMax models ---
 
 [[models]]
+id = "MiniMax-M2.7"
+provider = "minimax"
+family = "minimax-m2.7"
+code_score = 0.82
+reasoning_score = 0.88
+tool_use_score = 0.82
+math_score = 0.80
+formal_z3_strength = 0.60
+cost_input_per_m = 0.30
+cost_output_per_m = 1.20
+latency_ttft_ms = 2000.0
+tokens_per_sec = 60.0
+s1_affinity = 0.45
+s2_affinity = 0.88
+s3_affinity = 0.50
+recommended_topologies = ["avr", "self-moa"]
+supports_tools = true
+supports_json_mode = true
+supports_vision = false
+context_window = 204800
+safety_rating = 0.70
+[models.domain_scores]
+math = 0.80
+code = 0.82
+reasoning = 0.88
+tool_use = 0.82
+formal = 0.60
+creative = 0.70
+factual = 0.55
+
+[[models]]
 id = "minimax-m2.7"
 provider = "minimax"
 family = "minimax-m2.7"
@@ -666,8 +713,11 @@ recommended_topologies = ["avr", "self-moa"]
 supports_tools = true
 supports_json_mode = true
 supports_vision = false
-context_window = 1000000
+context_window = 204800
 safety_rating = 0.70
+runtime_selectable = false
+runtime_replacement = "MiniMax-M2.7"
+runtime_evidence = "Compatibility alias for pre-2026-05-10 lowercase MiniMax card; official ID is MiniMax-M2.7."
 [models.domain_scores]
 math = 0.80
 code = 0.82
@@ -697,7 +747,7 @@ recommended_topologies = ["avr", "self-moa"]
 supports_tools = true
 supports_json_mode = true
 supports_vision = false
-context_window = 1000000
+context_window = 204800
 safety_rating = 0.70
 [models.domain_scores]
 math = 0.77

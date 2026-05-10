@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use pyo3::prelude::*;
 use tracing::{info, warn};
 
-use super::model_card::CognitiveSystem;
+use super::model_card::{CognitiveSystem, ModelCard};
 use super::model_registry::ModelRegistry;
 use crate::topology::topology_graph::TopologyGraph;
 
@@ -312,6 +312,58 @@ impl ModelAssigner {
         self.last_assignment_trace.lock().unwrap().clear();
     }
 
+    fn candidate_runtime_eligible(
+        &self,
+        card: &ModelCard,
+        provider_policy: &ProviderPolicyFilter,
+        needs_tools: bool,
+        needs_json: bool,
+        node_budget: f32,
+    ) -> bool {
+        if !card.runtime_selectable {
+            return false;
+        }
+        if provider_policy.violation_reason(&card.provider).is_some() {
+            return false;
+        }
+        if self.excluded_providers.iter().any(|p| p == &card.provider) {
+            return false;
+        }
+        if needs_tools && !card.supports_tools {
+            return false;
+        }
+        if needs_json && !card.supports_json_mode {
+            return false;
+        }
+        let (input_tok, output_tok) = COST_ESTIMATE_TOKENS;
+        card.estimate_cost(input_tok, output_tok) <= node_budget
+    }
+
+    fn runtime_replacement_for(
+        &self,
+        card: &ModelCard,
+        provider_policy: &ProviderPolicyFilter,
+        needs_tools: bool,
+        needs_json: bool,
+        node_budget: f32,
+    ) -> Option<String> {
+        let replacement_id = card.runtime_replacement.trim();
+        if replacement_id.is_empty() {
+            return None;
+        }
+        let replacement = self.registry.get(replacement_id)?;
+        if !self.candidate_runtime_eligible(
+            &replacement,
+            provider_policy,
+            needs_tools,
+            needs_json,
+            node_budget,
+        ) {
+            return None;
+        }
+        Some(replacement.id)
+    }
+
     /// Exclude providers from model assignment (dead at boot health check).
     /// Models from these providers will never be assigned to any node.
     pub fn set_excluded_providers(&mut self, providers: Vec<String>) {
@@ -388,7 +440,10 @@ impl ModelAssigner {
         let max_cost = all_models
             .iter()
             .zip(model_costs.iter())
-            .filter(|(card, _)| provider_policy.violation_reason(&card.provider).is_none())
+            .filter(|(card, _)| {
+                card.runtime_selectable
+                    && provider_policy.violation_reason(&card.provider).is_none()
+            })
             .fold(0.001_f32, |acc, (_, &cost)| acc.max(cost));
 
         // Build provider hint lookup
@@ -421,33 +476,6 @@ impl ModelAssigner {
                 Err(_) => continue,
             };
 
-            // Respect pre-assigned model_id from template (e.g., formal_solver
-            // pins formalizer to "deepseek-chat"). Only override if empty.
-            let preassigned_policy_failure = if !node.model_id.is_empty() {
-                let policy_reason = if provider_policy.active() {
-                    match self.registry.get(&node.model_id) {
-                        Some(card) => provider_policy.violation_reason(&card.provider),
-                        None => Some("provider_policy_unknown_provider"),
-                    }
-                } else {
-                    None
-                };
-                if policy_reason.is_none() {
-                    assigned += 1;
-                    continue;
-                }
-                let reason = policy_reason.unwrap_or("provider_policy_violation");
-                warn!(
-                    node = idx,
-                    model = %node.model_id,
-                    reason,
-                    "preassigned_model_policy_filtered"
-                );
-                Some((node.model_id.clone(), reason))
-            } else {
-                None
-            };
-
             let local_system = match node.system {
                 1 => CognitiveSystem::S1,
                 2 => CognitiveSystem::S2,
@@ -472,27 +500,94 @@ impl ModelAssigner {
             let needs_json = caps.iter().any(|c| c == "json" || c == "json_mode");
             let node_budget = node.max_cost_usd.min(remaining_budget);
             let preferred_provider = hint_map.get(&idx).copied().unwrap_or("");
+            let preassigned_model_id = node.model_id.clone();
+
+            // Respect pre-assigned model_id from templates/state only when
+            // the catalog still marks it runtime-selectable. Compatibility
+            // aliases remain in cards.toml for historical records, but fresh
+            // execution must move to their declared replacement or to a newly
+            // selected eligible model.
+            let preassigned_policy_failure = if !preassigned_model_id.is_empty() {
+                match self.registry.get(&preassigned_model_id) {
+                    Some(card) if !card.runtime_selectable => {
+                        if let Some(replacement_id) = self.runtime_replacement_for(
+                            &card,
+                            provider_policy,
+                            needs_tools,
+                            needs_json,
+                            node_budget,
+                        ) {
+                            remaining_budget -= self
+                                .registry
+                                .get(&replacement_id)
+                                .map(|c| c.estimate_cost(input_tok, output_tok))
+                                .unwrap_or(0.0);
+                            if let Some(provider) = self
+                                .registry
+                                .get(&replacement_id)
+                                .map(|c| c.provider.clone())
+                            {
+                                *provider_count.entry(provider).or_insert(0) += 1;
+                            }
+                            let node_idx_pg = petgraph::graph::NodeIndex::new(idx);
+                            if let Some(node_mut) =
+                                graph.inner_graph_mut().node_weight_mut(node_idx_pg)
+                            {
+                                node_mut.model_id.clone_from(&replacement_id);
+                                info!(
+                                    node = idx,
+                                    old_model = %preassigned_model_id,
+                                    replacement = %replacement_id,
+                                    "preassigned_runtime_alias_replaced"
+                                );
+                            }
+                            assigned += 1;
+                            continue;
+                        }
+                        warn!(
+                            node = idx,
+                            model = %preassigned_model_id,
+                            "preassigned_model_runtime_not_selectable"
+                        );
+                        Some((preassigned_model_id.clone(), "runtime_model_not_selectable"))
+                    }
+                    Some(card) => {
+                        let policy_reason = provider_policy.violation_reason(&card.provider);
+                        if policy_reason.is_none() {
+                            assigned += 1;
+                            continue;
+                        }
+                        let reason = policy_reason.unwrap_or("provider_policy_violation");
+                        warn!(
+                            node = idx,
+                            model = %preassigned_model_id,
+                            reason,
+                            "preassigned_model_policy_filtered"
+                        );
+                        Some((preassigned_model_id.clone(), reason))
+                    }
+                    None => Some((
+                        preassigned_model_id.clone(),
+                        "provider_policy_unknown_provider",
+                    )),
+                }
+            } else {
+                None
+            };
 
             let mut best_id: Option<String> = None;
             let mut best_score: f32 = f32::NEG_INFINITY;
             let mut node_candidates: Vec<(usize, PyModelCandidateTrace)> = Vec::new();
 
             for (card_idx, card) in all_models.iter().enumerate() {
-                if provider_policy.violation_reason(&card.provider).is_some() {
-                    continue;
-                }
-                // Skip models from excluded providers (dead at boot health check)
-                if self.excluded_providers.iter().any(|p| p == &card.provider) {
-                    continue;
-                }
-                if needs_tools && !card.supports_tools {
-                    continue;
-                }
-                if needs_json && !card.supports_json_mode {
-                    continue;
-                }
                 let est_cost = model_costs[card_idx];
-                if est_cost > node_budget {
+                if !card.runtime_selectable
+                    || provider_policy.violation_reason(&card.provider).is_some()
+                    || self.excluded_providers.iter().any(|p| p == &card.provider)
+                    || (needs_tools && !card.supports_tools)
+                    || (needs_json && !card.supports_json_mode)
+                    || est_cost > node_budget
+                {
                     continue;
                 }
 
@@ -604,7 +699,7 @@ impl ModelAssigner {
             } else {
                 if let Some((model_id, reason)) = preassigned_policy_failure {
                     return Err(format!(
-                        "provider policy blocked preassigned model without eligible replacement: node_idx={idx}, model_id={model_id}, reason={reason}"
+                        "preassigned model blocked without eligible replacement: node_idx={idx}, model_id={model_id}, reason={reason}"
                     ));
                 }
                 warn!(node = idx, "no candidate — keeping existing model_id");
@@ -648,16 +743,6 @@ impl ModelAssigner {
             Ok(node) => node,
             Err(_) => return Ok(None),
         };
-        let preassigned_policy_failure =
-            if !node.model_id.is_empty() && options.provider_policy.active() {
-                let policy_reason = match self.registry.get(&node.model_id) {
-                    Some(card) => options.provider_policy.violation_reason(&card.provider),
-                    None => Some("provider_policy_unknown_provider"),
-                };
-                policy_reason.map(|reason| (node.model_id.clone(), reason))
-            } else {
-                None
-            };
         let local_system = match node.system {
             1 => CognitiveSystem::S1,
             2 => CognitiveSystem::S2,
@@ -673,6 +758,7 @@ impl ModelAssigner {
         let caps = &node.required_capabilities;
         let needs_tools = caps.iter().any(|c| c == "tools");
         let needs_json = caps.iter().any(|c| c == "json" || c == "json_mode");
+        let preassigned_model_id = node.model_id.clone();
         let all_models = self.registry.all_models();
         let (input_tok, output_tok) = COST_ESTIMATE_TOKENS;
         let model_costs: Vec<f32> = all_models
@@ -683,16 +769,53 @@ impl ModelAssigner {
             .iter()
             .zip(model_costs.iter())
             .filter(|(card, _)| {
-                options
-                    .provider_policy
-                    .violation_reason(&card.provider)
-                    .is_none()
+                card.runtime_selectable
+                    && options
+                        .provider_policy
+                        .violation_reason(&card.provider)
+                        .is_none()
             })
             .fold(0.001_f32, |acc, (_, &cost)| acc.max(cost));
+
+        let preassigned_policy_failure = if !preassigned_model_id.is_empty() {
+            match self.registry.get(&preassigned_model_id) {
+                Some(card) if !card.runtime_selectable => {
+                    if let Some(replacement_id) = self.runtime_replacement_for(
+                        &card,
+                        options.provider_policy,
+                        needs_tools,
+                        needs_json,
+                        options.budget_usd,
+                    ) {
+                        let node_idx_pg = petgraph::graph::NodeIndex::new(node_idx);
+                        if let Some(node_mut) = graph.inner_graph_mut().node_weight_mut(node_idx_pg)
+                        {
+                            node_mut.model_id = replacement_id.clone();
+                        }
+                        return Ok(Some(replacement_id));
+                    }
+                    Some((preassigned_model_id.clone(), "runtime_model_not_selectable"))
+                }
+                Some(card) if options.provider_policy.active() => options
+                    .provider_policy
+                    .violation_reason(&card.provider)
+                    .map(|reason| (preassigned_model_id.clone(), reason)),
+                None if options.provider_policy.active() => Some((
+                    preassigned_model_id.clone(),
+                    "provider_policy_unknown_provider",
+                )),
+                _ => None,
+            }
+        } else {
+            None
+        };
 
         let mut best_id: Option<String> = None;
         let mut best_score: f32 = f32::NEG_INFINITY;
         for (card_idx, card) in all_models.iter().enumerate() {
+            if !card.runtime_selectable {
+                continue;
+            }
             if options
                 .provider_policy
                 .violation_reason(&card.provider)
@@ -739,7 +862,7 @@ impl ModelAssigner {
             }
         } else if let Some((model_id, reason)) = preassigned_policy_failure {
             return Err(format!(
-                "provider policy blocked preassigned model without eligible replacement: node_idx={node_idx}, model_id={model_id}, reason={reason}"
+                "preassigned model blocked without eligible replacement: node_idx={node_idx}, model_id={model_id}, reason={reason}"
             ));
         }
         Ok(best_id)
@@ -1154,6 +1277,83 @@ mod tests {
             60.0,
         ));
         graph
+    }
+
+    fn runtime_alias_registry() -> ModelRegistry {
+        let toml = r#"
+            [[models]]
+            id = "legacy-best"
+            provider = "test"
+            family = "legacy"
+            runtime_selectable = false
+            runtime_replacement = "current-ok"
+            code_score = 0.99
+            reasoning_score = 0.99
+            tool_use_score = 0.99
+            math_score = 0.99
+            formal_z3_strength = 0.8
+            cost_input_per_m = 0.1
+            cost_output_per_m = 0.2
+            latency_ttft_ms = 100.0
+            tokens_per_sec = 200.0
+            s1_affinity = 0.99
+            s2_affinity = 0.99
+            s3_affinity = 0.99
+            recommended_topologies = ["sequential"]
+            supports_tools = true
+            supports_json_mode = true
+            supports_vision = false
+            context_window = 128000
+            [models.domain_scores]
+            code = 0.99
+
+            [[models]]
+            id = "current-ok"
+            provider = "test"
+            family = "current"
+            code_score = 0.70
+            reasoning_score = 0.70
+            tool_use_score = 0.70
+            math_score = 0.70
+            formal_z3_strength = 0.5
+            cost_input_per_m = 0.1
+            cost_output_per_m = 0.2
+            latency_ttft_ms = 100.0
+            tokens_per_sec = 200.0
+            s1_affinity = 0.70
+            s2_affinity = 0.70
+            s3_affinity = 0.70
+            recommended_topologies = ["sequential"]
+            supports_tools = true
+            supports_json_mode = true
+            supports_vision = false
+            context_window = 128000
+            [models.domain_scores]
+            code = 0.70
+        "#;
+        ModelRegistry::from_toml_str(toml).unwrap()
+    }
+
+    #[test]
+    fn test_runtime_non_selectable_card_is_not_assigned() {
+        let registry = runtime_alias_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+        let mut graph = one_policy_node("");
+
+        assigner.assign_models_inner(&mut graph, "code", 10.0);
+
+        assert_eq!(graph.try_get_node(0).unwrap().model_id, "current-ok");
+    }
+
+    #[test]
+    fn test_preassigned_runtime_alias_uses_declared_replacement() {
+        let registry = runtime_alias_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+        let mut graph = one_policy_node("legacy-best");
+
+        assigner.assign_models_inner(&mut graph, "code", 10.0);
+
+        assert_eq!(graph.try_get_node(0).unwrap().model_id, "current-ok");
     }
 
     #[test]

@@ -13,6 +13,10 @@ fn default_safety() -> f32 {
     0.5
 }
 
+fn default_runtime_selectable() -> bool {
+    true
+}
+
 // ── CognitiveSystem ─────────────────────────────────────────────────────────
 
 /// Kahneman-inspired cognitive modes for task routing.
@@ -156,6 +160,44 @@ pub struct ModelCard {
     #[pyo3(get)]
     #[serde(default)]
     pub security_label: u8,
+
+    /// Whether this card may be selected for new runtime execution.
+    ///
+    /// Compatibility cards can remain in the catalog for historical bandit
+    /// records, cost lookup, and fixture compatibility while being excluded
+    /// from fresh assignment.
+    #[pyo3(get)]
+    #[serde(default = "default_runtime_selectable")]
+    pub runtime_selectable: bool,
+
+    /// Optional execution settings for active runtime cards.
+    #[pyo3(get)]
+    #[serde(default)]
+    pub runtime_settings: HashMap<String, String>,
+
+    /// Optional replacement model id for compatibility or retired cards.
+    #[pyo3(get)]
+    #[serde(default)]
+    pub runtime_replacement: String,
+
+    /// Optional execution settings to preserve alias semantics.
+    ///
+    /// Example: DeepSeek legacy aliases map to the same runtime model id but
+    /// differ by thinking mode.
+    #[pyo3(get)]
+    #[serde(default)]
+    pub runtime_replacement_settings: HashMap<String, String>,
+
+    /// Optional path/URL describing the evidence behind runtime status.
+    #[pyo3(get)]
+    #[serde(default)]
+    pub runtime_evidence: String,
+
+    /// Optional ISO-8601 timestamp after which runtime selection should warn
+    /// or stop selecting the model.
+    #[pyo3(get)]
+    #[serde(default)]
+    pub runtime_retire_after: String,
 }
 
 #[pymethods]
@@ -258,6 +300,12 @@ mod tests {
             domain_scores: HashMap::new(),
             safety_rating: 0.5,
             security_label: 0,
+            runtime_selectable: true,
+            runtime_settings: HashMap::new(),
+            runtime_replacement: String::new(),
+            runtime_replacement_settings: HashMap::new(),
+            runtime_evidence: String::new(),
+            runtime_retire_after: String::new(),
         }
     }
 

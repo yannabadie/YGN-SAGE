@@ -91,7 +91,12 @@ impl ModelRegistry {
         const EST_INPUT: u32 = 1000;
         const EST_OUTPUT: u32 = 2000;
 
-        let mut candidates: Vec<_> = self.cards.values().cloned().collect();
+        let mut candidates: Vec<_> = self
+            .cards
+            .values()
+            .filter(|c| c.runtime_selectable)
+            .cloned()
+            .collect();
         if candidates.is_empty() {
             return candidates;
         }
@@ -242,7 +247,10 @@ impl ModelRegistry {
         let mut candidates: Vec<_> = self
             .cards
             .values()
-            .filter(|c| max_cost_usd <= 0.0 || c.estimate_cost(1000, 500) <= max_cost_usd)
+            .filter(|c| {
+                c.runtime_selectable
+                    && (max_cost_usd <= 0.0 || c.estimate_cost(1000, 500) <= max_cost_usd)
+            })
             .cloned()
             .collect();
 

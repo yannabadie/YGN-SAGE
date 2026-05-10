@@ -77,6 +77,9 @@ def _fallback_config_for_provider(
     cfg: dict[str, Any],
     requested_config: LLMConfig,
 ) -> LLMConfig:
+    extra: dict[str, Any] = {}
+    if cfg["provider"] == "deepseek" and _fallback_model_for_config(cfg) == "deepseek-v4-flash":
+        extra["thinking"] = "disabled"
     return LLMConfig(
         provider=str(cfg["provider"]),
         model=_fallback_model_for_config(cfg),
@@ -85,6 +88,7 @@ def _fallback_config_for_provider(
         temperature=requested_config.temperature,
         top_p=requested_config.top_p,
         json_schema=requested_config.json_schema,
+        extra=extra,
     )
 
 

@@ -16,7 +16,7 @@ import asyncio
 import json
 import os
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +29,11 @@ MATRIX: list[tuple[str, str, str]] = [
     ("google", "gemini-3.1-flash-lite-preview", "fast"),
     # DeepSeek
     ("deepseek", "deepseek-v4-flash", "budget"),
+    ("deepseek", "deepseek-v4-pro", "reasoner"),
+    ("xai", "grok-code-fast-1", "coding"),
+    ("kimi", "kimi-k2.6", "reasoner"),
+    ("minimax", "MiniMax-M2.7", "reasoner"),
+    ("openrouter", "qwen/qwen3.5-plus-02-15", "reasoner"),
     # OpenAI — diagnostic mode (marked excluded in canary until green)
     ("openai", "gpt-5.4", "reasoner"),
     ("openai", "gpt-5.5-pro", "reasoner"),
@@ -40,6 +45,8 @@ class ProviderResult:
     provider: str
     model_id: str
     status: str = "unknown"  # ok | error | timeout | skipped
+    evidence_scope: str = "liveness_only"
+    warnings: list[str] = field(default_factory=list)
     latency_ms: float = 0.0
     output_length: int = 0
     cost_usd: float | None = None
@@ -80,6 +87,7 @@ async def _test_one(
     timeout: float = 60.0,
 ) -> ProviderResult:
     result = ProviderResult(provider=provider_key, model_id=model_id)
+    result.warnings = _preflight_warnings(provider_key, model_id)
     t0 = time.perf_counter()
 
     try:
@@ -94,11 +102,24 @@ async def _test_one(
 
         response = await asyncio.wait_for(
             provider.generate(
-                messages=[Message(role=Role.USER, content="Say 'ok'.")],
+                messages=[Message(role=Role.USER, content="Reply with exactly: ok")],
                 config=config,
             ),
             timeout=timeout,
         )
+
+        if not (response.content or "").strip():
+            result.status = "error"
+            result.error_type = "EmptyContent"
+            result.error_message = "Provider returned an empty final content field"
+            result.latency_ms = (time.perf_counter() - t0) * 1000
+            return result
+
+        if (response.content or "").strip().lower() != "ok":
+            result.warnings.append(
+                "Smoke output was non-empty but not exactly 'ok'; "
+                "preflight remains liveness-only, not instruction-following evidence."
+            )
 
         result.status = "ok"
         result.output_length = len(response.content or "")
@@ -132,6 +153,17 @@ async def _test_one(
     return result
 
 
+def _preflight_warnings(provider_key: str, model_id: str) -> list[str]:
+    """Provider/model caveats that are known before the live call."""
+    warnings: list[str] = []
+    if provider_key == "xai" and model_id == "grok-code-fast-1":
+        warnings.append(
+            "xAI lists grok-code-fast-1 for retirement on 2026-05-15T19:00:00Z; "
+            "treat this as short-lived liveness evidence."
+        )
+    return warnings
+
+
 async def run_all(
     matrix: list[tuple[str, str, str]],
     api_keys: dict[str, str],
@@ -144,6 +176,7 @@ async def run_all(
             r = ProviderResult(
                 provider=provider_key, model_id=model_id,
                 status="skipped", error_type="MissingApiKey",
+                warnings=_preflight_warnings(provider_key, model_id),
             )
         else:
             r = await _test_one(provider_key, model_id, api_key, timeout)
@@ -173,6 +206,10 @@ def main(argv: list[str] | None = None) -> int:
         "google": ["GOOGLE_API_KEY", "GEMINI_API_KEY"],
         "openai": ["OPENAI_API_KEY"],
         "deepseek": ["DEEPSEEK_API_KEY", "DEEP_SEEK_API_KEY"],
+        "xai": ["GROK_API_KEY"],
+        "kimi": ["KIMI_API_KEY"],
+        "minimax": ["MINIMAX_API_KEY"],
+        "openrouter": ["OPEN_ROUTER_API_KEY"],
     }
     for provider, env_vars in key_map.items():
         for var in env_vars:

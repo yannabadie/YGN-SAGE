@@ -810,11 +810,12 @@ pub fn formal_solver(_model_id: &str) -> TopologyGraph {
     let mut g = TopologyGraph::try_new("formal_solver").unwrap();
 
     // Formalizer (LLM): translates NL to equations.
-    // Pinned to deepseek-chat: fast, cheap, reliable for math formalization.
+    // Pinned to the current DeepSeek V4 runtime id. cards.toml sets
+    // thinking disabled for this budget/formalization path.
     // OpenRouter is unreliable (circuit breaker opens frequently).
     let mut formalizer = TopologyNode::new(
         "formalizer".into(),
-        "deepseek-chat".into(),
+        "deepseek-v4-flash".into(),
         2, // S2 reasoner — needs to understand the problem
         // A7 (2026-04-24): "tools" — see planner above for rationale.
         vec!["reasoning".into(), "math".into(), "tools".into()],

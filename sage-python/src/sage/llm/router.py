@@ -92,6 +92,8 @@ class ModelRouter:
         extra: dict = {}
         if tier == "codex_max" or (tier == "critical" and "gpt-5" in model):
             extra["reasoning_effort"] = "xhigh"
+        if provider == "deepseek" and model == "deepseek-v4-flash":
+            extra["thinking"] = "disabled"
 
         return LLMConfig(
             provider=provider, model=model, max_tokens=max_tokens,

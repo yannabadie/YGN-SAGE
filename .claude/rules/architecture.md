@@ -7,8 +7,8 @@ paths:
 # Architecture Quick Reference
 
 ## Project Structure
-- `sage-core/` — Rust orchestrator (PyO3). **560 tests** with `--features smt` (canonical: `docs/status/current.json`).
-- `sage-python/` — Python SDK. **3400 collected** (canonical: `docs/status/current.json`). Full local suite with `.env` verified on 2026-05-09: **3329 passed, 71 skipped**. **mypy 0 errors / 261 source files.** ruff clean. Type:ignore ceiling 54/54.
+- `sage-core/` — Rust orchestrator (PyO3). **571 tests** with `--features smt` (canonical: `docs/status/current.json`).
+- `sage-python/` — Python SDK. **3476 collected** (canonical: `docs/status/current.json`). 2026-05-10 provider/model-catalog ticket: targeted provider/routing pytest slice green, **mypy 0 errors / 263 source files**, ruff clean. Full-suite recertification remains a separate gate.
 - `sage-discover/` — Knowledge pipeline (arXiv → ExoCortex). **100 tests** (canonical: `docs/status/current.json`).
 - `ui/` — Dashboard (FastAPI + WebSocket).
 - `Researches/` — 25+ research papers backing architecture decisions.

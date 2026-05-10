@@ -1,7 +1,7 @@
 ---
 title: YGN-SAGE Dashboard
 type: moc
-updated: 2026-04-30
+updated: 2026-05-10
 ---
 
 # YGN-SAGE — Self-Adaptive Generation Engine
@@ -9,7 +9,25 @@ updated: 2026-04-30
 Agent Development Kit qui **apprend** quelle topologie multi-agent utiliser pour chaque tache.
 Rust core (sage-core) + Python SDK (sage-python) + Knowledge Pipeline (sage-discover).
 
-## Etat du projet (30 Avril 2026 — post cycle-8 R6.1c + A14)
+## Etat actuel (10 Mai 2026)
+
+> [!info] Source canonique : `docs/status/current.json`, puis
+> `docs/status/2026-05-10-current-state.md` pour le recap humain date.
+
+| Metrique | Valeur | Notes |
+|----------|--------|-------|
+| Tests Python (sage-python) | **3476 collected** | Snapshot `2026-05-10T14:29:02+00:00`; counts, pas pass-rate full suite. |
+| Tests Rust (sage-core) | **571 listed** | Features `smt,cognitive,sandbox,cranelift,tool-executor`. |
+| Tests Discovery (sage-discover) | **100 collected** | Inchangé. |
+| Provider catalog | **24 model cards / 7 API providers** | `cards.toml` est la source de verite modele; `connector.py` configure les endpoints. |
+| Provider smoke live | **10/10 OK** | `evidence_scope=liveness_only`; connectivite seulement. Warnings: `grok-code-fast-1` retraite 2026-05-15, MiniMax sortie non-exacte. |
+| DeepSeek | `deepseek-v4-flash` / `deepseek-v4-pro` | `deepseek-chat` et `deepseek-reasoner` sont aliases legacy non selectionnables. |
+| MiniMax | `MiniMax-M2.7` | Orthographe officielle; contexte texte 204.8k. |
+| SWE-bench Pro grading | **NO_GO_GRADER_REPO_DIRTY** | Docker OK, mais disque local < 120 GB et repo grader dirty. |
+| Canary N=1 | **BLOCKED** | 1 task, 120s timeout, 0 patch, learning evidence gate NO_GO, grading/CI blocked. |
+| cgpro | **VERIFY pending** | Provider/model-catalog review conversation `6a0087d7-2a1c-838b-aff9-8dff56a633e4`. |
+
+## Etat historique (30 Avril 2026 — post cycle-8 R6.1c + A14)
 
 > [!info] Source canonique : `docs/status/current.json` (régénéré via `python scripts/status_snapshot.py`). Les counts ci-dessous reflètent le snapshot du 2026-04-30 16:08 UTC ; pour la vérité instantanée, consulter le JSON.
 

@@ -10,7 +10,7 @@
 | Dataset | SWE-bench Pro test split, stratified N=5 |
 | Seed | 42 |
 | Provider allowlist | `google`, `deepseek` |
-| OpenAI | **EXCLUDED** (gpt-5.5-pro/gpt-5.4 silent fail history; local constructor routing for gpt-5.5-pro reverified by unit tests through `83e4e036`, but live provider preflight remains pending) |
+| OpenAI | **Not in the budget canary allowlist by default.** Direct live provider smoke for `gpt-5.4` and `gpt-5.5-pro` passed on 2026-05-10 (`docs/benchmarks/2026-05-10-provider-preflight-post-model-catalog.json`), but a canary launch must still declare any OpenAI execution explicitly in its launch manifest. |
 
 ## Budget & timeouts
 
