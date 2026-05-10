@@ -91,6 +91,9 @@ _PREDICTION_AUDIT_FIELDS = (
     "_diff_verifier_outcome",
     "model_id_final",
     "provider_final",
+    "_observed_model_ids",
+    "_observed_providers",
+    "_observed_event_cost_usd",
     "total_cost_usd",
 )
 
@@ -144,6 +147,69 @@ def _extract_manifest_commit(manifest_text: str) -> str | None:
     if not match:
         return None
     return match.group(1).strip()
+
+
+def _event_value(event: dict[str, Any], key: str) -> Any:
+    payload = event.get("payload")
+    if isinstance(payload, dict) and payload.get(key) is not None:
+        return payload.get(key)
+    return event.get(key)
+
+
+def _event_audit_from_file(events_path: Path) -> dict[str, Any]:
+    model_id_final: str | None = None
+    provider_final: str | None = None
+    observed_model_ids: set[str] = set()
+    observed_providers: set[str] = set()
+    observed_cost_usd = 0.0
+
+    if not events_path.is_file():
+        return {
+            "model_id_final": None,
+            "provider_final": None,
+            "_observed_model_ids": [],
+            "_observed_providers": [],
+            "_observed_event_cost_usd": 0.0,
+        }
+
+    with events_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            ev_type = event.get("event_type")
+            if ev_type in {
+                "routing_decision",
+                "model_assigned",
+                "node_started",
+                "node_completed",
+            }:
+                model_id = _event_value(event, "model_id")
+                if isinstance(model_id, str) and model_id:
+                    model_id_final = model_id
+                    observed_model_ids.add(model_id)
+                provider_id = _event_value(event, "provider_id") or _event_value(
+                    event, "provider"
+                )
+                if isinstance(provider_id, str) and provider_id:
+                    provider_final = provider_id
+                    observed_providers.add(provider_id)
+            cost_usd = _event_value(event, "cost_usd")
+            if isinstance(cost_usd, (int, float)) and not isinstance(cost_usd, bool):
+                observed_cost_usd += float(cost_usd)
+
+    return {
+        "model_id_final": model_id_final,
+        "provider_final": provider_final,
+        "_observed_model_ids": sorted(observed_model_ids),
+        "_observed_providers": sorted(observed_providers),
+        "_observed_event_cost_usd": observed_cost_usd,
+    }
 
 
 # ── Synthetic patch generators (mock mode) ───────────────────────────────────
@@ -351,6 +417,8 @@ async def _run_sage_cli(
             exit_code, stderr_text[-4000:],
         )
 
+    event_audit = _event_audit_from_file(output_events_path)
+
     return {
         "exit_code": exit_code,
         "latency_ms": int(latency_s * 1000),
@@ -362,8 +430,11 @@ async def _run_sage_cli(
             else None
         ),
         "run_id": cli_complete_run_id,
-        "model_id_final": model_id_final,
-        "provider_final": provider_final,
+        "model_id_final": event_audit.get("model_id_final") or model_id_final,
+        "provider_final": event_audit.get("provider_final") or provider_final,
+        "_observed_model_ids": event_audit.get("_observed_model_ids", []),
+        "_observed_providers": event_audit.get("_observed_providers", []),
+        "_observed_event_cost_usd": event_audit.get("_observed_event_cost_usd", 0.0),
         "trace_dir": (
             cli_complete_payload.get("trace_dir")
             if isinstance(cli_complete_payload, dict)
@@ -757,13 +828,17 @@ def _provider_gate(
             "provider_allowlist": list(provider_allowlist),
             "provider_denylist": list(provider_denylist),
         }
-    observed = sorted(
-        {
-            str(summary.get("provider_final"))
-            for summary in summaries
-            if summary.get("provider_final")
-        }
-    )
+    observed_set: set[str] = set()
+    for summary in summaries:
+        raw_observed = summary.get("_observed_providers")
+        if isinstance(raw_observed, list):
+            observed_set.update(str(item) for item in raw_observed if item)
+        elif isinstance(raw_observed, tuple):
+            observed_set.update(str(item) for item in raw_observed if item)
+        provider_final = summary.get("provider_final")
+        if provider_final:
+            observed_set.add(str(provider_final))
+    observed = sorted(observed_set)
     missing = [
         str(summary.get("instance_id"))
         for summary in summaries
@@ -816,6 +891,7 @@ def _timeout_task_result(
         if needs_leading_newline:
             handle.write("\n")
         handle.write(timeout_line + "\n")
+    event_audit = _event_audit_from_file(per_task_events)
     summary = {
         "instance_id": instance_id,
         "exit_code": None,
@@ -829,8 +905,11 @@ def _timeout_task_result(
         "_verifier_repair_budget_usd": None,
         "_diff_verifier_mismatches": None,
         "_diff_verifier_outcome": None,
-        "model_id_final": None,
-        "provider_final": None,
+        "model_id_final": event_audit.get("model_id_final"),
+        "provider_final": event_audit.get("provider_final"),
+        "_observed_model_ids": event_audit.get("_observed_model_ids", []),
+        "_observed_providers": event_audit.get("_observed_providers", []),
+        "_observed_event_cost_usd": event_audit.get("_observed_event_cost_usd", 0.0),
         "learning_evidence_boundary": _learning_evidence_no_go(
             reason_code="task_timeout",
             detail=f"task exceeded timeout_s={task_timeout_s}",
@@ -967,6 +1046,9 @@ async def _run_one_task(
             "events_path": str(per_task_events.relative_to(output_dir)),
             "model_id_final": cli_result.get("model_id_final"),
             "provider_final": cli_result.get("provider_final"),
+            "_observed_model_ids": cli_result.get("_observed_model_ids", []),
+            "_observed_providers": cli_result.get("_observed_providers", []),
+            "_observed_event_cost_usd": cli_result.get("_observed_event_cost_usd", 0.0),
             "_verifier_repair_budget_usd": None,
             "_diff_verifier_mismatches": None,
             "_diff_verifier_outcome": None,

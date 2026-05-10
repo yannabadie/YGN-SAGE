@@ -683,6 +683,69 @@ def test_run_provider_gate_blocks_denylisted_provider(monkeypatch, tmp_path) -> 
     assert summary["canary_decision"] == "NO_GO"
 
 
+def test_run_provider_gate_uses_all_observed_providers(monkeypatch, tmp_path) -> None:
+    instances_json = tmp_path / "instances.json"
+    instances_json.write_text(
+        json.dumps([{"instance_id": "task-1", "problem_statement": "x"}]),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(arm_d, "_load_format_patch_module", _FakeFormatModule)
+
+    async def fake_run_one_task(*args, **kwargs):
+        return {
+            "summary": {
+                "instance_id": "task-1",
+                "exit_code": None,
+                "latency_ms": 120000,
+                "total_cost_usd": 0.0,
+                "extracted_patch_present": False,
+                "extracted_patch_chars": 0,
+                "mock": False,
+                "timeout": True,
+                "provider_final": "deepseek",
+                "model_id_final": "deepseek-v4-flash",
+                "_observed_providers": ["deepseek", "openai", "openrouter"],
+                "_observed_model_ids": [
+                    "deepseek-v4-flash",
+                    "gpt-5.4",
+                    "qwen/qwen3.5-plus-02-15",
+                ],
+                "_observed_event_cost_usd": 0.02672,
+                "learning_evidence_boundary": {
+                    "claimed": True,
+                    "status": "no_go",
+                    "reason_code": "task_timeout",
+                },
+            },
+            "record": {"instance_id": "task-1", "patch": "", "prefix": "test"},
+        }
+
+    monkeypatch.setattr(arm_d, "_run_one_task", fake_run_one_task)
+
+    exit_code = asyncio.run(
+        arm_d.run(
+            instances_json,
+            tmp_path / "out",
+            mock=False,
+            limit=1,
+            budget_usd=5.0,
+            global_budget_usd=25.0,
+            tier="budget",
+            prefix="test",
+            provider_allowlist=("google", "deepseek"),
+            provider_denylist=("openai",),
+        )
+    )
+
+    summary = json.loads((tmp_path / "out" / "summary.json").read_text())
+    gate = summary["acceptance_gate_results"]["provider_gate"]
+    assert exit_code == 0
+    assert gate["status"] == "NO_GO"
+    assert gate["observed_providers"] == ["deepseek", "openai", "openrouter"]
+    assert gate["denied_providers"] == ["openai"]
+    assert gate["outside_allowlist"] == ["openai", "openrouter"]
+
+
 def test_run_writes_aggregate_events_jsonl(tmp_path) -> None:
     instances_json = tmp_path / "instances.json"
     instances_json.write_text(
@@ -725,7 +788,9 @@ def test_timeout_task_result_appends_runner_timeout_to_partial_events(
     per_task_events = output_dir / "per_task" / f"{instance_id}.events.jsonl"
     per_task_events.parent.mkdir(parents=True)
     per_task_events.write_text(
-        '{"event_type":"cli_started"}\n',
+        '{"event_type":"cli_started"}\n'
+        '{"event_type":"model_assigned","model_id":"gpt-5.4",'
+        '"provider_id":"openai"}\n',
         encoding="utf-8",
         newline="\n",
     )
@@ -744,7 +809,39 @@ def test_timeout_task_result_appends_runner_timeout_to_partial_events(
         for line in per_task_events.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    assert [row["event_type"] for row in rows] == ["cli_started", "runner_timeout"]
+    assert [row["event_type"] for row in rows] == [
+        "cli_started",
+        "model_assigned",
+        "runner_timeout",
+    ]
+    assert result["summary"]["model_id_final"] == "gpt-5.4"
+    assert result["summary"]["provider_final"] == "openai"
+    assert result["summary"]["_observed_providers"] == ["openai"]
     assert result["summary"]["learning_evidence_boundary"][
         "expect_default_pipeline_learn"
     ] is True
+
+
+def test_event_audit_extracts_top_level_runtime_fields_and_cost(tmp_path) -> None:
+    events_path = tmp_path / "events.jsonl"
+    events_path.write_text(
+        '{"event_type":"routing_decision","model_id":"gpt-5.5-pro"}\n'
+        '{"event_type":"model_assigned","model_id":"gpt-5.4",'
+        '"provider_id":"openai"}\n'
+        '{"event_type":"node_completed","model_id":"deepseek-v4-flash",'
+        '"provider_id":"deepseek","cost_usd":0.02672}\n',
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    audit = arm_d._event_audit_from_file(events_path)
+
+    assert audit["model_id_final"] == "deepseek-v4-flash"
+    assert audit["provider_final"] == "deepseek"
+    assert audit["_observed_model_ids"] == [
+        "deepseek-v4-flash",
+        "gpt-5.4",
+        "gpt-5.5-pro",
+    ]
+    assert audit["_observed_providers"] == ["deepseek", "openai"]
+    assert audit["_observed_event_cost_usd"] == 0.02672
