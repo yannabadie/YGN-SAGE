@@ -48,7 +48,7 @@
 
   Post-push
   Après push, rapporter le résultat :
-
+exemple:
   cgpro ask --resume autonomous-protocol-20260501 "Post-push report:
   commit <sha> pushed.
   Validation: ...
