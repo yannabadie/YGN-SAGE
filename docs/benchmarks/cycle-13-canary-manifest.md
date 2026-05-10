@@ -10,7 +10,7 @@
 | Dataset | SWE-bench Pro test split, stratified N=5 |
 | Seed | 42 |
 | Provider allowlist | `google`, `deepseek` |
-| OpenAI | **EXCLUDED** (gpt-5.5-pro/gpt-5.4 silent fail history; local constructor routing for gpt-5.5-pro reverified by unit tests in `12faae91`, but live provider preflight remains pending) |
+| OpenAI | **EXCLUDED** (gpt-5.5-pro/gpt-5.4 silent fail history; local constructor routing for gpt-5.5-pro reverified by unit tests through `83e4e036`, but live provider preflight remains pending) |
 
 ## Budget & timeouts
 
