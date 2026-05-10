@@ -318,6 +318,49 @@ def enforce_provider_policy(
     raise ProviderPolicyViolation(message)
 
 
+def enforce_provider_policy_preassignment(
+    pipeline: "CognitiveOrchestrationPipeline",
+    ctx: "PipelineContext",
+    decision: "ProviderPolicyDecision | None" = None,
+) -> None:
+    """Stage-3 fail-closed gate: raise ProviderPolicyViolation if the topology
+    assignment already violates the active provider policy, BEFORE Stage-4
+    emits ``model_assigned`` and the topology executor attempts the disallowed
+    provider call.
+
+    Cycle-13 A4 (cgpro DESIGN 2026-05-10, conv
+    ``cgpro_ygn_sage_global_analysis_20260510``). The Stage-4 gate
+    ``enforce_provider_policy`` raises but has no fallback path, so any
+    detected violation produces an unrecovered failure event with empty
+    ``model_id_final`` / ``provider_final`` (see canary
+    ``2026-05-10-canary-n5-real-{ec0b775e,8844c42e}/`` for the 5/5 timeout
+    repro). A4 introduces this preassignment gate so the failure is raised
+    explicitly with ``kind="provider_policy_preassignment"`` BEFORE the
+    runtime emits a ``model_assigned`` event the executor would attempt to
+    honour. Defense in depth: the Stage-4 enforcement remains active in
+    case the runtime re-routes between Stage-3 and Stage-4.
+
+    The optional ``decision`` argument lets callers reuse a freshly computed
+    ``ProviderPolicyDecision`` without re-walking the topology — Stage-3
+    already does the eval for its precheck, so we want the gate to use that
+    same decision.
+    """
+    if decision is None:
+        decision = evaluate_provider_policy(pipeline, ctx)
+        setattr(ctx, "_provider_policy_decision", decision.to_dict())
+    if not decision.violations:
+        return
+    message = _violation_message(decision)
+    event_log = _current_event_log_or_none()
+    if event_log is not None:
+        event_log.emit_failure(
+            kind="provider_policy_preassignment",
+            error_type="provider_policy_violation",
+            message=message,
+        )
+    raise ProviderPolicyViolation(message)
+
+
 def enforce_model_provider_policy(
     pipeline: "CognitiveOrchestrationPipeline",
     *,

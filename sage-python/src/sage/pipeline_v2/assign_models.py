@@ -131,14 +131,42 @@ def assign_models(
         # execution in Stage 5 (LEARN) and naturally deprioritizes bad arms.
 
         provider_policy_blocks = False
+        policy_decision = None
         try:
-            from sage.pipeline_v2.provider_policy import evaluate_provider_policy
+            from sage.pipeline_v2.provider_policy import (
+                ProviderPolicyViolation,
+                evaluate_provider_policy,
+            )
 
             policy_decision = evaluate_provider_policy(self, ctx)
             setattr(ctx, "_provider_policy_decision", policy_decision.to_dict())
             provider_policy_blocks = bool(policy_decision.violations)
+        except ProviderPolicyViolation:
+            # Cycle-13 A4 (cgpro DESIGN 2026-05-10): defensive guard.
+            # ProviderPolicyViolation subclasses RuntimeError, so the broad
+            # `except (RuntimeError, ...)` below would otherwise swallow it
+            # and let Stage-4 enforcement be the only line of defense. Today
+            # `evaluate_provider_policy` does not raise, but if a future
+            # refactor decides to fail-closed at evaluation time, the
+            # violation MUST escape this try block. Order matters: this
+            # narrow `except` MUST precede the broad one.
+            raise
         except (ImportError, RuntimeError, TypeError, ValueError) as exc:
             log.warning("Stage 3 provider policy precheck skipped: %s", exc)
+
+        # Cycle-13 A4 (cgpro DESIGN 2026-05-10): fail-closed preassignment
+        # gate. When `evaluate_provider_policy` detected violations, the
+        # topology already carries a model whose provider violates the active
+        # provider policy. Raise BEFORE Stage-4 emits `model_assigned` and
+        # BEFORE the topology executor attempts the disallowed provider call.
+        # Stage-4 `enforce_provider_policy` remains active as defense in
+        # depth in case the runtime re-routes between Stage-3 and Stage-4.
+        if provider_policy_blocks and policy_decision is not None:
+            from sage.pipeline_v2.provider_policy import (
+                enforce_provider_policy_preassignment,
+            )
+
+            enforce_provider_policy_preassignment(self, ctx, policy_decision)
 
         # Filter out models whose provider is dead (health check or circuit breaker).
         # If the raw assignment already violates an active provider policy, do not

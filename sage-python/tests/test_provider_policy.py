@@ -232,7 +232,12 @@ def test_assign_models_forwards_active_provider_policy_to_assigner() -> None:
     ctx.topology = _FakeTopology()
     ctx.domain = "code"
 
-    assign_models(pipeline, ctx)
+    # Cycle-13 A4: Stage-3 now fail-closes when the topology already carries a
+    # disallowed provider (here: gpt-5.5-pro vs allowlist [google, deepseek]).
+    # The kwargs forwarding contract is verified BEFORE the gate fires — the
+    # `_Assigner.assign_models` call is the first thing Stage-3 does.
+    with pytest.raises(ProviderPolicyViolation):
+        assign_models(pipeline, ctx)
 
     assert assigner.kwargs["provider_allowlist"] == ["deepseek", "google"]
     assert assigner.kwargs["provider_denylist"] == ["openai"]
@@ -258,7 +263,12 @@ def test_old_binding_typeerror_assignment_is_still_policy_prechecked() -> None:
     ctx.topology = _FakeTopology()
     ctx.domain = "code"
 
-    assign_models(pipeline, ctx)
+    # Cycle-13 A4: Stage-3 fail-closes after recording the precheck decision
+    # on ctx — `_LegacyAssigner.assign_models` is still invoked twice (once
+    # with kwargs, once without via the TypeError fallback) BEFORE the gate
+    # fires.
+    with pytest.raises(ProviderPolicyViolation):
+        assign_models(pipeline, ctx)
 
     assert assigner.calls == 2
     assert ctx.assignments == {0: "gpt-5.5-pro"}
@@ -543,3 +553,167 @@ async def test_provider_policy_blocks_stage1_planner_before_provider_call(
 
     assert provider.called is False
     assert calls["execute"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Block A4 (cgpro DESIGN 2026-05-10): Stage-3 fail-closed preassignment gate.
+#
+# Repro target — N=1 preflight 8848714e events.jsonl (commit f0682bd7
+# canary forensic): the routing_decision picks gpt-5.5-pro, then 1.4ms
+# later a `failure` event with kind="provider_policy" surfaces because
+# the Stage-4 enforcement raises with no fallback. A4 introduces a
+# Stage-3 preassignment gate so the failure is raised explicitly with
+# kind="provider_policy_preassignment" BEFORE the runtime emits a
+# model_assigned event the executor would attempt to honour.
+# ---------------------------------------------------------------------------
+
+
+def test_a4_enforce_preassignment_emits_failure_and_raises(monkeypatch):
+    """When violations are detected, the gate emits a `failure` event with
+    kind=provider_policy_preassignment AND raises ProviderPolicyViolation.
+    """
+    from sage.pipeline_v2 import provider_policy as provider_policy_mod
+    from sage.pipeline_v2.provider_policy import (
+        enforce_provider_policy_preassignment,
+        evaluate_provider_policy,
+    )
+
+    pipeline = _make_pipeline()
+    _install_policy(pipeline)
+    ctx = PipelineContext(task="x", budget=5.0)
+    ctx.topology = _FakeTopology()
+    ctx.assignments = {0: "gpt-5.5-pro"}
+
+    decision = evaluate_provider_policy(pipeline, ctx)
+    assert decision.violations, (
+        "test fixture must produce a violation for the gate to fire"
+    )
+
+    fake_log = MagicMock()
+    monkeypatch.setattr(
+        provider_policy_mod, "_current_event_log_or_none", lambda: fake_log,
+    )
+
+    with pytest.raises(ProviderPolicyViolation):
+        enforce_provider_policy_preassignment(pipeline, ctx, decision)
+
+    fake_log.emit_failure.assert_called_once()
+    call_kwargs = fake_log.emit_failure.call_args.kwargs
+    assert call_kwargs["kind"] == "provider_policy_preassignment", (
+        "failure event must distinguish preassignment from Stage-4 enforcement"
+    )
+    assert call_kwargs["error_type"] == "provider_policy_violation"
+    assert "gpt-5.5-pro" in call_kwargs["message"]
+
+
+def test_a4_enforce_preassignment_no_violations_no_raise():
+    """When the active policy has no violations, the gate is a no-op."""
+    from sage.pipeline_v2.provider_policy import (
+        enforce_provider_policy_preassignment,
+        evaluate_provider_policy,
+    )
+
+    pipeline = _make_pipeline()
+    _install_policy(pipeline)
+    ctx = PipelineContext(task="x", budget=5.0)
+
+    class _DeepseekTopology:
+        def node_count(self) -> int:
+            return 1
+
+        def get_node(self, idx: int):
+            assert idx == 0
+            return _FakeNode(model_id="deepseek-v4-flash")
+
+    ctx.topology = _DeepseekTopology()
+    ctx.assignments = {0: "deepseek-v4-flash"}
+
+    decision = evaluate_provider_policy(pipeline, ctx)
+    assert not decision.violations
+
+    # Must not raise.
+    enforce_provider_policy_preassignment(pipeline, ctx, decision)
+
+
+def test_a4_assign_models_fails_closed_on_active_violation(monkeypatch):
+    """End-to-end: when the assigner produces a topology that violates the
+    active provider policy, Stage-3 must raise ProviderPolicyViolation
+    BEFORE the orchestrator emits a `model_assigned` event for Stage-4.
+    """
+    from sage.pipeline_v2 import assign_models as assign_models_mod
+    from sage.pipeline_v2 import provider_policy as provider_policy_mod
+
+    pipeline = _make_pipeline()
+    _install_policy(pipeline)
+
+    # Fake assigner — just claims 1 node was assigned. The actual
+    # `ctx.assignments[0]` value is filled from `topology.get_node(0).model_id`
+    # by the recording loop in assign_models, so the violation comes from the
+    # _FakeTopology() default (gpt-5.5-pro).
+    fake_assigner = MagicMock()
+    fake_assigner.assign_models.return_value = 1
+    pipeline.assigner = fake_assigner
+
+    ctx = PipelineContext(task="x", budget=5.0)
+    ctx.topology = _FakeTopology()
+    ctx.domain = "code"
+    ctx.system = 3
+
+    fake_log = MagicMock()
+    monkeypatch.setattr(
+        provider_policy_mod, "_current_event_log_or_none", lambda: fake_log,
+    )
+
+    with pytest.raises(ProviderPolicyViolation):
+        assign_models_mod.assign_models(pipeline, ctx)
+
+    # The Rust assigner WAS called (Stage-3 normal flow), but Stage-3
+    # fail-closed gate raised before any Stage-4 event could fire.
+    assert fake_assigner.assign_models.called
+
+    # The preassignment gate must emit exactly one failure event with the
+    # new kind. No `model_assigned` event can have been emitted via the
+    # event log because Stage-4 never runs.
+    fake_log.emit_failure.assert_called_once()
+    call_kwargs = fake_log.emit_failure.call_args.kwargs
+    assert call_kwargs["kind"] == "provider_policy_preassignment", (
+        "Stage-3 must emit kind=provider_policy_preassignment"
+    )
+    fake_log.emit_model_assigned.assert_not_called()  # type: ignore[attr-defined]
+
+
+def test_a4_provider_policy_violation_not_swallowed_by_broad_except(monkeypatch):
+    """Defensive: ProviderPolicyViolation subclasses RuntimeError, so the
+    Stage-3 broad `except (ImportError, RuntimeError, TypeError, ValueError)`
+    block could otherwise swallow it. The narrow `except ProviderPolicyViolation: raise`
+    must escape.
+    """
+    from sage.pipeline_v2 import assign_models as assign_models_mod
+    from sage.pipeline_v2 import provider_policy as provider_policy_mod
+
+    pipeline = _make_pipeline()
+    _install_policy(pipeline)
+
+    fake_assigner = MagicMock()
+    fake_assigner.assign_models.return_value = 1
+    pipeline.assigner = fake_assigner
+
+    ctx = PipelineContext(task="x", budget=5.0)
+    ctx.topology = _FakeTopology()
+    ctx.domain = "code"
+    ctx.system = 3
+
+    sentinel_message = "synthetic preassignment violation from test"
+
+    def _raising_evaluate(_pipeline, _ctx, policy=None):
+        # Today evaluate_provider_policy never raises, but a future refactor
+        # might fail-closed at evaluation time. The narrow `except
+        # ProviderPolicyViolation` MUST escape the broad RuntimeError catch.
+        raise ProviderPolicyViolation(sentinel_message)
+
+    monkeypatch.setattr(
+        provider_policy_mod, "evaluate_provider_policy", _raising_evaluate,
+    )
+
+    with pytest.raises(ProviderPolicyViolation, match="synthetic preassignment"):
+        assign_models_mod.assign_models(pipeline, ctx)
