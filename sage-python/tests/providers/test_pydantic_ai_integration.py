@@ -16,7 +16,9 @@ any CI.
 """
 from __future__ import annotations
 
+from pathlib import Path
 import sys
+import tomllib
 import types as _types
 from unittest.mock import MagicMock
 
@@ -80,27 +82,78 @@ def test_factory_for_every_wired_provider() -> None:
         _ = PydanticAIProvider.for_sage_provider(prov, "some-model", api_key="k")
 
 
-def test_openai_responses_routing() -> None:
-    """gpt-5.4-pro must route to OpenAIResponsesModel, not OpenAIChatModel.
+@pytest.mark.parametrize(
+    ("model_id", "responses"),
+    [
+        ("gpt-5", False),
+        ("gpt-5.4", False),
+        ("gpt-5.5", False),
+        ("gpt-5-pro", True),
+        ("gpt-5-pro-2025-10-06", True),
+        ("gpt-5.2-pro", True),
+        ("gpt-5.4-pro", True),
+        ("gpt-5.5-pro", True),
+        ("gpt-5.5-pro-2026-04-23", True),
+        ("gpt-5.4-mini", False),
+        ("gpt-5.4-nano", False),
+        ("openai/responses/gpt-5.5", True),
+    ],
+)
+def test_openai_responses_route_policy(model_id: str, responses: bool) -> None:
+    """SAGE's local OpenAI routing policy is stable across GPT-5 ids."""
+    from sage.providers.pydantic_ai_provider import route_openai_model_via_responses
 
-    This quirk was caught during Phase 3 live test — the Chat Completions
-    endpoint returns 404 for gpt-5.4-pro. Pin the routing logic so a
-    future refactor can't silently regress it.
+    assert route_openai_model_via_responses(model_id) is responses
+
+
+def test_openai_55_cards_are_present_and_openai() -> None:
+    """The unit routing guard is tied to model ids actually wired in cards.toml."""
+    cards_path = (
+        Path(__file__).resolve().parents[3]
+        / "sage-core"
+        / "config"
+        / "cards.toml"
+    )
+    data = tomllib.loads(cards_path.read_text(encoding="utf-8"))
+    by_id = {model["id"]: model for model in data["models"]}
+
+    assert by_id["gpt-5.5"]["provider"] == "openai"
+    assert by_id["gpt-5.5-pro"]["provider"] == "openai"
+
+
+def test_openai_responses_routing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """GPT-5 pro ids route to OpenAIResponsesModel, not OpenAIChatModel.
+
+    Constructor-level only: this test must never validate by making a
+    network call. It pins SAGE routing policy, including the per-call
+    model override path used by ModelAssigner/config.model.
     """
+    httpx = pytest.importorskip("httpx")
     from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 
     from sage.providers.pydantic_ai_provider import PydanticAIProvider
 
-    pro = PydanticAIProvider.for_sage_provider("openai", "gpt-5.4-pro", "k")
-    assert isinstance(pro._model, OpenAIResponsesModel), (
-        "gpt-5.4-pro must use OpenAIResponsesModel — it's not a chat model. "
-        "Verified 2026-04-18: Chat Completions endpoint returns "
-        "404 'This is not a chat model'."
-    )
+    def _no_network(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("routing test must not perform network I/O")
 
-    # Regular gpt-5.4 is still a chat model
-    chat = PydanticAIProvider.for_sage_provider("openai", "gpt-5.4", "k")
-    assert isinstance(chat._model, OpenAIChatModel)
+    monkeypatch.setattr(httpx.Client, "request", _no_network)
+    monkeypatch.setattr(httpx.AsyncClient, "request", _no_network)
+
+    cases = {
+        "gpt-5.4-pro": OpenAIResponsesModel,
+        "gpt-5.5-pro": OpenAIResponsesModel,
+        "gpt-5.4": OpenAIChatModel,
+        "gpt-5.5": OpenAIChatModel,
+    }
+    for model_id, expected_cls in cases.items():
+        provider = PydanticAIProvider.for_sage_provider("openai", model_id, "k")
+        assert isinstance(provider._model, expected_cls), model_id
+
+    provider = PydanticAIProvider.for_sage_provider("openai", "gpt-5.5", "k")
+    assert isinstance(
+        provider._get_or_build_model("gpt-5.5-pro"), OpenAIResponsesModel,
+    )
+    assert isinstance(provider._get_or_build_model("gpt-5.5"), OpenAIChatModel)
 
 
 def test_cost_lookup_agrees_with_rust_registry() -> None:
@@ -201,8 +254,6 @@ async def test_circuit_breaker_fires_on_pydantic_ai_rate_limit() -> None:
     (same behaviour as LiteLLMProvider, commit 58ec0d8 — FrugalGPT-
     on-rate-limit).
     """
-    from unittest.mock import AsyncMock
-
     from sage.llm.base import LLMConfig, Message, Role
     from sage.providers.pydantic_ai_provider import PydanticAIProvider
 
@@ -213,9 +264,6 @@ async def test_circuit_breaker_fires_on_pydantic_ai_rate_limit() -> None:
     class _FakeRateLimit(Exception):
         pass
     _FakeRateLimit.__name__ = "RateLimitError"
-
-    # Patch model_request at the module level
-    import sage.providers.pydantic_ai_provider as mod
 
     async def _fake_model_request(*a, **kw):
         raise _FakeRateLimit("429 rate-limit exceeded insufficient_quota")
@@ -271,7 +319,7 @@ def test_thinking_roundtrips_both_directions() -> None:
     previously missing was SAGE's translation layer emitting
     ThinkingPart at all.
     """
-    from sage.llm.base import LLMResponse, Message, Role, ToolCall
+    from sage.llm.base import Message, Role, ToolCall
     from sage.providers.pydantic_ai_provider import (
         _our_messages_to_pydantic,
         _pydantic_response_to_ours,

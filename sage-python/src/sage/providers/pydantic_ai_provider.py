@@ -59,6 +59,19 @@ _PROVIDER_MAP: dict[str, dict[str, Any]] = {
     "minimax": {"kind": "custom_openai", "base_url": "https://api.minimax.io/v1"},
 }
 
+_OPENAI_RESPONSES_ROUTE_RE = re.compile(r"^gpt-5(?:\.\d+)*-pro(?:-|$)")
+
+
+def route_openai_model_via_responses(model_id: str) -> bool:
+    """Return whether SAGE routes this OpenAI model through Responses.
+
+    This is a SAGE policy/regression guard, not a live endpoint
+    availability claim. It keeps GPT-5 pro variants and explicit
+    ``responses`` aliases off the chat-model constructor path.
+    """
+    mid = (model_id or "").lower()
+    return "responses" in mid or _OPENAI_RESPONSES_ROUTE_RE.match(mid) is not None
+
 
 def _build_pydantic_model(provider_name: str, model_id: str, api_key: str | None) -> Any:
     """Return a Pydantic AI Model instance for the given (provider, model)."""
@@ -73,21 +86,11 @@ def _build_pydantic_model(provider_name: str, model_id: str, api_key: str | None
 
     if kind == "native_openai":
         from pydantic_ai.providers.openai import OpenAIProvider
-        # gpt-5.4-pro and other reasoning-only variants must use the
-        # Responses API (`/v1/responses`) — the Chat Completions endpoint
-        # returns "This is not a chat model" 404. Pydantic AI exposes
-        # OpenAIResponsesModel for this. Our cards.toml convention: any
-        # model starting with "gpt-5.4-pro" or ending in "-pro" among the
-        # gpt-5 family routes via Responses. (The previous LiteLLM path
-        # used an `openai/responses/<model>` prefix — same mechanism.)
-        _responses_only = (
-            # Any gpt-5.*-pro variant routes via Responses API
-            # (gpt-5.4-pro, gpt-5.5-pro, etc.).  The Chat Completions
-            # endpoint returns 404 for these reasoning-only models.
-            bool(re.match(r"^gpt-5\..*-pro", model_id))
-            or "responses" in model_id.lower()
-        )
-        if _responses_only:
+        # SAGE policy: GPT-5 pro variants and explicit responses aliases
+        # route through Pydantic AI's Responses-model class. Keep this
+        # predicate shared with the deprecated chat-completions fallback so
+        # the two OpenAI paths cannot drift.
+        if route_openai_model_via_responses(model_id):
             from pydantic_ai.models.openai import OpenAIResponsesModel
             return OpenAIResponsesModel(
                 model_id, provider=OpenAIProvider(api_key=api_key or "")

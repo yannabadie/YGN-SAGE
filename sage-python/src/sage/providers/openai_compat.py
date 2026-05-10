@@ -20,11 +20,11 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import warnings
 from typing import Any
 
 from sage.llm.base import LLMConfig, LLMResponse, Message
+from sage.providers.pydantic_ai_provider import route_openai_model_via_responses
 
 log = logging.getLogger(__name__)
 
@@ -47,8 +47,7 @@ def supports_chat_completions_model(provider_name: str, model_id: str) -> bool:
     """
     if (provider_name or "").lower() != "openai":
         return True
-    model = (model_id or "").lower()
-    return re.match(r"^gpt-5(?:\.\d+)?-pro(?:-|$)", model) is None
+    return not route_openai_model_via_responses(model_id)
 
 
 class OpenAICompatProvider:

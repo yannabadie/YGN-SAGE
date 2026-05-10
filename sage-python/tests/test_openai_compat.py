@@ -7,7 +7,10 @@ if "sage_core" not in sys.modules:
     sys.modules["sage_core"] = types.ModuleType("sage_core")
 
 from sage.llm.base import Message, Role, ToolCall
-from sage.providers.openai_compat import OpenAICompatProvider
+from sage.providers.openai_compat import (
+    OpenAICompatProvider,
+    supports_chat_completions_model,
+)
 
 
 def test_openai_preserves_tool_role_and_assistant_tool_calls():
@@ -62,3 +65,11 @@ def test_non_tool_messages_unchanged():
     converted = provider._convert_messages(messages)
     assert converted[0]["role"] == "system"
     assert converted[1]["role"] == "user"
+
+
+def test_openai_compat_rejects_gpt_55_pro_chat_path():
+    """Deprecated chat-completions fallback shares the active routing policy."""
+    assert supports_chat_completions_model("openai", "gpt-5.5") is True
+    assert supports_chat_completions_model("openai", "gpt-5.5-pro") is False
+    assert supports_chat_completions_model("openai", "gpt-5-pro") is False
+    assert supports_chat_completions_model("deepseek", "gpt-5.5-pro") is True
