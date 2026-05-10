@@ -6,7 +6,7 @@
 # Generated_at_utc is updated on every run; the canonical hashable diff is the
 # `claims:` array, which is sorted by id for stable output.
 
-_generated_at_utc: '2026-05-10T07:59:49+00:00'
+_generated_at_utc: '2026-05-10T08:08:13+00:00'
 _total_claims: 23
 claims:
 - id: benchmarks.bcb_hard_45_9
@@ -463,7 +463,7 @@ claims:
     typed pass-through events plus display metadata.'
   evidence_test: clients/pi-ygn-sage/test/contract.test.ts
   evidence_benchmark: n/a
-  evidence_commit: 7b050946
+  evidence_commit: c0715178
   last_verified_utc: '2026-05-10T07:59:18Z'
   owner: yann
   notes: 'Evidence command set: `cd clients/pi-ygn-sage && npm test`

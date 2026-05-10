@@ -107,7 +107,7 @@ claims:
     description: "clients/pi-ygn-sage local TypeScript bridge: spawns sage run --jsonl with shell=false, validates v0 stdout JSONL fail-closed, writes the 5 inbound commands as LF-only JSONL, and exposes typed pass-through events plus display metadata."
     evidence_test: "clients/pi-ygn-sage/test/contract.test.ts"
     evidence_benchmark: "n/a"
-    evidence_commit: "7b050946"
+    evidence_commit: "c0715178"
     last_verified_utc: "2026-05-10T07:59:18Z"
     owner: "yann"
     notes: |

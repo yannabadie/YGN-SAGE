@@ -385,7 +385,7 @@ JSONL framing, and golden JSONL coverage under
 - 2026-05-09 (`9db4380f`): TypeScript adapter `clients/pi-ygn-sage/`
   implements a local strict subprocess JSONL bridge with `protocol_version="v0"`
   pinned.
-- 2026-05-10 (`7b050946`): Adapter evidence strengthened with a controlled real
+- 2026-05-10 (`c0715178`): Adapter evidence strengthened with a controlled real
   CLI-entrypoint subprocess smoke: `createSageBridge()` drives
   `python -m sage.cli run --jsonl` through stdin/stdout, with boot replaced by
   a local slow pipeline in a temporary cwd to avoid live provider/API spend.
