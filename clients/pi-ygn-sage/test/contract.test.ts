@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 
 import {
   SAGE_CLI_ENVELOPE_EVENT_TYPES,
@@ -92,6 +95,29 @@ function fixturePath(): string {
 
 function realBackendCancelFixturePath(): string {
   return path.join(process.cwd(), "test", "fixtures", "real-backend-cancel.stdout.jsonl");
+}
+
+function repoRoot(): string {
+  return path.resolve(process.cwd(), "..", "..");
+}
+
+function pythonCommand(): { command: string; argsPrefix: string[] } {
+  const configured = process.env.PYTHON;
+  if (configured !== undefined && configured.length > 0 && !/\s/.test(configured)) {
+    return { command: configured, argsPrefix: [] };
+  }
+  return { command: process.platform === "win32" ? "python" : "python3", argsPrefix: [] };
+}
+
+async function waitForFile(filePath: string, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (existsSync(filePath)) {
+      return;
+    }
+    await delay(50);
+  }
+  throw new Error(`timed out waiting for ${filePath}`);
 }
 
 test("runtime event catalog is the 15-event v0 catalog", () => {
@@ -241,6 +267,193 @@ test("parser rejects an appended frame after archived real backend cli_complete"
       error.code === "frame_after_complete",
   );
 });
+
+test(
+  "createSageBridge drives the real Python CLI entrypoint with controlled boot",
+  { timeout: 30_000 },
+  async () => {
+    const tmp = await mkdtemp(path.join(os.tmpdir(), "sage-pi-adapter-"));
+    const readyFile = path.join(tmp, "pipeline-active");
+    const sitecustomizePath = path.join(tmp, "sitecustomize.py");
+    const py = pythonCommand();
+
+    await writeFile(
+      sitecustomizePath,
+      `
+import asyncio
+import os
+from pathlib import Path
+
+import sage.boot
+
+
+_READY = Path(os.environ["SAGE_NODE_SMOKE_PIPELINE_ACTIVE"])
+
+
+class _SlowPipeline:
+    def __init__(self):
+        self.last_context = None
+        self._active_context = None
+        self._remaining_budget = 5.0
+
+    def tighten_budget(self, new_budget):
+        from sage.contracts.cost_tracker import BudgetUpdateResult
+
+        if new_budget > self._remaining_budget:
+            return BudgetUpdateResult(
+                accepted=False,
+                reason="budget_loosen_rejected",
+                budget_usd=self._remaining_budget,
+                remaining=self._remaining_budget,
+                total_spent=0.0,
+            )
+        self._remaining_budget = float(new_budget)
+        return BudgetUpdateResult(
+            accepted=True,
+            reason="tightened",
+            budget_usd=float(new_budget),
+            remaining=float(new_budget),
+            total_spent=0.0,
+        )
+
+    async def run(self, task, budget_usd=None, system_hint=None):
+        if task != "hold execution until cancel":
+            raise AssertionError(f"unexpected task: {task!r}")
+        if budget_usd != 5.0:
+            raise AssertionError(f"unexpected budget_usd: {budget_usd!r}")
+        if system_hint != 3:
+            raise AssertionError(f"unexpected system_hint: {system_hint!r}")
+        self._active_context = object()
+        _READY.write_text("active", encoding="utf-8")
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            raise
+
+
+class _System:
+    def __init__(self):
+        self.pipeline = _SlowPipeline()
+
+
+def _boot_agent_system():
+    return _System()
+
+
+sage.boot.boot_agent_system = _boot_agent_system
+`,
+      "utf8",
+    );
+
+    const bridge = createSageBridge({
+      command: py.command,
+      args: [...py.argsPrefix, "-m", "sage.cli", "run", "--jsonl"],
+      cwd: tmp,
+      env: {
+        PYTHONPATH: [
+          tmp,
+          path.join(repoRoot(), "sage-python", "src"),
+          process.env.PYTHONPATH ?? "",
+        ].filter(Boolean).join(path.delimiter),
+        PYTHONNOUSERSITE: "1",
+        PYTHONDONTWRITEBYTECODE: "1",
+        SAGE_NODE_SMOKE_PIPELINE_ACTIVE: readyFile,
+        SAGE_BOOT_BYPASS_EPOCH_GUARD: "1",
+        SAGE_BOOT_BYPASS_REASON: "pi-adapter-real-backend-smoke",
+        SAGE_OPERATOR_ID: "node-pi-adapter-smoke",
+        SAGE_OTEL_EXPORTER: "none",
+        SAGE_LLM_TIER: "budget",
+        SAGE_DANGEROUS_TOOLS: "0",
+        ANTHROPIC_API_KEY: "",
+        COHERE_API_KEY: "",
+        DEEPSEEK_API_KEY: "",
+        GEMINI_API_KEY: "",
+        GOOGLE_API_KEY: "",
+        GROQ_API_KEY: "",
+        HF_TOKEN: "",
+        HUGGINGFACE_HUB_TOKEN: "",
+        MISTRAL_API_KEY: "",
+        OPENAI_API_KEY: "",
+        OPENROUTER_API_KEY: "",
+        XAI_API_KEY: "",
+      },
+      maxStderrBytes: 128 * 1024,
+    });
+
+    const events: SageOutboundEvent[] = [];
+    let controlsSent = false;
+
+    try {
+      await bridge.send({
+        command: "prompt",
+        args: {
+          task: "hold execution until cancel",
+          budget_usd: 5,
+          system_hint: 3,
+        },
+      });
+
+      for await (const event of bridge.events) {
+        events.push(event);
+        if (event.event_type === "cli_started" && !controlsSent) {
+          controlsSent = true;
+          await waitForFile(readyFile, 10_000);
+          await bridge.send({ command: "set_budget", args: { budget_usd: 2 } });
+          await bridge.cancel("node adapter controlled smoke");
+        }
+      }
+
+      const completion = await bridge.completed;
+
+      assert.equal(events[0]?.event_type, "cli_started");
+      assert.equal(events.at(-1)?.event_type, "cli_complete");
+      assert.deepEqual(
+        events.map((event) => event.seq),
+        events.map((_, index) => index),
+      );
+      assert.ok(events.every((event) => event.protocol_version === "v0"));
+
+      const cliCompleteFrames = events.filter(
+        (event) => event.event_type === "cli_complete",
+      );
+      assert.equal(cliCompleteFrames.length, 1);
+
+      const nonCancelFailures = events.filter(
+        (event) =>
+          event.event_type === "failure" &&
+          !(event.kind === "cli_cancel" && event.error_type === "cancelled"),
+      );
+      assert.deepEqual(nonCancelFailures, []);
+
+      const budgetFrames = events.filter(
+        (event) =>
+          event.event_type === "budget" &&
+          event.kind === "budget_tightened",
+      );
+      assert.equal(budgetFrames.length, 1);
+      assert.equal(budgetFrames[0].budget_remaining_usd, 2.0);
+
+      const cancelFailures = events.filter(
+        (event) =>
+          event.event_type === "failure" &&
+          event.kind === "cli_cancel" &&
+          event.error_type === "cancelled",
+      );
+      assert.equal(cancelFailures.length, 1);
+      assert.equal(events.at(-2), cancelFailures[0]);
+
+      const final = events.at(-1) as SageOutboundEvent;
+      assert.equal(payloadRecord(final)["outcome"], "cancelled");
+      assert.equal(payloadRecord(final)["exit_code"], 130);
+      assert.equal(payloadRecord(final)["final_seq"], events.at(-2)?.seq);
+      assert.equal(completion.exitCode, 130);
+      assert.equal(completion.finalEvent, final);
+    } finally {
+      await bridge.close();
+      await rm(tmp, { recursive: true, force: true });
+    }
+  },
+);
 
 test("parser rejects fail-closed stream violations", () => {
   const cases: Array<[string, Buffer | string, string]> = [
