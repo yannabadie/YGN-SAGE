@@ -15,9 +15,8 @@ import argparse
 import asyncio
 import json
 import os
-import sys
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +48,29 @@ class ProviderResult:
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def _usage_get(usage: Any, key: str, default: Any = 0) -> Any:
+    if isinstance(usage, dict):
+        return usage.get(key, default)
+    return getattr(usage, key, default)
+
+
+def _cost_from_usage(
+    usage: Any,
+    provider_key: str,
+    model_id: str,
+    *,
+    lookup_cost_per_token: Any,
+) -> float:
+    provider_reported = _usage_get(usage, "cost_usd", None)
+    if provider_reported is not None:
+        return float(provider_reported)
+
+    inp = int(_usage_get(usage, "input_tokens", 0) or 0)
+    out = int(_usage_get(usage, "output_tokens", 0) or 0)
+    cost_in, cost_out = lookup_cost_per_token(provider_key, model_id)
+    return inp * cost_in + out * cost_out
 
 
 async def _test_one(
@@ -84,15 +106,16 @@ async def _test_one(
 
         # Cost from usage
         if hasattr(response, "usage") and response.usage:
-            usage = response.usage
-            inp = getattr(usage, "input_tokens", 0) or 0
-            out = getattr(usage, "output_tokens", 0) or 0
-            # Estimate from cards.toml pricing
             from sage.providers.pydantic_ai_provider import (
                 _lookup_cost_per_token,
             )
-            cost_in, cost_out = _lookup_cost_per_token(provider_key, model_id)
-            result.cost_usd = (inp * cost_in + out * cost_out) / 1_000_000
+
+            result.cost_usd = _cost_from_usage(
+                response.usage,
+                provider_key,
+                model_id,
+                lookup_cost_per_token=_lookup_cost_per_token,
+            )
         else:
             result.cost_usd = 0.0
 

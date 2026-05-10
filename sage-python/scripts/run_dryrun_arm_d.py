@@ -52,6 +52,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from contextlib import suppress
+import hashlib
 import importlib.util
 import json
 import logging
@@ -77,6 +79,71 @@ _DEFAULT_TIER = "budget"
 _FORMAT_PATCH_PATH = (
     Path(__file__).parent / "swebench_pro_format_patch.py"
 ).resolve()
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_DEFAULT_CANARY_MANIFEST_PATH = (
+    _REPO_ROOT / "docs" / "benchmarks" / "cycle-13-canary-manifest.md"
+)
+
+_PREDICTION_AUDIT_SCHEMA_VERSION = "swebench_pro_canary_prediction_v1"
+_PREDICTION_AUDIT_FIELDS = (
+    "_verifier_repair_budget_usd",
+    "_diff_verifier_mismatches",
+    "_diff_verifier_outcome",
+    "model_id_final",
+    "provider_final",
+    "total_cost_usd",
+)
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _git_head() -> str | None:
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=_REPO_ROOT,
+            text=True,
+            capture_output=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.strip() or None
+
+
+def _git_status_short() -> str | None:
+    try:
+        proc = subprocess.run(
+            ["git", "status", "--short"],
+            cwd=_REPO_ROOT,
+            text=True,
+            capture_output=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout
+
+
+def _extract_manifest_commit(manifest_text: str) -> str | None:
+    match = re.search(
+        r"\|\s*Commit SHA\s*\|\s*`?([^`|]+)`?\s*\|",
+        manifest_text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    return match.group(1).strip()
 
 
 # ── Synthetic patch generators (mock mode) ───────────────────────────────────
@@ -161,7 +228,7 @@ async def _run_sage_cli(
     """Invoke `python -m sage.cli run --jsonl` as subprocess.
 
     Uses the JSONL stdin protocol (matching the direct CLI path):
-    writes ``{"command":"prompt","payload":{"task":...}}`` to stdin,
+    writes ``{"command":"prompt","args":{"task":...}}`` to stdin,
     then drains stdout events + stderr in parallel (cgpro 2026-05-09
     fix — previously passed the task as a positional arg, which
     bypasses the canonical JSONL prompt channel and deadlocks on
@@ -194,11 +261,19 @@ async def _run_sage_cli(
         env=env,
     )
 
-    # The CLI reads stdin as raw task text in one-shot mode
-    # (when no positional arg is given). Write the task text,
-    # then close stdin to signal EOF.
+    # Exercise the canonical inbound JSONL protocol, not the legacy
+    # raw-stdin fallback.
     assert proc.stdin is not None
-    proc.stdin.write(task_text.encode("utf-8"))
+    prompt_command = {
+        "command": "prompt",
+        "args": {
+            "task": task_text,
+            "budget_usd": budget_usd,
+        },
+    }
+    proc.stdin.write(
+        (json.dumps(prompt_command, separators=(",", ":")) + "\n").encode("utf-8")
+    )
     await proc.stdin.drain()
     proc.stdin.close()
 
@@ -216,32 +291,58 @@ async def _run_sage_cli(
     final_result_payload: Any = None
     cli_complete_payload: dict[str, Any] | None = None
     cli_complete_run_id: str | None = None
+    model_id_final: str | None = None
+    provider_final: str | None = None
 
-    with output_events_path.open("w", encoding="utf-8", newline="\n") as event_log:
-        assert proc.stdout is not None
-        async for raw in proc.stdout:
-            line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
-            if not line:
-                continue
-            event_log.write(line + "\n")
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                log.warning("Non-JSON line on stdout: %r", line[:80])
-                continue
-            ev_type = event.get("event_type")
-            if ev_type == "final_result":
-                final_result_payload = event.get("payload", {})
-            elif ev_type == "cli_complete":
-                cli_complete_payload = event.get("payload", {})
-                event_run_id = event.get("run_id")
-                cli_complete_run_id = (
-                    event_run_id if isinstance(event_run_id, str) else None
-                )
+    try:
+        with output_events_path.open("w", encoding="utf-8", newline="\n") as event_log:
+            assert proc.stdout is not None
+            async for raw in proc.stdout:
+                line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
+                if not line:
+                    continue
+                event_log.write(line + "\n")
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    log.warning("Non-JSON line on stdout: %r", line[:80])
+                    continue
+                ev_type = event.get("event_type")
+                payload = event.get("payload", {})
+                if isinstance(payload, dict):
+                    if ev_type == "routing_decision":
+                        model_id_final = payload.get("model_id") or model_id_final
+                    elif ev_type in {"model_assigned", "node_started", "node_completed"}:
+                        model_id_final = payload.get("model_id") or model_id_final
+                        provider_final = (
+                            payload.get("provider_id")
+                            or payload.get("provider")
+                            or provider_final
+                        )
+                if ev_type == "final_result":
+                    final_result_payload = payload
+                elif ev_type == "cli_complete":
+                    cli_complete_payload = payload if isinstance(payload, dict) else {}
+                    event_run_id = event.get("run_id")
+                    cli_complete_run_id = (
+                        event_run_id if isinstance(event_run_id, str) else None
+                    )
 
-    exit_code = await proc.wait()
-    latency_s = time.monotonic() - start
-    stderr_bytes = await stderr_task
+        exit_code = await proc.wait()
+        latency_s = time.monotonic() - start
+        stderr_bytes = await stderr_task
+    except asyncio.CancelledError:
+        if proc.returncode is None:
+            proc.terminate()
+            with suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(proc.wait(), timeout=5)
+            if proc.returncode is None:
+                proc.kill()
+                await proc.wait()
+        stderr_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await stderr_task
+        raise
 
     if cli_complete_payload is None:
         stderr_text = stderr_bytes.decode("utf-8", errors="replace") if stderr_bytes else ""
@@ -261,6 +362,8 @@ async def _run_sage_cli(
             else None
         ),
         "run_id": cli_complete_run_id,
+        "model_id_final": model_id_final,
+        "provider_final": provider_final,
         "trace_dir": (
             cli_complete_payload.get("trace_dir")
             if isinstance(cli_complete_payload, dict)
@@ -415,6 +518,329 @@ def _load_format_patch_module() -> Any:
     return mod
 
 
+def _prediction_audit_record(
+    record: dict[str, Any],
+    summary: dict[str, Any],
+    *,
+    task_index: int,
+) -> dict[str, Any]:
+    audit_record = dict(record)
+    audit_record["_audit_schema_version"] = _PREDICTION_AUDIT_SCHEMA_VERSION
+    audit_record["_task_index"] = task_index
+    audit_record["_mock"] = bool(summary.get("mock"))
+    audit_record["_timeout"] = bool(summary.get("timeout"))
+    audit_record["_exit_code"] = summary.get("exit_code")
+    audit_record["_latency_ms"] = summary.get("latency_ms")
+    audit_record["_events_path"] = summary.get("events_path")
+    for field in _PREDICTION_AUDIT_FIELDS:
+        audit_record[field] = summary.get(field)
+    return audit_record
+
+
+def _write_predictions_jsonl(
+    records: list[dict[str, Any]],
+    summaries: list[dict[str, Any]],
+    output_path: Path,
+) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8", newline="\n") as handle:
+        for index, (record, summary) in enumerate(zip(records, summaries, strict=True)):
+            handle.write(
+                json.dumps(
+                    _prediction_audit_record(record, summary, task_index=index),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n"
+            )
+
+
+def _write_aggregate_events(
+    summaries: list[dict[str, Any]],
+    *,
+    output_dir: Path,
+    output_path: Path,
+) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8", newline="\n") as destination:
+        for summary in summaries:
+            rel_path = summary.get("events_path")
+            if not isinstance(rel_path, str):
+                continue
+            source = output_dir / rel_path
+            if not source.is_file():
+                continue
+            with source.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    destination.write(line.rstrip("\r\n") + "\n")
+
+
+def _load_grader_gate(grader_preflight_path: Path | None) -> dict[str, Any]:
+    if grader_preflight_path is None:
+        return {
+            "status": "BLOCKED",
+            "reason": "grader_preflight_artifact_not_supplied",
+            "path": None,
+        }
+    if not grader_preflight_path.is_file():
+        return {
+            "status": "BLOCKED",
+            "reason": "grader_preflight_artifact_missing",
+            "path": str(grader_preflight_path),
+        }
+    try:
+        data = json.loads(grader_preflight_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {
+            "status": "BLOCKED",
+            "reason": "grader_preflight_artifact_unreadable",
+            "path": str(grader_preflight_path),
+            "detail": f"{type(exc).__name__}: {exc}",
+        }
+    decision = data.get("decision")
+    ready = bool(data.get("local_grading_ready")) or decision in {
+        "READY_LOCAL_DOCKER",
+        "READY_REMOTE_MODAL",
+    }
+    return {
+        "status": "PASS" if ready else "BLOCKED",
+        "reason": None if ready else "grader_preflight_not_ready",
+        "path": str(grader_preflight_path),
+        "sha256": _sha256_file(grader_preflight_path),
+        "decision": decision,
+        "blockers": data.get("blockers", []),
+    }
+
+
+def _load_ci_gate(ci_green_artifact: Path | None, *, git_head: str | None) -> dict[str, Any]:
+    if ci_green_artifact is None:
+        return {
+            "status": "BLOCKED",
+            "reason": "ci_green_artifact_not_supplied",
+            "path": None,
+        }
+    if not ci_green_artifact.is_file():
+        return {
+            "status": "BLOCKED",
+            "reason": "ci_green_artifact_missing",
+            "path": str(ci_green_artifact),
+        }
+    try:
+        data = json.loads(ci_green_artifact.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {
+            "status": "BLOCKED",
+            "reason": "ci_green_artifact_unreadable",
+            "path": str(ci_green_artifact),
+            "detail": f"{type(exc).__name__}: {exc}",
+        }
+    status = str(data.get("status") or data.get("conclusion") or "").lower()
+    commit = data.get("commit") or data.get("head_sha")
+    passed = status in {"pass", "passed", "success", "green"} and (
+        git_head is None or commit == git_head
+    )
+    reasons: list[str] = []
+    if status not in {"pass", "passed", "success", "green"}:
+        reasons.append("ci_status_not_green")
+    if git_head is not None and commit != git_head:
+        reasons.append("ci_commit_mismatch")
+    return {
+        "status": "PASS" if passed else "BLOCKED",
+        "reason": None if passed else ",".join(reasons),
+        "path": str(ci_green_artifact),
+        "sha256": _sha256_file(ci_green_artifact),
+        "commit": commit,
+        "reported_status": status,
+    }
+
+
+def _write_launch_manifest(
+    *,
+    output_dir: Path,
+    instances_json: Path,
+    manifest_path: Path | None,
+    budget_usd: float,
+    global_budget_usd: float,
+    task_timeout_s: float,
+    provider_allowlist: tuple[str, ...],
+    provider_denylist: tuple[str, ...],
+    grader_preflight_path: Path | None,
+    ci_green_artifact: Path | None,
+) -> dict[str, Any]:
+    git_head = _git_head()
+    git_status_short = _git_status_short()
+    manifest_exists = manifest_path is not None and manifest_path.is_file()
+    manifest_text = (
+        manifest_path.read_text(encoding="utf-8") if manifest_exists and manifest_path else ""
+    )
+    manifest_commit = _extract_manifest_commit(manifest_text) if manifest_text else None
+    manifest_reasons: list[str] = []
+    if not manifest_exists:
+        manifest_reasons.append("manifest_missing")
+    elif manifest_commit in {None, "", "<SET_AT_LAUNCH>"}:
+        manifest_reasons.append("manifest_commit_not_frozen")
+    elif git_head is not None and manifest_commit != git_head:
+        manifest_reasons.append("manifest_commit_mismatch")
+
+    if manifest_exists and manifest_path is not None:
+        shutil.copyfile(manifest_path, output_dir / "launch_manifest.md")
+
+    launch_manifest = {
+        "schema_version": "swebench_pro_canary_launch_v1",
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "repo": {
+            "path": str(_REPO_ROOT),
+            "head": git_head,
+            "dirty": bool(git_status_short),
+            "status_short": git_status_short,
+        },
+        "inputs": {
+            "instances_json": {
+                "path": str(instances_json),
+                "sha256": _sha256_file(instances_json),
+            },
+            "manifest": {
+                "path": str(manifest_path) if manifest_path else None,
+                "exists": bool(manifest_exists),
+                "sha256": _sha256_file(manifest_path) if manifest_exists and manifest_path else None,
+                "declared_commit": manifest_commit,
+                "copied_to": "launch_manifest.md" if manifest_exists else None,
+            },
+        },
+        "budget": {
+            "budget_usd_per_task": budget_usd,
+            "global_budget_usd": global_budget_usd,
+            "task_timeout_s": task_timeout_s,
+        },
+        "providers": {
+            "allowlist": list(provider_allowlist),
+            "denylist": list(provider_denylist),
+        },
+        "manifest_gate": {
+            "status": "PASS" if not manifest_reasons else "BLOCKED",
+            "reasons": manifest_reasons,
+        },
+        "grading_gate": _load_grader_gate(grader_preflight_path),
+        "ci_gate": _load_ci_gate(ci_green_artifact, git_head=git_head),
+    }
+    (output_dir / "launch_manifest.json").write_text(
+        json.dumps(launch_manifest, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+        newline="\n",
+    )
+    return launch_manifest
+
+
+def _combine_canary_decision(gates: dict[str, dict[str, Any]]) -> str:
+    statuses = {name: gate.get("status") for name, gate in gates.items()}
+    if any(status == "NO_GO" for status in statuses.values()):
+        return "NO_GO"
+    if any(status == "BLOCKED" for status in statuses.values()):
+        return "BLOCKED"
+    if all(status == "PASS" for status in statuses.values()):
+        return "PENDING_REVIEW"
+    return "BLOCKED"
+
+
+def _provider_gate(
+    summaries: list[dict[str, Any]],
+    *,
+    mock: bool,
+    provider_allowlist: tuple[str, ...],
+    provider_denylist: tuple[str, ...],
+) -> dict[str, Any]:
+    if mock:
+        return {
+            "status": "BLOCKED",
+            "reason": "mock_mode_no_provider_observation",
+            "observed_providers": [],
+            "provider_allowlist": list(provider_allowlist),
+            "provider_denylist": list(provider_denylist),
+        }
+    observed = sorted(
+        {
+            str(summary.get("provider_final"))
+            for summary in summaries
+            if summary.get("provider_final")
+        }
+    )
+    missing = [
+        str(summary.get("instance_id"))
+        for summary in summaries
+        if not summary.get("provider_final") or not summary.get("model_id_final")
+    ]
+    denied = [provider for provider in observed if provider in set(provider_denylist)]
+    outside_allowlist = [
+        provider for provider in observed if provider not in set(provider_allowlist)
+    ]
+    status = "NO_GO" if missing or denied or outside_allowlist else "PASS"
+    return {
+        "status": status,
+        "reason": None if status == "PASS" else "provider_audit_failed",
+        "observed_providers": observed,
+        "missing_provider_or_model": missing,
+        "denied_providers": denied,
+        "outside_allowlist": outside_allowlist,
+        "provider_allowlist": list(provider_allowlist),
+        "provider_denylist": list(provider_denylist),
+    }
+
+
+def _timeout_task_result(
+    task: dict[str, Any],
+    output_dir: Path,
+    *,
+    prefix: str,
+    fmt_module: Any,
+    task_timeout_s: float,
+) -> dict[str, Any]:
+    instance_id = task["instance_id"]
+    per_task_events = output_dir / "per_task" / f"{instance_id}.events.jsonl"
+    per_task_events.parent.mkdir(parents=True, exist_ok=True)
+    per_task_events.write_text(
+        json.dumps(
+            {
+                "event_type": "runner_timeout",
+                "instance_id": instance_id,
+                "task_timeout_s": task_timeout_s,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    summary = {
+        "instance_id": instance_id,
+        "exit_code": None,
+        "latency_ms": int(task_timeout_s * 1000),
+        "total_cost_usd": 0.0,
+        "extracted_patch_present": False,
+        "extracted_patch_chars": 0,
+        "mock": False,
+        "timeout": True,
+        "events_path": str(per_task_events.relative_to(output_dir)),
+        "_verifier_repair_budget_usd": None,
+        "_diff_verifier_mismatches": None,
+        "_diff_verifier_outcome": None,
+        "model_id_final": None,
+        "provider_final": None,
+        "learning_evidence_boundary": _learning_evidence_no_go(
+            reason_code="task_timeout",
+            detail=f"task exceeded timeout_s={task_timeout_s}",
+            run_id=None,
+            source_trace_dir=None,
+            archived_trace_dir=None,
+            expect_default_pipeline_learn=False,
+        ),
+    }
+    return {
+        "summary": summary,
+        "record": fmt_module.format_patch(instance_id, "", prefix=prefix),
+    }
+
+
 async def _run_one_task(
     task: dict[str, Any],
     output_dir: Path,
@@ -444,6 +870,8 @@ async def _run_one_task(
             "extracted_patch_present": bool(patch),
             "extracted_patch_chars": len(patch),
             "mock": True,
+            "timeout": False,
+            "events_path": str(per_task_events.relative_to(output_dir)),
             "learning_evidence_boundary": _learning_evidence_not_requested(),
         }
         # Write a dummy events file so per_task dir is uniform.
@@ -530,6 +958,13 @@ async def _run_one_task(
             "extracted_patch_present": bool(patch),
             "extracted_patch_chars": len(patch),
             "mock": False,
+            "timeout": False,
+            "events_path": str(per_task_events.relative_to(output_dir)),
+            "model_id_final": cli_result.get("model_id_final"),
+            "provider_final": cli_result.get("provider_final"),
+            "_verifier_repair_budget_usd": None,
+            "_diff_verifier_mismatches": None,
+            "_diff_verifier_outcome": None,
             "stderr_chars": len(cli_result.get("stderr", "")),
             "learning_evidence_boundary": learning_evidence,
         }
@@ -550,6 +985,13 @@ async def run(
     budget_usd: float,
     tier: str,
     prefix: str,
+    global_budget_usd: float = 25.0,
+    task_timeout_s: float = 120.0,
+    manifest_path: Path | None = None,
+    grader_preflight_path: Path | None = None,
+    ci_green_artifact: Path | None = None,
+    provider_allowlist: tuple[str, ...] = ("google", "deepseek"),
+    provider_denylist: tuple[str, ...] = ("openai",),
     claim_default_pipeline_learning_evidence: bool = False,
     expect_default_pipeline_learn: bool = False,
 ) -> int:
@@ -569,6 +1011,18 @@ async def run(
         return 2
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    launch_manifest = _write_launch_manifest(
+        output_dir=output_dir,
+        instances_json=instances_json,
+        manifest_path=manifest_path,
+        budget_usd=budget_usd,
+        global_budget_usd=global_budget_usd,
+        task_timeout_s=task_timeout_s,
+        provider_allowlist=provider_allowlist,
+        provider_denylist=provider_denylist,
+        grader_preflight_path=grader_preflight_path,
+        ci_green_artifact=ci_green_artifact,
+    )
 
     # Apply limit
     selected = instances[:limit] if limit > 0 else instances
@@ -582,27 +1036,49 @@ async def run(
     cumulative_latency_ms = 0
     summaries: list[dict[str, Any]] = []
     records: list[dict[str, Any]] = []
+    budget_stop_reasons: list[str] = []
 
     for i, task in enumerate(selected):
-        # Per cgpro DESIGN E hard cutoff: $5 USD total.
-        if not mock and cumulative_cost > 5.0:
+        if not mock and cumulative_cost >= global_budget_usd:
+            budget_stop_reasons.append("global_budget_exhausted_before_task")
             log.warning(
-                "Hard cutoff hit: cumulative_cost=$%.2f > $5.00. "
+                "Global budget exhausted: cumulative_cost=$%.2f >= $%.2f. "
                 "Stopping early at task %d/%d.",
-                cumulative_cost, i, len(selected),
+                cumulative_cost, global_budget_usd, i, len(selected),
             )
             break
-        result = await _run_one_task(
-            task,
-            output_dir,
-            mock=mock,
-            budget_usd=budget_usd,
-            tier=tier,
-            prefix=prefix,
-            fmt_module=fmt_module,
-            claim_default_pipeline_learning_evidence=claim_default_pipeline_learning_evidence,
-            expect_default_pipeline_learn=expect_default_pipeline_learn,
-        )
+        if not mock and cumulative_cost + budget_usd > global_budget_usd:
+            budget_stop_reasons.append("task_budget_would_exceed_global_cap")
+            log.warning(
+                "Task budget would exceed global cap: $%.2f + $%.2f > $%.2f. "
+                "Stopping early at task %d/%d.",
+                cumulative_cost, budget_usd, global_budget_usd, i, len(selected),
+            )
+            break
+        try:
+            result = await asyncio.wait_for(
+                _run_one_task(
+                    task,
+                    output_dir,
+                    mock=mock,
+                    budget_usd=budget_usd,
+                    tier=tier,
+                    prefix=prefix,
+                    fmt_module=fmt_module,
+                    claim_default_pipeline_learning_evidence=claim_default_pipeline_learning_evidence,
+                    expect_default_pipeline_learn=expect_default_pipeline_learn,
+                ),
+                timeout=task_timeout_s,
+            )
+        except asyncio.TimeoutError:
+            log.error("Task %s exceeded timeout_s=%.1f", task["instance_id"], task_timeout_s)
+            result = _timeout_task_result(
+                task,
+                output_dir,
+                prefix=prefix,
+                fmt_module=fmt_module,
+                task_timeout_s=task_timeout_s,
+            )
         summaries.append(result["summary"])
         records.append(result["record"])
         cost = result["summary"].get("total_cost_usd") or 0.0
@@ -612,6 +1088,10 @@ async def run(
     # Write predictions.json (Pro shape)
     predictions_path = output_dir / "predictions.json"
     fmt_module.write_predictions(records, predictions_path)
+    predictions_jsonl_path = output_dir / "predictions.jsonl"
+    _write_predictions_jsonl(records, summaries, predictions_jsonl_path)
+    events_path = output_dir / "events.jsonl"
+    _write_aggregate_events(summaries, output_dir=output_dir, output_path=events_path)
 
     # Write summary
     summary_doc = {
@@ -623,7 +1103,15 @@ async def run(
         "tasks_in_set": len(instances),
         "cumulative_cost_usd": cumulative_cost,
         "cumulative_latency_ms": cumulative_latency_ms,
+        "budget": {
+            "budget_usd_per_task": budget_usd,
+            "global_budget_usd": global_budget_usd,
+            "task_timeout_s": task_timeout_s,
+            "stop_reasons": budget_stop_reasons,
+        },
         "predictions_path": str(predictions_path.relative_to(output_dir)),
+        "predictions_jsonl_path": str(predictions_jsonl_path.relative_to(output_dir)),
+        "events_path": str(events_path.relative_to(output_dir)),
         "per_task_dir": "per_task/",
         "patches_extracted": sum(
             1 for s in summaries if s["extracted_patch_present"]
@@ -650,6 +1138,40 @@ async def run(
         "failed": sum(1 for item in evidence_items if item.get("status") == "no_go"),
         "skipped": sum(1 for item in evidence_items if item.get("status") == "skipped"),
     }
+    budget_gate = {
+        "status": "NO_GO" if cumulative_cost > global_budget_usd else "PASS",
+        "cumulative_cost_usd": cumulative_cost,
+        "global_budget_usd": global_budget_usd,
+        "stop_reasons": budget_stop_reasons,
+    }
+    timeout_gate = {
+        "status": (
+            "NO_GO"
+            if sum(1 for summary in summaries if summary.get("timeout")) > 1
+            else "PASS"
+        ),
+        "timeouts": sum(1 for summary in summaries if summary.get("timeout")),
+    }
+    summary_doc["budget_gate"] = budget_gate
+    summary_doc["timeout_gate"] = timeout_gate
+    provider_gate = _provider_gate(
+        summaries,
+        mock=mock,
+        provider_allowlist=provider_allowlist,
+        provider_denylist=provider_denylist,
+    )
+    summary_doc["launch_manifest_path"] = "launch_manifest.json"
+    summary_doc["acceptance_gate_results"] = {
+        "manifest_gate": launch_manifest["manifest_gate"],
+        "budget_gate": budget_gate,
+        "timeout_gate": timeout_gate,
+        "provider_gate": provider_gate,
+        "grading_gate": launch_manifest["grading_gate"],
+        "ci_gate": launch_manifest["ci_gate"],
+    }
+    summary_doc["canary_decision"] = _combine_canary_decision(
+        summary_doc["acceptance_gate_results"]
+    )
     (output_dir / "summary.json").write_text(
         json.dumps(summary_doc, indent=2, ensure_ascii=False),
         encoding="utf-8",
@@ -705,6 +1227,49 @@ def main(argv: list[str] | None = None) -> int:
         type=float,
         default=5.0,
         help="per-task spend cap forwarded to sage CLI (default 5.0)",
+    )
+    parser.add_argument(
+        "--global-budget-usd",
+        type=float,
+        default=25.0,
+        help="global spend cap for this runner invocation (default 25.0)",
+    )
+    parser.add_argument(
+        "--task-timeout-s",
+        type=float,
+        default=120.0,
+        help="per-task wall-clock timeout in seconds (default 120.0)",
+    )
+    parser.add_argument(
+        "--manifest-path",
+        type=Path,
+        default=_DEFAULT_CANARY_MANIFEST_PATH,
+        help=(
+            "human canary manifest to copy/hash into launch artifacts "
+            f"(default {_DEFAULT_CANARY_MANIFEST_PATH})"
+        ),
+    )
+    parser.add_argument(
+        "--grader-preflight-path",
+        type=Path,
+        default=None,
+        help="optional SWE-bench Pro grader preflight artifact for GO gating",
+    )
+    parser.add_argument(
+        "--ci-green-artifact",
+        type=Path,
+        default=None,
+        help="optional machine-readable CI-green artifact for GO gating",
+    )
+    parser.add_argument(
+        "--provider-allowlist",
+        default="google,deepseek",
+        help="comma-separated provider allowlist for canary audit metadata",
+    )
+    parser.add_argument(
+        "--provider-denylist",
+        default="openai",
+        help="comma-separated provider denylist for canary audit metadata",
     )
     parser.add_argument(
         "--tier",
@@ -773,6 +1338,17 @@ def main(argv: list[str] | None = None) -> int:
             mock=args.mock,
             limit=args.limit,
             budget_usd=args.budget_usd,
+            global_budget_usd=args.global_budget_usd,
+            task_timeout_s=args.task_timeout_s,
+            manifest_path=args.manifest_path,
+            grader_preflight_path=args.grader_preflight_path,
+            ci_green_artifact=args.ci_green_artifact,
+            provider_allowlist=tuple(
+                item.strip() for item in args.provider_allowlist.split(",") if item.strip()
+            ),
+            provider_denylist=tuple(
+                item.strip() for item in args.provider_denylist.split(",") if item.strip()
+            ),
             tier=args.tier,
             prefix=args.prefix,
             claim_default_pipeline_learning_evidence=(
