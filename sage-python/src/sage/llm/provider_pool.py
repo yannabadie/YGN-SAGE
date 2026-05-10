@@ -447,12 +447,6 @@ class ProviderPool:
             )
             return cached_provider, cached_config
 
-        inferred_provider = self.infer_provider(model_id)
-        self._enforce_provider_policy(
-            model_id=model_id,
-            provider_name=inferred_provider,
-        )
-
         try:
             profile = (
                 self._registry.get(model_id) if self._registry is not None else None
