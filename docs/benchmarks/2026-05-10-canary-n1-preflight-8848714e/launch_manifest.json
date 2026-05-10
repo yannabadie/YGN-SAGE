@@ -1,0 +1,57 @@
+{
+  "schema_version": "swebench_pro_canary_launch_v1",
+  "generated_at_utc": "2026-05-10T12:06:52.419085+00:00",
+  "repo": {
+    "path": "C:\\Code\\YGN-SAGE",
+    "head": "8848714e7139df40b73db0f65eec3c5494ad40af",
+    "dirty": true,
+    "status_short": " M CGPRO.md\n M Cargo.lock\n?? docs/benchmarks/2026-05-08-provider-preflight.json\n?? docs/benchmarks/2026-05-09-canary-n3-v2/\n?? docs/benchmarks/2026-05-09-canary-n3-v4/\n?? docs/benchmarks/2026-05-09-canary-n3-v5/\n?? docs/benchmarks/2026-05-09-canary-n3-v6/\n?? docs/benchmarks/2026-05-09-canary-n3/\n?? docs/benchmarks/2026-05-10-canary-harness-mock/\n?? docs/benchmarks/2026-05-10-canary-n5-real-8844c42e/\n?? docs/benchmarks/2026-05-10-canary-n5-real-8848714e/\n?? docs/benchmarks/2026-05-10-canary-n5-real-ec0b775e/\n?? docs/benchmarks/2026-05-10-grader-preflight-8848714e.json\n?? docs/benchmarks/2026-05-10-provider-preflight.json\n?? sage-python/docs/benchmarks/2026-05-10-e2e-campaign.json\n"
+  },
+  "inputs": {
+    "instances_json": {
+      "path": "docs\\benchmarks\\2026-05-10-canary-n5-real-8848714e\\input\\instances.json",
+      "sha256": "6070d6e62ec4274a8abd3bc7bb1834ab21096e245c2e62e0bedfb29d54dd0894"
+    },
+    "manifest": {
+      "path": "docs\\benchmarks\\2026-05-10-canary-n5-real-8848714e\\cycle-13-canary-launch-manifest.md",
+      "exists": true,
+      "sha256": "31c6d7e72817e7e2f9bcddc7da598566dbf5fb7c0ae400625ebb0501c79bee85",
+      "declared_commit": "8848714e7139df40b73db0f65eec3c5494ad40af",
+      "copied_to": "launch_manifest.md"
+    }
+  },
+  "budget": {
+    "budget_usd_per_task": 5.0,
+    "global_budget_usd": 5.0,
+    "task_timeout_s": 120.0
+  },
+  "providers": {
+    "allowlist": [
+      "google",
+      "deepseek"
+    ],
+    "denylist": [
+      "openai"
+    ]
+  },
+  "manifest_gate": {
+    "status": "PASS",
+    "reasons": []
+  },
+  "grading_gate": {
+    "status": "BLOCKED",
+    "reason": "grader_preflight_not_ready",
+    "path": "docs\\benchmarks\\2026-05-10-grader-preflight-8848714e.json",
+    "sha256": "f673358e9e2c7f5d11add79e9f4775276f44477e459d749eb71b8629405556d7",
+    "decision": "NO_GO_GRADER_REPO_DIRTY",
+    "blockers": [
+      "host_disk_below_swebench_minimum",
+      "grader_repo_dirty"
+    ]
+  },
+  "ci_gate": {
+    "status": "BLOCKED",
+    "reason": "ci_green_artifact_not_supplied",
+    "path": null
+  }
+}

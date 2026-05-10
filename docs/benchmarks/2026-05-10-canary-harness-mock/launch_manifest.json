@@ -1,0 +1,58 @@
+{
+  "schema_version": "swebench_pro_canary_launch_v1",
+  "generated_at_utc": "2026-05-10T08:56:35.239243+00:00",
+  "repo": {
+    "path": "C:\\Code\\YGN-SAGE",
+    "head": "698a6f9abdbdee39f4e9c5ce726abd5c2fe4eb9b"
+  },
+  "inputs": {
+    "instances_json": {
+      "path": "sage-python\\data\\swebench_pro\\n10\\instances.json",
+      "sha256": "f1eab20c83ac21b255fbcece771bc2aaf30c2650d4f61257e28ca90ba6b1a3d4"
+    },
+    "manifest": {
+      "path": "C:\\Code\\YGN-SAGE\\docs\\benchmarks\\cycle-13-canary-manifest.md",
+      "exists": true,
+      "sha256": "4ddcc22ceea5653dd12d7ef58ae6e8b15cdbd36703b7ee2c5273457694829ba7",
+      "declared_commit": "<SET_AT_LAUNCH>",
+      "copied_to": "launch_manifest.md"
+    }
+  },
+  "budget": {
+    "budget_usd_per_task": 5.0,
+    "global_budget_usd": 25.0,
+    "task_timeout_s": 120.0
+  },
+  "providers": {
+    "allowlist": [
+      "google",
+      "deepseek"
+    ],
+    "denylist": [
+      "openai"
+    ]
+  },
+  "manifest_gate": {
+    "status": "BLOCKED",
+    "reasons": [
+      "manifest_commit_not_frozen"
+    ]
+  },
+  "grading_gate": {
+    "status": "BLOCKED",
+    "reason": "grader_preflight_not_ready",
+    "path": "docs\\benchmarks\\2026-05-09-swebench-pro-grader-preflight.json",
+    "sha256": "bc15ee78bd3ead27c3e74baa8ee959cf7f9e96cedb8c1f0aab8fcd9f1c895d51",
+    "decision": "NO_GO_LOCAL_DOCKER",
+    "blockers": [
+      "host_disk_below_swebench_minimum",
+      "docker_daemon_unreachable",
+      "grader_repo_dirty"
+    ]
+  },
+  "ci_gate": {
+    "status": "BLOCKED",
+    "reason": "ci_green_artifact_not_supplied",
+    "path": null
+  }
+}

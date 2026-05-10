@@ -1,0 +1,61 @@
+{
+  "generated_at_utc": "2026-05-10T08:57:37Z",
+  "results": [
+    {
+      "provider": "google",
+      "model_id": "gemini-2.5-flash",
+      "status": "ok",
+      "latency_ms": 2847.085400018841,
+      "output_length": 2,
+      "cost_usd": 1.2075000475160778e-05,
+      "error_type": null,
+      "error_message": null
+    },
+    {
+      "provider": "google",
+      "model_id": "gemini-3.1-flash-lite-preview",
+      "status": "ok",
+      "latency_ms": 873.9428999833763,
+      "output_length": 2,
+      "cost_usd": 1.6250000018626453e-06,
+      "error_type": null,
+      "error_message": null
+    },
+    {
+      "provider": "deepseek",
+      "model_id": "deepseek-v4-flash",
+      "status": "ok",
+      "latency_ms": 1665.5828999937512,
+      "output_length": 2,
+      "cost_usd": 6.4400000274181365e-06,
+      "error_type": null,
+      "error_message": null
+    },
+    {
+      "provider": "openai",
+      "model_id": "gpt-5.4",
+      "status": "ok",
+      "latency_ms": 2041.2935999920592,
+      "output_length": 2,
+      "cost_usd": 8.5e-05,
+      "error_type": null,
+      "error_message": null
+    },
+    {
+      "provider": "openai",
+      "model_id": "gpt-5.5-pro",
+      "status": "ok",
+      "latency_ms": 20066.10080000246,
+      "output_length": 2,
+      "cost_usd": 0.00318,
+      "error_type": null,
+      "error_message": null
+    }
+  ],
+  "summary": {
+    "ok": 5,
+    "error": 0,
+    "timeout": 0,
+    "skipped": 0
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "run_started_at_utc": "2026-05-10T12:06:52.421612+00:00",
+  "run_ended_at_utc": "2026-05-10T12:07:01.726577+00:00",
+  "mode": "real",
+  "tier": "budget",
+  "tasks_run": 1,
+  "tasks_in_set": 5,
+  "cumulative_cost_usd": 0.0,
+  "cumulative_latency_ms": 9301,
+  "budget": {
+    "budget_usd_per_task": 5.0,
+    "global_budget_usd": 5.0,
+    "task_timeout_s": 120.0,
+    "stop_reasons": []
+  },
+  "predictions_path": "predictions.json",
+  "predictions_jsonl_path": "predictions.jsonl",
+  "events_path": "events.jsonl",
+  "per_task_dir": "per_task/",
+  "patches_extracted": 0,
+  "patches_empty": 1,
+  "task_summaries": [
+    {
+      "instance_id": "instance_future-architect__vuls-139f3a81b66c47e6d8f70ce6c4afe7a9196a6ea8",
+      "exit_code": 1,
+      "latency_ms": 9301,
+      "total_cost_usd": 0.0,
+      "extracted_patch_present": false,
+      "extracted_patch_chars": 0,
+      "mock": false,
+      "timeout": false,
+      "events_path": "per_task\\instance_future-architect__vuls-139f3a81b66c47e6d8f70ce6c4afe7a9196a6ea8.events.jsonl",
+      "model_id_final": "gpt-5.5-pro",
+      "provider_final": null,
+      "_observed_model_ids": [
+        "gpt-5.5-pro"
+      ],
+      "_observed_providers": [],
+      "_assigned_model_ids": [],
+      "_assigned_providers": [],
+      "_execution_model_ids": [],
+      "_execution_providers": [],
+      "_provider_policy_failure_seen": true,
+      "_observed_event_cost_usd": 0.0,
+      "_verifier_repair_budget_usd": null,
+      "_diff_verifier_mismatches": null,
+      "_diff_verifier_outcome": null,
+      "stderr_chars": 413,
+      "learning_evidence_boundary": {
+        "claimed": true,
+        "status": "no_go",
+        "reason_code": "cli_outcome_not_success",
+        "detail": "cli_complete outcome was 'failure'",
+        "mode": "evidence-boundary",
+        "expect_default_pipeline_learn": true,
+        "run_id": "01KR8WH05AT7W5KYZC80VNE9H9",
+        "source_trace_dir": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_cli_run_dubec1mg",
+        "trace_dir": "docs\\benchmarks\\2026-05-10-canary-n1-preflight-8848714e\\per_task\\instance_future-architect__vuls-139f3a81b66c47e6d8f70ce6c4afe7a9196a6ea8.trace",
+        "records": 0
+      }
+    }
+  ],
+  "learning_evidence_gate": {
+    "claimed": true,
+    "status": "NO_GO",
+    "expect_default_pipeline_learn": true,
+    "passed": 0,
+    "failed": 1,
+    "skipped": 0
+  },
+  "budget_gate": {
+    "status": "PASS",
+    "cumulative_cost_usd": 0.0,
+    "global_budget_usd": 5.0,
+    "stop_reasons": []
+  },
+  "timeout_gate": {
+    "status": "PASS",
+    "timeouts": 0
+  },
+  "launch_manifest_path": "launch_manifest.json",
+  "acceptance_gate_results": {
+    "manifest_gate": {
+      "status": "PASS",
+      "reasons": []
+    },
+    "budget_gate": {
+      "status": "PASS",
+      "cumulative_cost_usd": 0.0,
+      "global_budget_usd": 5.0,
+      "stop_reasons": []
+    },
+    "timeout_gate": {
+      "status": "PASS",
+      "timeouts": 0
+    },
+    "provider_gate": {
+      "status": "PASS",
+      "reason": null,
+      "observed_providers": [],
+      "assigned_providers": [],
+      "execution_providers": [],
+      "provider_policy_failure_seen": true,
+      "missing_provider_or_model": [],
+      "assigned_denied_providers": [],
+      "execution_denied_providers": [],
+      "assigned_outside_allowlist": [],
+      "execution_outside_allowlist": [],
+      "provider_allowlist": [
+        "google",
+        "deepseek"
+      ],
+      "provider_denylist": [
+        "openai"
+      ]
+    },
+    "grading_gate": {
+      "status": "BLOCKED",
+      "reason": "grader_preflight_not_ready",
+      "path": "docs\\benchmarks\\2026-05-10-grader-preflight-8848714e.json",
+      "sha256": "f673358e9e2c7f5d11add79e9f4775276f44477e459d749eb71b8629405556d7",
+      "decision": "NO_GO_GRADER_REPO_DIRTY",
+      "blockers": [
+        "host_disk_below_swebench_minimum",
+        "grader_repo_dirty"
+      ]
+    },
+    "ci_gate": {
+      "status": "BLOCKED",
+      "reason": "ci_green_artifact_not_supplied",
+      "path": null
+    }
+  },
+  "canary_decision": "BLOCKED"
+}

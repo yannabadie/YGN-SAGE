@@ -1,0 +1,238 @@
+{
+  "run_started_at_utc": "2026-05-10T09:13:16.355862+00:00",
+  "run_ended_at_utc": "2026-05-10T09:23:17.078359+00:00",
+  "mode": "real",
+  "tier": "budget",
+  "tasks_run": 5,
+  "tasks_in_set": 10,
+  "cumulative_cost_usd": 0.0,
+  "cumulative_latency_ms": 600000,
+  "budget": {
+    "budget_usd_per_task": 5.0,
+    "global_budget_usd": 25.0,
+    "task_timeout_s": 120.0,
+    "stop_reasons": []
+  },
+  "predictions_path": "predictions.json",
+  "predictions_jsonl_path": "predictions.jsonl",
+  "events_path": "events.jsonl",
+  "per_task_dir": "per_task/",
+  "patches_extracted": 0,
+  "patches_empty": 5,
+  "task_summaries": [
+    {
+      "instance_id": "instance_future-architect__vuls-139f3a81b66c47e6d8f70ce6c4afe7a9196a6ea8",
+      "exit_code": null,
+      "latency_ms": 120000,
+      "total_cost_usd": 0.0,
+      "extracted_patch_present": false,
+      "extracted_patch_chars": 0,
+      "mock": false,
+      "timeout": true,
+      "events_path": "per_task\\instance_future-architect__vuls-139f3a81b66c47e6d8f70ce6c4afe7a9196a6ea8.events.jsonl",
+      "_verifier_repair_budget_usd": null,
+      "_diff_verifier_mismatches": null,
+      "_diff_verifier_outcome": null,
+      "model_id_final": null,
+      "provider_final": null,
+      "learning_evidence_boundary": {
+        "claimed": true,
+        "status": "no_go",
+        "reason_code": "task_timeout",
+        "detail": "task exceeded timeout_s=120.0",
+        "mode": "evidence-boundary",
+        "expect_default_pipeline_learn": true,
+        "run_id": null,
+        "source_trace_dir": null,
+        "trace_dir": null,
+        "records": 0
+      }
+    },
+    {
+      "instance_id": "instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858",
+      "exit_code": null,
+      "latency_ms": 120000,
+      "total_cost_usd": 0.0,
+      "extracted_patch_present": false,
+      "extracted_patch_chars": 0,
+      "mock": false,
+      "timeout": true,
+      "events_path": "per_task\\instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858.events.jsonl",
+      "_verifier_repair_budget_usd": null,
+      "_diff_verifier_mismatches": null,
+      "_diff_verifier_outcome": null,
+      "model_id_final": null,
+      "provider_final": null,
+      "learning_evidence_boundary": {
+        "claimed": true,
+        "status": "no_go",
+        "reason_code": "task_timeout",
+        "detail": "task exceeded timeout_s=120.0",
+        "mode": "evidence-boundary",
+        "expect_default_pipeline_learn": true,
+        "run_id": null,
+        "source_trace_dir": null,
+        "trace_dir": null,
+        "records": 0
+      }
+    },
+    {
+      "instance_id": "instance_qutebrowser__qutebrowser-96b997802e942937e81d2b8a32d08f00d3f4bc4e-v5fc38aaf22415ab0b70567368332beee7955b367",
+      "exit_code": null,
+      "latency_ms": 120000,
+      "total_cost_usd": 0.0,
+      "extracted_patch_present": false,
+      "extracted_patch_chars": 0,
+      "mock": false,
+      "timeout": true,
+      "events_path": "per_task\\instance_qutebrowser__qutebrowser-96b997802e942937e81d2b8a32d08f00d3f4bc4e-v5fc38aaf22415ab0b70567368332beee7955b367.events.jsonl",
+      "_verifier_repair_budget_usd": null,
+      "_diff_verifier_mismatches": null,
+      "_diff_verifier_outcome": null,
+      "model_id_final": null,
+      "provider_final": null,
+      "learning_evidence_boundary": {
+        "claimed": true,
+        "status": "no_go",
+        "reason_code": "task_timeout",
+        "detail": "task exceeded timeout_s=120.0",
+        "mode": "evidence-boundary",
+        "expect_default_pipeline_learn": true,
+        "run_id": null,
+        "source_trace_dir": null,
+        "trace_dir": null,
+        "records": 0
+      }
+    },
+    {
+      "instance_id": "instance_tutao__tutanota-db90ac26ab78addf72a8efaff3c7acc0fbd6d000-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf",
+      "exit_code": null,
+      "latency_ms": 120000,
+      "total_cost_usd": 0.0,
+      "extracted_patch_present": false,
+      "extracted_patch_chars": 0,
+      "mock": false,
+      "timeout": true,
+      "events_path": "per_task\\instance_tutao__tutanota-db90ac26ab78addf72a8efaff3c7acc0fbd6d000-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf.events.jsonl",
+      "_verifier_repair_budget_usd": null,
+      "_diff_verifier_mismatches": null,
+      "_diff_verifier_outcome": null,
+      "model_id_final": null,
+      "provider_final": null,
+      "learning_evidence_boundary": {
+        "claimed": true,
+        "status": "no_go",
+        "reason_code": "task_timeout",
+        "detail": "task exceeded timeout_s=120.0",
+        "mode": "evidence-boundary",
+        "expect_default_pipeline_learn": true,
+        "run_id": null,
+        "source_trace_dir": null,
+        "trace_dir": null,
+        "records": 0
+      }
+    },
+    {
+      "instance_id": "instance_gravitational__teleport-6eaaf3a27e64f4ef4ef855bd35d7ec338cf17460-v626ec2a48416b10a88641359a169d99e935ff037",
+      "exit_code": null,
+      "latency_ms": 120000,
+      "total_cost_usd": 0.0,
+      "extracted_patch_present": false,
+      "extracted_patch_chars": 0,
+      "mock": false,
+      "timeout": true,
+      "events_path": "per_task\\instance_gravitational__teleport-6eaaf3a27e64f4ef4ef855bd35d7ec338cf17460-v626ec2a48416b10a88641359a169d99e935ff037.events.jsonl",
+      "_verifier_repair_budget_usd": null,
+      "_diff_verifier_mismatches": null,
+      "_diff_verifier_outcome": null,
+      "model_id_final": null,
+      "provider_final": null,
+      "learning_evidence_boundary": {
+        "claimed": true,
+        "status": "no_go",
+        "reason_code": "task_timeout",
+        "detail": "task exceeded timeout_s=120.0",
+        "mode": "evidence-boundary",
+        "expect_default_pipeline_learn": true,
+        "run_id": null,
+        "source_trace_dir": null,
+        "trace_dir": null,
+        "records": 0
+      }
+    }
+  ],
+  "learning_evidence_gate": {
+    "claimed": true,
+    "status": "NO_GO",
+    "expect_default_pipeline_learn": true,
+    "passed": 0,
+    "failed": 5,
+    "skipped": 0
+  },
+  "budget_gate": {
+    "status": "PASS",
+    "cumulative_cost_usd": 0.0,
+    "global_budget_usd": 25.0,
+    "stop_reasons": []
+  },
+  "timeout_gate": {
+    "status": "NO_GO",
+    "timeouts": 5
+  },
+  "launch_manifest_path": "launch_manifest.json",
+  "acceptance_gate_results": {
+    "manifest_gate": {
+      "status": "PASS",
+      "reasons": []
+    },
+    "budget_gate": {
+      "status": "PASS",
+      "cumulative_cost_usd": 0.0,
+      "global_budget_usd": 25.0,
+      "stop_reasons": []
+    },
+    "timeout_gate": {
+      "status": "NO_GO",
+      "timeouts": 5
+    },
+    "provider_gate": {
+      "status": "NO_GO",
+      "reason": "provider_audit_failed",
+      "observed_providers": [],
+      "missing_provider_or_model": [
+        "instance_future-architect__vuls-139f3a81b66c47e6d8f70ce6c4afe7a9196a6ea8",
+        "instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858",
+        "instance_qutebrowser__qutebrowser-96b997802e942937e81d2b8a32d08f00d3f4bc4e-v5fc38aaf22415ab0b70567368332beee7955b367",
+        "instance_tutao__tutanota-db90ac26ab78addf72a8efaff3c7acc0fbd6d000-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf",
+        "instance_gravitational__teleport-6eaaf3a27e64f4ef4ef855bd35d7ec338cf17460-v626ec2a48416b10a88641359a169d99e935ff037"
+      ],
+      "denied_providers": [],
+      "outside_allowlist": [],
+      "provider_allowlist": [
+        "google",
+        "deepseek"
+      ],
+      "provider_denylist": [
+        "openai"
+      ]
+    },
+    "grading_gate": {
+      "status": "BLOCKED",
+      "reason": "grader_preflight_not_ready",
+      "path": "C:\\Code\\YGN-SAGE\\docs\\benchmarks\\2026-05-09-swebench-pro-grader-preflight.json",
+      "sha256": "bc15ee78bd3ead27c3e74baa8ee959cf7f9e96cedb8c1f0aab8fcd9f1c895d51",
+      "decision": "NO_GO_LOCAL_DOCKER",
+      "blockers": [
+        "host_disk_below_swebench_minimum",
+        "docker_daemon_unreachable",
+        "grader_repo_dirty"
+      ]
+    },
+    "ci_gate": {
+      "status": "BLOCKED",
+      "reason": "ci_green_artifact_not_supplied",
+      "path": null
+    }
+  },
+  "canary_decision": "NO_GO"
+}
