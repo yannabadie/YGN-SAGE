@@ -138,6 +138,34 @@ def test_assign_models_forwards_active_provider_policy_to_assigner() -> None:
     assert assigner.kwargs["provider_denylist"] == ["openai"]
 
 
+def test_old_binding_typeerror_assignment_is_still_policy_prechecked() -> None:
+    from sage.pipeline_v2.assign_models import assign_models
+
+    class _LegacyAssigner:
+        calls = 0
+
+        def assign_models(self, *_args: Any, **kwargs: Any) -> int:
+            self.calls += 1
+            if kwargs:
+                raise TypeError("unexpected keyword argument 'provider_allowlist'")
+            return 1
+
+    assigner = _LegacyAssigner()
+    pipeline = _make_pipeline()
+    pipeline.assigner = assigner
+    _install_policy(pipeline)
+    ctx = PipelineContext(task="x", budget=5.0)
+    ctx.topology = _FakeTopology()
+    ctx.domain = "code"
+
+    assign_models(pipeline, ctx)
+
+    assert assigner.calls == 2
+    assert ctx.assignments == {0: "gpt-5.5-pro"}
+    decision = getattr(ctx, "_provider_policy_decision")
+    assert decision["violations"][0]["reason"] == "denylist"
+
+
 @pytest.mark.asyncio
 async def test_provider_call_guard_blocks_direct_default_provider() -> None:
     provider = _MustNotBeCalledProvider()

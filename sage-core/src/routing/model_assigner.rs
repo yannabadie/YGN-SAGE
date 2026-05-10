@@ -66,6 +66,16 @@ impl ProviderPolicyFilter {
     }
 }
 
+type AssignmentResult<T> = Result<T, String>;
+
+#[derive(Debug, Clone, Copy)]
+struct SingleNodePolicyOptions<'a> {
+    task_domain: &'a str,
+    budget_usd: f32,
+    task_system: Option<CognitiveSystem>,
+    provider_policy: &'a ProviderPolicyFilter,
+}
+
 fn normalize_provider(provider: &str) -> String {
     provider.trim().to_ascii_lowercase()
 }
@@ -346,6 +356,7 @@ impl ModelAssigner {
             task_system,
             &ProviderPolicyFilter::inactive(),
         )
+        .expect("inactive provider policy cannot fail closed")
     }
 
     fn assign_models_with_policy_inner(
@@ -356,7 +367,7 @@ impl ModelAssigner {
         provider_hints: &[(usize, String)],
         task_system: Option<CognitiveSystem>,
         provider_policy: &ProviderPolicyFilter,
-    ) -> usize {
+    ) -> AssignmentResult<usize> {
         self.clear_last_assignment_trace();
         let node_count = graph.node_count();
         let mut remaining_budget = budget_usd;
@@ -365,7 +376,7 @@ impl ModelAssigner {
         let all_models = self.registry.all_models();
         if all_models.is_empty() {
             warn!("ModelAssigner: no models in registry, skipping assignment");
-            return 0;
+            return Ok(0);
         }
 
         // Pre-compute cost estimates once (avoids repeated calls per node).
@@ -412,7 +423,7 @@ impl ModelAssigner {
 
             // Respect pre-assigned model_id from template (e.g., formal_solver
             // pins formalizer to "deepseek-chat"). Only override if empty.
-            if !node.model_id.is_empty() {
+            let preassigned_policy_failure = if !node.model_id.is_empty() {
                 let policy_reason = if provider_policy.active() {
                     match self.registry.get(&node.model_id) {
                         Some(card) => provider_policy.violation_reason(&card.provider),
@@ -425,13 +436,17 @@ impl ModelAssigner {
                     assigned += 1;
                     continue;
                 }
+                let reason = policy_reason.unwrap_or("provider_policy_violation");
                 warn!(
                     node = idx,
                     model = %node.model_id,
-                    reason = policy_reason.unwrap_or("provider_policy_violation"),
+                    reason,
                     "preassigned_model_policy_filtered"
                 );
-            }
+                Some((node.model_id.clone(), reason))
+            } else {
+                None
+            };
 
             let local_system = match node.system {
                 1 => CognitiveSystem::S1,
@@ -587,11 +602,16 @@ impl ModelAssigner {
                 }
                 assigned += 1;
             } else {
+                if let Some((model_id, reason)) = preassigned_policy_failure {
+                    return Err(format!(
+                        "provider policy blocked preassigned model without eligible replacement: node_idx={idx}, model_id={model_id}, reason={reason}"
+                    ));
+                }
                 warn!(node = idx, "no candidate — keeping existing model_id");
             }
         }
 
-        assigned
+        Ok(assigned)
     }
 
     pub fn assign_single_node_inner(
@@ -606,32 +626,50 @@ impl ModelAssigner {
         self.assign_single_node_with_policy_inner(
             graph,
             node_idx,
-            task_domain,
-            budget_usd,
             exclude_ids,
-            task_system,
-            &ProviderPolicyFilter::inactive(),
+            SingleNodePolicyOptions {
+                task_domain,
+                budget_usd,
+                task_system,
+                provider_policy: &ProviderPolicyFilter::inactive(),
+            },
         )
+        .expect("inactive provider policy cannot fail closed")
     }
 
     fn assign_single_node_with_policy_inner(
         &self,
         graph: &mut TopologyGraph,
         node_idx: usize,
-        task_domain: &str,
-        budget_usd: f32,
         exclude_ids: Option<&[String]>,
-        task_system: Option<CognitiveSystem>,
-        provider_policy: &ProviderPolicyFilter,
-    ) -> Option<String> {
-        let node = graph.try_get_node(node_idx).ok()?;
+        options: SingleNodePolicyOptions<'_>,
+    ) -> AssignmentResult<Option<String>> {
+        let node = match graph.try_get_node(node_idx) {
+            Ok(node) => node,
+            Err(_) => return Ok(None),
+        };
+        let preassigned_policy_failure =
+            if !node.model_id.is_empty() && options.provider_policy.active() {
+                let policy_reason = match self.registry.get(&node.model_id) {
+                    Some(card) => options.provider_policy.violation_reason(&card.provider),
+                    None => Some("provider_policy_unknown_provider"),
+                };
+                policy_reason.map(|reason| (node.model_id.clone(), reason))
+            } else {
+                None
+            };
         let local_system = match node.system {
             1 => CognitiveSystem::S1,
             2 => CognitiveSystem::S2,
             3 => CognitiveSystem::S3,
             _ => CognitiveSystem::S1,
         };
-        let system = effective_system(&node.role, local_system, task_system, task_domain);
+        let system = effective_system(
+            &node.role,
+            local_system,
+            options.task_system,
+            options.task_domain,
+        );
         let caps = &node.required_capabilities;
         let needs_tools = caps.iter().any(|c| c == "tools");
         let needs_json = caps.iter().any(|c| c == "json" || c == "json_mode");
@@ -644,13 +682,22 @@ impl ModelAssigner {
         let max_cost = all_models
             .iter()
             .zip(model_costs.iter())
-            .filter(|(card, _)| provider_policy.violation_reason(&card.provider).is_none())
+            .filter(|(card, _)| {
+                options
+                    .provider_policy
+                    .violation_reason(&card.provider)
+                    .is_none()
+            })
             .fold(0.001_f32, |acc, (_, &cost)| acc.max(cost));
 
         let mut best_id: Option<String> = None;
         let mut best_score: f32 = f32::NEG_INFINITY;
         for (card_idx, card) in all_models.iter().enumerate() {
-            if provider_policy.violation_reason(&card.provider).is_some() {
+            if options
+                .provider_policy
+                .violation_reason(&card.provider)
+                .is_some()
+            {
                 continue;
             }
             // Skip models from excluded providers (dead at boot health check)
@@ -670,11 +717,11 @@ impl ModelAssigner {
                 continue;
             }
             let est_cost = model_costs[card_idx];
-            if est_cost > budget_usd {
+            if est_cost > options.budget_usd {
                 continue;
             }
             let affinity = self.registry.calibrated_affinity(&card.id, system);
-            let domain = card.domain_score(task_domain);
+            let domain = card.domain_score(options.task_domain);
             let cost_norm = est_cost / max_cost;
             let score = self.weight_affinity * affinity
                 + self.weight_domain * domain
@@ -690,8 +737,12 @@ impl ModelAssigner {
             if let Some(node_mut) = graph.inner_graph_mut().node_weight_mut(node_idx_pg) {
                 node_mut.model_id = model_id.clone();
             }
+        } else if let Some((model_id, reason)) = preassigned_policy_failure {
+            return Err(format!(
+                "provider policy blocked preassigned model without eligible replacement: node_idx={node_idx}, model_id={model_id}, reason={reason}"
+            ));
         }
-        best_id
+        Ok(best_id)
     }
 }
 
@@ -721,6 +772,7 @@ impl ModelAssigner {
     /// and drives role-aware tier promotion (see `effective_system`). When
     /// omitted, behaviour is unchanged from the legacy per-node-only
     /// scoring — same path every bench that existed pre-F7 ran.
+    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (graph, task_domain, budget_usd, provider_hints=None, task_system=None, provider_allowlist=None, provider_denylist=None))]
     fn assign_models(
         &self,
@@ -746,14 +798,15 @@ impl ModelAssigner {
             provider_allowlist.as_deref(),
             provider_denylist.as_deref(),
         );
-        Ok(self.assign_models_with_policy_inner(
+        self.assign_models_with_policy_inner(
             graph,
             task_domain,
             budget_usd,
             hints,
             task_sys,
             &provider_policy,
-        ))
+        )
+        .map_err(pyo3::exceptions::PyValueError::new_err)
     }
 
     /// Exclude dead providers from all future assignments.
@@ -766,6 +819,7 @@ impl ModelAssigner {
     /// Assign a model to a single node. Optional ``exclude_model_ids`` skips
     /// specific models (used by FrugalGPT cascade to force an upgrade).
     /// `task_system` drives role-aware tier promotion (see `effective_system`).
+    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (graph, node_idx, task_domain, budget_usd, exclude_model_ids=None, task_system=None, provider_allowlist=None, provider_denylist=None))]
     fn assign_single_node(
         &self,
@@ -791,12 +845,15 @@ impl ModelAssigner {
         self.assign_single_node_with_policy_inner(
             graph,
             node_idx,
-            task_domain,
-            budget_usd,
             exclude_model_ids.as_deref(),
-            task_sys,
-            &provider_policy,
+            SingleNodePolicyOptions {
+                task_domain,
+                budget_usd,
+                task_system: task_sys,
+                provider_policy: &provider_policy,
+            },
         )
+        .map_err(pyo3::exceptions::PyValueError::new_err)?
         .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("No candidate found"))
     }
 
@@ -1110,11 +1167,16 @@ mod tests {
         let deny = vec!["openai".to_string()];
         let policy = ProviderPolicyFilter::from_slices(None, Some(&deny));
         let mut graph = one_policy_node("");
-        let n =
-            assigner.assign_models_with_policy_inner(&mut graph, "code", 10.0, &[], None, &policy);
+        let n = assigner
+            .assign_models_with_policy_inner(&mut graph, "code", 10.0, &[], None, &policy)
+            .unwrap();
 
         assert_eq!(n, 1);
         assert_eq!(graph.try_get_node(0).unwrap().model_id, "gemini-ok");
+        assert!(assigner
+            .last_assignment_trace()
+            .iter()
+            .all(|candidate| candidate.model_id != "gpt-best"));
     }
 
     #[test]
@@ -1125,7 +1187,25 @@ mod tests {
         let policy = ProviderPolicyFilter::from_slices(Some(&allow), None);
         let mut graph = one_policy_node("");
 
-        assigner.assign_models_with_policy_inner(&mut graph, "code", 10.0, &[], None, &policy);
+        assigner
+            .assign_models_with_policy_inner(&mut graph, "code", 10.0, &[], None, &policy)
+            .unwrap();
+
+        assert_eq!(graph.try_get_node(0).unwrap().model_id, "gemini-ok");
+    }
+
+    #[test]
+    fn test_provider_policy_denylist_wins_allowlist_conflict() {
+        let registry = provider_policy_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+        let allow = vec!["openai".to_string(), "google".to_string()];
+        let deny = vec!["openai".to_string()];
+        let policy = ProviderPolicyFilter::from_slices(Some(&allow), Some(&deny));
+        let mut graph = one_policy_node("");
+
+        assigner
+            .assign_models_with_policy_inner(&mut graph, "code", 10.0, &[], None, &policy)
+            .unwrap();
 
         assert_eq!(graph.try_get_node(0).unwrap().model_id, "gemini-ok");
     }
@@ -1139,7 +1219,9 @@ mod tests {
         let hints = vec![(0usize, "openai".to_string())];
         let mut graph = one_policy_node("");
 
-        assigner.assign_models_with_policy_inner(&mut graph, "code", 10.0, &hints, None, &policy);
+        assigner
+            .assign_models_with_policy_inner(&mut graph, "code", 10.0, &hints, None, &policy)
+            .unwrap();
 
         assert_eq!(graph.try_get_node(0).unwrap().model_id, "gemini-ok");
     }
@@ -1152,9 +1234,28 @@ mod tests {
         let policy = ProviderPolicyFilter::from_slices(None, Some(&deny));
         let mut graph = one_policy_node("gpt-best");
 
-        assigner.assign_models_with_policy_inner(&mut graph, "code", 10.0, &[], None, &policy);
+        assigner
+            .assign_models_with_policy_inner(&mut graph, "code", 10.0, &[], None, &policy)
+            .unwrap();
 
         assert_eq!(graph.try_get_node(0).unwrap().model_id, "gemini-ok");
+    }
+
+    #[test]
+    fn test_preassigned_denied_model_without_replacement_fails_closed() {
+        let registry = provider_policy_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+        let allow = vec!["anthropic".to_string()];
+        let policy = ProviderPolicyFilter::from_slices(Some(&allow), None);
+        let mut graph = one_policy_node("gpt-best");
+
+        let err = assigner
+            .assign_models_with_policy_inner(&mut graph, "code", 10.0, &[], None, &policy)
+            .unwrap_err();
+
+        assert!(err.contains("without eligible replacement"));
+        assert!(err.contains("provider_policy_outside_allowlist"));
+        assert_eq!(graph.try_get_node(0).unwrap().model_id, "gpt-best");
     }
 
     #[test]
@@ -1166,7 +1267,18 @@ mod tests {
         let mut graph = one_policy_node("");
 
         let selected = assigner
-            .assign_single_node_with_policy_inner(&mut graph, 0, "code", 10.0, None, None, &policy);
+            .assign_single_node_with_policy_inner(
+                &mut graph,
+                0,
+                None,
+                SingleNodePolicyOptions {
+                    task_domain: "code",
+                    budget_usd: 10.0,
+                    task_system: None,
+                    provider_policy: &policy,
+                },
+            )
+            .unwrap();
 
         assert_eq!(selected.as_deref(), Some("gemini-ok"));
         assert_eq!(graph.try_get_node(0).unwrap().model_id, "gemini-ok");
