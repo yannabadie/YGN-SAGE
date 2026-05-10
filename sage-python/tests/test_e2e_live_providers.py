@@ -456,13 +456,42 @@ class TestProviderConfigConsistency:
         providers = [c["provider"] for c in PROVIDER_CONFIGS]
         assert "openrouter" in providers
 
-    def test_no_fictional_hardcoded_models(self):
-        """No gpt-5.x or gemini-3.x in hardcoded model lists."""
+    def test_hardcoded_models_align_with_cards_toml(self):
+        """Hardcoded models in PROVIDER_CONFIGS must be active model IDs in
+        sage-core/config/cards.toml (the source-of-truth per CLAUDE.md
+        directive #7). Both gpt-5.x and MiniMax-M2.5 are now valid active
+        IDs as of the 2026-05-10 model catalog refresh (commit dbc76813),
+        so the previous "no fictional model" allowlist is replaced by an
+        empirical alignment check against the catalog.
+
+        Block B1 (cgpro DESIGN 2026-05-10): the legacy assertion
+        `"M2.5" not in model` was always-False against `MiniMax-M2.5`,
+        which became an officially-active model and broke CI. Per
+        directive #7 the truth lives in cards.toml; this test now
+        delegates to it instead of carrying a stale denylist.
+        """
+        import re
+        from pathlib import Path
         from sage.providers.connector import PROVIDER_CONFIGS
+
+        repo_root = Path(__file__).resolve().parents[2]
+        cards_toml = repo_root / "sage-core" / "config" / "cards.toml"
+        assert cards_toml.is_file(), f"cards.toml missing at {cards_toml}"
+
+        content = cards_toml.read_text(encoding="utf-8")
+        # Cheap parse: collect every `id = "..."` declared at the
+        # top of a `[[models]]` table. We avoid pulling tomllib here so
+        # the test is hermetic to the parser version.
+        active_ids = set(re.findall(r'^\s*id\s*=\s*"([^"]+)"', content, re.MULTILINE))
+        assert active_ids, "cards.toml parse produced zero active model ids"
+
         for cfg in PROVIDER_CONFIGS:
             for model in cfg.get("hardcoded_models", []):
-                assert "gpt-5" not in model, f"Fictional model: {model}"
-                assert "M2.5" not in model, f"Old MiniMax model: {model}"
+                assert model in active_ids, (
+                    f"hardcoded model {model!r} in PROVIDER_CONFIGS is not "
+                    f"declared as an active id in cards.toml — either add "
+                    f"the card or remove the hardcoded entry."
+                )
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -473,7 +502,7 @@ class TestTopologyControllerReal:
     """Test TopologyController decision logic with realistic inputs."""
 
     def test_good_quality_continues(self):
-        from sage.topology_controller import TopologyController, AdaptationDecision
+        from sage.topology_controller import TopologyController
         from sage.quality_estimator import QualityEstimator
 
         qe = QualityEstimator()

@@ -1,5 +1,4 @@
 """Tests for benchmark metadata propagation."""
-import pytest
 from sage.boot import AgentSystem
 
 
@@ -9,10 +8,15 @@ def test_agent_system_model_info():
 
     system = AgentSystem.__new__(AgentSystem)
 
-    # Minimal mock: agent_loop with a fake _llm, and a metacognition stub
+    # Minimal mock: agent_loop with a fake _llm, and a metacognition stub.
+    # `model_info` (sage/boot.py:130-143) extracts the provider via this
+    # priority: `_llm.provider_name` > `config.llm.provider` > `type().__name__`.
+    # Setting `provider_name` directly hits the first lookup; otherwise
+    # MagicMock auto-generates a MagicMock for any unset attribute and the
+    # fallback never fires.
     mock_llm = MagicMock()
     mock_llm.model_id = "gemini-2.5-flash"
-    type(mock_llm).__name__ = "GoogleProvider"
+    mock_llm.provider_name = "GoogleProvider"
 
     mock_loop = MagicMock()
     mock_loop._llm = mock_llm
