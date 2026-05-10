@@ -60,6 +60,12 @@ fn best_system_affinity() {
         domain_scores: HashMap::new(),
         safety_rating: 0.5,
         security_label: 0,
+        runtime_selectable: true,
+        runtime_settings: HashMap::new(),
+        runtime_replacement: String::new(),
+        runtime_replacement_settings: HashMap::new(),
+        runtime_evidence: String::new(),
+        runtime_retire_after: String::new(),
     };
     assert_eq!(card.best_system(), CognitiveSystem::S2);
 }
@@ -96,6 +102,12 @@ fn estimate_cost_matches_per_million_pricing() {
         domain_scores: HashMap::new(),
         safety_rating: 0.5,
         security_label: 0,
+        runtime_selectable: true,
+        runtime_settings: HashMap::new(),
+        runtime_replacement: String::new(),
+        runtime_replacement_settings: HashMap::new(),
+        runtime_evidence: String::new(),
+        runtime_retire_after: String::new(),
     };
     // 1M input tokens at $0.075 + 1M output tokens at $0.30 = $0.375
     let cost = card.estimate_cost(1_000_000, 1_000_000);
@@ -128,6 +140,12 @@ fn affinity_for_each_system() {
         domain_scores: HashMap::new(),
         safety_rating: 0.5,
         security_label: 0,
+        runtime_selectable: true,
+        runtime_settings: HashMap::new(),
+        runtime_replacement: String::new(),
+        runtime_replacement_settings: HashMap::new(),
+        runtime_evidence: String::new(),
+        runtime_retire_after: String::new(),
     };
     assert!((card.affinity_for(CognitiveSystem::S1) - 0.1).abs() < 0.001);
     assert!((card.affinity_for(CognitiveSystem::S2) - 0.5).abs() < 0.001);
