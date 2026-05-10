@@ -353,10 +353,10 @@ sage.boot.boot_agent_system = _boot_agent_system
         PYTHONPATH: [
           tmp,
           path.join(repoRoot(), "sage-python", "src"),
-          process.env.PYTHONPATH ?? "",
         ].filter(Boolean).join(path.delimiter),
         PYTHONNOUSERSITE: "1",
         PYTHONDONTWRITEBYTECODE: "1",
+        PYTHONSAFEPATH: "1",
         SAGE_NODE_SMOKE_PIPELINE_ACTIVE: readyFile,
         SAGE_BOOT_BYPASS_EPOCH_GUARD: "1",
         SAGE_BOOT_BYPASS_REASON: "pi-adapter-real-backend-smoke",
@@ -397,7 +397,17 @@ sage.boot.boot_agent_system = _boot_agent_system
         events.push(event);
         if (event.event_type === "cli_started" && !controlsSent) {
           controlsSent = true;
-          await waitForFile(readyFile, 10_000);
+          await Promise.race([
+            waitForFile(readyFile, 10_000),
+            bridge.completed.then(
+              () => {
+                throw new Error("CLI completed before active pipeline sentinel");
+              },
+              (error: unknown) => {
+                throw error;
+              },
+            ),
+          ]);
           await bridge.send({ command: "set_budget", args: { budget_usd: 2 } });
           await bridge.cancel("node adapter controlled smoke");
         }
@@ -447,9 +457,10 @@ sage.boot.boot_agent_system = _boot_agent_system
       assert.equal(payloadRecord(final)["exit_code"], 130);
       assert.equal(payloadRecord(final)["final_seq"], events.at(-2)?.seq);
       assert.equal(completion.exitCode, 130);
+      assert.equal(completion.signal, null);
       assert.equal(completion.finalEvent, final);
     } finally {
-      await bridge.close();
+      await bridge.close().catch(() => undefined);
       await rm(tmp, { recursive: true, force: true });
     }
   },
