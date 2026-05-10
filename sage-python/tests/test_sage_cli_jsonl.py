@@ -1059,6 +1059,45 @@ def _parse_jsonl_frames(text: str) -> list[dict[str, Any]]:
     return [json.loads(line) for line in text.splitlines() if line.strip()]
 
 
+@pytest.mark.asyncio
+async def test_run_jsonl_boot_provider_policy_failure_is_auditable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from sage.pipeline_v2.provider_policy import ProviderPolicyViolation
+
+    def _fake_boot(*_args: Any, **_kwargs: Any) -> None:
+        raise ProviderPolicyViolation("provider policy violation at boot")
+
+    monkeypatch.setattr("sage.boot.boot_agent_system", _fake_boot)
+    stdout_buf = io.StringIO()
+
+    exit_code = await cli_run.run_jsonl_async(
+        "fake task",
+        provider_allowlist=("deepseek",),
+        provider_denylist=("openai",),
+        stdin=io.StringIO(""),
+        stdout=stdout_buf,
+    )
+
+    frames = _parse_jsonl_frames(stdout_buf.getvalue())
+    event_types = [frame["event_type"] for frame in frames]
+    failure = next(frame for frame in frames if frame["event_type"] == "failure")
+    final_result = next(
+        frame for frame in frames if frame["event_type"] == "final_result"
+    )
+    cli_complete = frames[-1]
+
+    assert exit_code == 1
+    assert event_types == ["cli_started", "failure", "final_result", "cli_complete"]
+    assert failure["kind"] == "provider_policy"
+    assert failure["error_type"] == "provider_policy_violation"
+    assert failure["node_id"] == "boot.llm_provider"
+    assert final_result["status"] == "failure"
+    assert cli_complete["payload"]["outcome"] == "failure"
+    assert cli_complete["payload"]["exit_code"] == 1
+    assert cli_complete["payload"]["final_seq"] == final_result["seq"]
+
+
 def test_subprocess_jsonl_cancel_stream_is_adapter_compatible(tmp_path: Path) -> None:
     """True subprocess smoke for stdin command mode + cancel terminal stream.
 

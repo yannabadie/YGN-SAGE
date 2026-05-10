@@ -984,6 +984,7 @@ async def run_jsonl_async(
     total_latency_ms = 0.0
 
     pipeline_task: asyncio.Task[Any] | None = None
+    pipeline: Any = None
     provider_policy_env_restore: dict[str, str | None] | None = None
     if provider_allowlist is not None or provider_denylist is not None:
         provider_policy_env_restore = {
@@ -1074,6 +1075,34 @@ async def run_jsonl_async(
         if ctx is not None:
             total_cost_usd = float(getattr(ctx, "cost", 0.0) or 0.0)
             total_latency_ms = float(getattr(ctx, "latency_ms", 0.0) or 0.0)
+
+    except Exception as exc:  # noqa: BLE001 — terminal-frame guarantee during boot.
+        from sage.pipeline_v2.provider_policy import ProviderPolicyViolation
+
+        log.error("sage run: boot failed: %s", exc)
+        outcome = "failure"
+        exit_code = 1
+        if isinstance(exc, ProviderPolicyViolation):
+            failure_kind = "provider_policy"
+            error_type = "provider_policy_violation"
+            node_id = "boot.llm_provider"
+        else:
+            failure_kind = "boot"
+            error_type = type(exc).__name__
+            node_id = "boot"
+        eventlog.emit_failure(
+            kind=failure_kind,
+            error_type=error_type,
+            message=str(exc),
+            node_id=node_id,
+        )
+        eventlog.emit_final_result(
+            status="failure",
+            output="",
+            total_cost_usd=0.0,
+            total_latency_ms=0.0,
+            node_count=0,
+        )
 
     finally:
         # Stop background tasks before emitting the terminal frame.

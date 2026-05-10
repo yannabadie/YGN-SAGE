@@ -75,6 +75,28 @@ from sage.boot_pipeline import init_pipeline  # noqa: E402
 # Re-export for backward compat (test_boot_sandbox_warning imports this)
 _check_sandbox_availability = check_sandbox_availability
 
+_KNOWN_LLM_TIERS = frozenset({
+    "fast",
+    "mutator",
+    "reasoner",
+    "codex",
+    "codex_max",
+    "budget",
+    "critical",
+    "fallback",
+})
+
+
+def _resolve_boot_llm_tier(llm_tier: str) -> str:
+    if llm_tier != "auto":
+        return llm_tier
+    env_tier = os.environ.get("SAGE_LLM_TIER", "").strip().casefold()
+    if not env_tier:
+        return llm_tier
+    if env_tier not in _KNOWN_LLM_TIERS:
+        raise RuntimeError(f"Unknown SAGE_LLM_TIER={env_tier!r}")
+    return env_tier
+
 
 @dataclass
 class AgentSystem:
@@ -111,7 +133,11 @@ class AgentSystem:
         loop = self.agent_loop
         if hasattr(loop, "_llm") and loop._llm:
             info["model"] = getattr(loop._llm, "model_id", "unknown")
-            info["provider"] = type(loop._llm).__name__
+            info["provider"] = (
+                getattr(loop._llm, "provider_name", "")
+                or getattr(loop.config.llm, "provider", "")
+                or type(loop._llm).__name__
+            )
         if hasattr(self, "metacognition") and self.metacognition:
             info["tier"] = getattr(self.metacognition, "_current_tier", "")
         return info
@@ -374,6 +400,8 @@ def boot_agent_system(
     from sage.policy import ToolCapability, ToolPolicy, set_current_tool_policy
 
     set_current_tool_policy(ToolPolicy.from_environment())
+
+    llm_tier = _resolve_boot_llm_tier(llm_tier)
 
     # 1. LLM provider
     provider, llm_config = init_llm_provider(use_mock_llm, llm_tier)

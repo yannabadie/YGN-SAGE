@@ -21,6 +21,19 @@ log = logging.getLogger(__name__)
 DEFAULT_EXCLUSION_TTL_SEC = 300.0
 
 
+def _provider_name(provider: Any, config: LLMConfig | None = None) -> str:
+    return str(
+        getattr(provider, "provider_name", "")
+        or (
+            getattr(config, "provider", "")
+            if config is not None
+            else ""
+        )
+        or getattr(provider, "name", "")
+        or ""
+    )
+
+
 class ProviderPool:
     """Resolve model_id → (LLMProvider, LLMConfig) with caching + fallback.
 
@@ -415,15 +428,7 @@ class ProviderPool:
             Returns a valid pair unless an active provider policy blocks the
             inferred provider or fallback provider.
         """
-        default_provider_name = (
-            getattr(self._default, "name", "")
-            or getattr(self._default, "provider_name", "")
-            or (
-                getattr(self._default_config, "provider", "")
-                if self._default_config is not None
-                else ""
-            )
-        )
+        default_provider_name = _provider_name(self._default, self._default_config)
         if not model_id:
             self._enforce_provider_policy(
                 model_id=model_id,
@@ -436,11 +441,7 @@ class ProviderPool:
 
         if model_id in self._cache:
             cached_provider, cached_config = self._cache[model_id]
-            cached_provider_name = (
-                getattr(cached_config, "provider", "")
-                or getattr(cached_provider, "name", "")
-                or getattr(cached_provider, "provider_name", "")
-            )
+            cached_provider_name = _provider_name(cached_provider, cached_config)
             self._enforce_provider_policy(
                 model_id=model_id,
                 provider_name=cached_provider_name,

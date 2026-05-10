@@ -86,6 +86,15 @@ class _MustNotBeCalledProvider:
         raise AssertionError("disallowed provider was called")
 
 
+class _AllowedPydanticLikeProvider:
+    name = "pydantic_ai"
+    provider_name = "deepseek"
+    model_id = "deepseek-v4-flash"
+
+    async def generate(self, *_args: Any, **_kwargs: Any) -> str:
+        return "ok"
+
+
 def test_provider_policy_ignores_spoofed_provider_hint() -> None:
     pipeline = _make_pipeline()
     _install_policy(pipeline)
@@ -112,6 +121,96 @@ def test_model_assigned_provider_id_ignores_spoofed_provider_hint() -> None:
     provider_id = runtime_provider_id_for_model(pipeline, "gpt-5.5-pro", ctx)
 
     assert provider_id == "openai"
+
+
+def _clear_provider_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    from sage.providers.connector import PROVIDER_CONFIGS
+
+    for cfg in PROVIDER_CONFIGS:
+        monkeypatch.delenv(cfg["api_key_env"], raising=False)
+    monkeypatch.delenv("DEEP_SEEK_API_KEY", raising=False)
+
+
+def test_init_llm_provider_uses_policy_allowed_fallback_when_tier_provider_denied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from sage.boot_providers import init_llm_provider
+    from sage.providers.pydantic_ai_provider import PydanticAIProvider
+
+    _clear_provider_env(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-deepseek")
+    monkeypatch.setenv("SAGE_PROVIDER_ALLOWLIST", "google,deepseek")
+    monkeypatch.setenv("SAGE_PROVIDER_DENYLIST", "openai")
+    constructed: list[tuple[str, str]] = []
+
+    def fake_for_sage_provider(
+        provider: str,
+        model_id: str,
+        _api_key: str | None,
+    ) -> SimpleNamespace:
+        constructed.append((provider, model_id))
+        return SimpleNamespace(name=provider, model_id=model_id)
+
+    monkeypatch.setattr(
+        PydanticAIProvider,
+        "for_sage_provider",
+        staticmethod(fake_for_sage_provider),
+    )
+
+    provider, llm_config = init_llm_provider(False, "codex_max")
+
+    assert constructed == [("deepseek", "deepseek-v4-flash")]
+    assert provider.name == "deepseek"
+    assert llm_config.provider == "deepseek"
+    assert llm_config.model == "deepseek-v4-flash"
+
+
+def test_init_llm_provider_fails_closed_when_only_denied_provider_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from sage.boot_providers import init_llm_provider
+    from sage.providers.pydantic_ai_provider import PydanticAIProvider
+
+    _clear_provider_env(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai")
+    monkeypatch.setenv("SAGE_PROVIDER_ALLOWLIST", "google,deepseek")
+    monkeypatch.setenv("SAGE_PROVIDER_DENYLIST", "openai")
+
+    def forbidden(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("denied provider must not be constructed")
+
+    monkeypatch.setattr(
+        PydanticAIProvider,
+        "for_sage_provider",
+        staticmethod(forbidden),
+    )
+
+    with pytest.raises(RuntimeError, match="provider policy"):
+        init_llm_provider(False, "codex_max")
+
+
+def test_boot_agent_system_uses_sage_llm_tier_env_for_auto_tier(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sage.boot as boot
+
+    class _StopBoot(RuntimeError):
+        pass
+
+    seen: list[str] = []
+
+    def fake_init_llm_provider(_use_mock_llm: bool, llm_tier: str) -> None:
+        seen.append(llm_tier)
+        raise _StopBoot
+
+    monkeypatch.setenv("SAGE_LLM_TIER", "budget")
+    monkeypatch.setattr(boot, "init_llm_provider", fake_init_llm_provider)
+
+    with pytest.raises(_StopBoot):
+        boot.boot_agent_system()
+
+    assert seen == ["budget"]
 
 
 def test_assign_models_forwards_active_provider_policy_to_assigner() -> None:
@@ -181,6 +280,23 @@ async def test_provider_call_guard_blocks_direct_default_provider() -> None:
 
 
 @pytest.mark.asyncio
+async def test_provider_call_guard_prefers_canonical_provider_name() -> None:
+    provider = _AllowedPydanticLikeProvider()
+    pipeline = _make_pipeline()
+    pipeline.llm_provider = provider
+    pipeline.llm_config = SimpleNamespace(
+        provider="deepseek",
+        model="deepseek-v4-flash",
+    )
+    _install_policy(pipeline)
+    install_provider_call_guards(pipeline)
+
+    result = await pipeline.llm_provider.generate(messages=[], config=None)
+
+    assert result == "ok"
+
+
+@pytest.mark.asyncio
 async def test_provider_pool_health_check_skips_denied_provider() -> None:
     from sage.llm.base import LLMConfig
     from sage.llm.provider_pool import ProviderPool
@@ -221,6 +337,55 @@ def test_provider_pool_resolve_blocks_denied_provider() -> None:
         default_config=LLMConfig(provider="openai", model="gpt-5.5-pro"),
         providers={"openai": provider},
     )
+    pool.set_provider_policy(
+        allowlist=frozenset({"google", "deepseek"}),
+        denylist=frozenset({"openai"}),
+        source="cli",
+    )
+
+    with pytest.raises(ProviderPolicyViolation):
+        pool.resolve("gpt-5.5-pro")
+
+
+def test_provider_pool_default_resolution_prefers_canonical_provider_name() -> None:
+    from sage.llm.base import LLMConfig
+    from sage.llm.provider_pool import ProviderPool
+
+    provider = _AllowedPydanticLikeProvider()
+    pool = ProviderPool(
+        default_provider=provider,
+        registry=None,
+        default_config=LLMConfig(
+            provider="deepseek",
+            model="deepseek-v4-flash",
+        ),
+    )
+    pool.set_provider_policy(
+        allowlist=frozenset({"google", "deepseek"}),
+        denylist=frozenset({"openai"}),
+        source="cli",
+    )
+
+    resolved_provider, resolved_config = pool.resolve("")
+
+    assert resolved_provider is provider
+    assert resolved_config.provider == "deepseek"
+
+
+def test_provider_pool_cached_resolution_rechecks_active_provider_policy() -> None:
+    from sage.llm.base import LLMConfig
+    from sage.llm.provider_pool import ProviderPool
+
+    provider = MagicMock()
+    provider.name = "openai"
+    pool = ProviderPool(
+        default_provider=provider,
+        registry=None,
+        default_config=LLMConfig(provider="openai", model="gpt-5.5-pro"),
+        providers={"openai": provider},
+    )
+
+    pool.resolve("gpt-5.5-pro")
     pool.set_provider_policy(
         allowlist=frozenset({"google", "deepseek"}),
         denylist=frozenset({"openai"}),

@@ -387,10 +387,14 @@ def _call_config(
 
 def _provider_identity(provider: Any, config: Any) -> tuple[str, str]:
     provider_id = (
-        getattr(config, "provider", "")
-        if config is not None
-        else ""
-    ) or getattr(provider, "name", "") or getattr(provider, "provider_name", "")
+        getattr(provider, "provider_name", "")
+        or (
+            getattr(config, "provider", "")
+            if config is not None
+            else ""
+        )
+        or getattr(provider, "name", "")
+    )
     model_id = (
         getattr(config, "model", "")
         if config is not None
@@ -406,9 +410,9 @@ def guard_provider_call(
     config: Any,
     source: str,
 ) -> None:
-    provider_attr_id = getattr(provider, "name", "") or getattr(
+    provider_attr_id = getattr(provider, "provider_name", "") or getattr(
         provider,
-        "provider_name",
+        "name",
         "",
     )
     provider_attr_model = getattr(provider, "model_id", "") or getattr(
