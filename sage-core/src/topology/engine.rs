@@ -14,7 +14,7 @@
 //! 5. **Template fallback**: S1→sequential, S2→avr, S3→debate.
 
 use rand::Rng;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tracing::{debug, info, info_span, warn};
 
 use crate::memory::smmu::{write_json_atomic, MultiViewMMU, MultiViewMMUSnapshot};
@@ -1120,8 +1120,8 @@ impl TopologyEngine {
         std::fs::create_dir_all(dir_path).map_err(|e| format!("create dir {}: {}", dir, e))?;
         posterior_epoch::validate_epoch_for_save(dir_path)?;
 
-        self.save_core_state_files(dir_path)?;
         remove_smmu_state_if_present(dir_path)?;
+        self.save_core_state_files(dir_path)?;
         posterior_epoch::write_topology_state_manifest(dir_path, "TopologyEngine::save_state")?;
 
         info!(
@@ -1205,7 +1205,7 @@ impl TopologyEngine {
         let snapshot = TopologySmmuStateSnapshot {
             version: 1,
             multi_view_mmu: smmu.to_snapshot(),
-            topology_bridge: self.bridge.to_snapshot(),
+            topology_bridge: self.bridge.to_snapshot_for_smmu(smmu),
         };
         write_json_atomic(
             &dir_path.join(posterior_epoch::SMMU_STATE_FILENAME),
@@ -1249,6 +1249,7 @@ impl TopologyEngine {
         let counts = self.load_core_state_files(dir_path)?;
         self.load_smmu_state_file_if_present(dir_path, smmu)?;
         self.rebuild_topology_cache_from_archive();
+        self.prune_bridge_to_cached_topologies();
 
         info!(
             dir = dir,
@@ -1371,6 +1372,17 @@ impl TopologyEngine {
             .collect();
         for graph in graphs {
             self.cache_topology(graph);
+        }
+    }
+
+    fn prune_bridge_to_cached_topologies(&mut self) {
+        let valid_topology_ids: HashSet<String> = self.topology_cache.keys().cloned().collect();
+        let pruned = self.bridge.prune_missing_topologies(&valid_topology_ids);
+        if pruned > 0 {
+            warn!(
+                pruned = pruned,
+                "topology_smmu_bridge_pruned_missing_topology_cache_entries"
+            );
         }
     }
 }
@@ -1561,6 +1573,42 @@ mod tests {
         let engine = TopologyEngine::new();
         // Empty archive should skip MCTS path.
         assert!(engine.try_mcts_search().is_none());
+    }
+
+    #[cfg(feature = "cognitive")]
+    #[test]
+    fn test_core_save_state_refuses_tampered_smmu_before_cleanup() {
+        let tmp = tempfile::tempdir().expect("create tempdir");
+        let dir = tmp.path().to_str().expect("utf-8 temp path");
+        let engine = TopologyEngine::new();
+        let mut smmu = MultiViewMMU::new();
+        smmu.register_chunk(
+            0,
+            1,
+            "persisted smmu chunk",
+            vec!["smmu".into()],
+            None,
+            None,
+        );
+
+        engine
+            .save_state_with_smmu(dir, &smmu)
+            .expect("initial smmu save succeeds");
+        let smmu_path = tmp.path().join(posterior_epoch::SMMU_STATE_FILENAME);
+        assert!(smmu_path.exists());
+        std::fs::write(&smmu_path, b"{\"tampered\":true}\n").expect("tamper smmu state");
+
+        let err = engine
+            .save_state(dir)
+            .expect_err("core save must validate A14 before removing stale S-MMU");
+        assert!(
+            err.contains(posterior_epoch::SMMU_STATE_FILENAME),
+            "error should name the tampered S-MMU file: {err}"
+        );
+        assert!(
+            smmu_path.exists(),
+            "save_state must not delete tampered smmu_state.json before A14 validation"
+        );
     }
 
     /// Cycle-10 P1 hot-fix regression (cgpro 2026-05-04 closure review):

@@ -336,6 +336,42 @@ def test_load_state_restores_functional_smmu_hit_path(tmp_path: Path) -> None:
     assert result.topology.node_count() > 0
 
 
+def test_load_state_prunes_bridge_metadata_without_cached_topology(tmp_path: Path) -> None:
+    """Dead bridge metadata must not produce a bogus S-MMU hit after reload."""
+    state_dir = tmp_path / "smmu_dead_bridge_probe"
+    state_dir.mkdir()
+    _write_epoch_marker(state_dir, "regression test for bridge cache pruning")
+
+    engine = sage_core.TopologyEngine()
+    engine.record_outcome(
+        "01DEADBRIDGE00000000000000",
+        "orphan topology outcome",
+        ["orphan", "smmu"],
+        [1.0, 0.0, 0.0, 0.0],
+        0.95,
+        0.005,
+        100.0,
+    )
+    assert engine.smmu_chunk_count() == 1
+    engine.save_state(str(state_dir))
+
+    restored = sage_core.TopologyEngine()
+    restored.load_state(str(state_dir))
+    result = restored.generate_with_options(
+        "orphan topology outcome",
+        None,
+        2,
+        0.0,
+        True,
+        False,
+        False,
+        False,
+        False,
+    )
+
+    assert result.source != "smmu_hit"
+
+
 def test_save_state_refuses_smmu_write_under_a14_bypass(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -131,6 +131,18 @@ impl TopologySmmuBridge {
         }
     }
 
+    pub fn to_snapshot_for_smmu(&self, smmu: &MultiViewMMU) -> TopologySmmuBridgeSnapshot {
+        TopologySmmuBridgeSnapshot {
+            version: 1,
+            chunk_meta: self
+                .chunk_meta
+                .iter()
+                .filter(|(chunk_id, _)| smmu.contains_chunk_id(chunk_id))
+                .map(|(chunk_id, meta)| (chunk_id.clone(), meta.clone()))
+                .collect(),
+        }
+    }
+
     pub fn from_snapshot(
         snapshot: TopologySmmuBridgeSnapshot,
         smmu: &MultiViewMMU,
@@ -153,6 +165,16 @@ impl TopologySmmuBridge {
         Ok(Self {
             chunk_meta: snapshot.chunk_meta,
         })
+    }
+
+    pub fn prune_missing_topologies(
+        &mut self,
+        valid_topology_ids: &std::collections::HashSet<String>,
+    ) -> usize {
+        let before = self.chunk_meta.len();
+        self.chunk_meta
+            .retain(|_, meta| valid_topology_ids.contains(&meta.topology_id));
+        before.saturating_sub(self.chunk_meta.len())
     }
 
     /// Store a topology outcome in S-MMU.
@@ -351,6 +373,25 @@ mod tests {
 
         assert_eq!(bridge.chunk_count(), 1);
         assert_eq!(smmu.chunk_count(), 1);
+    }
+
+    #[test]
+    fn test_snapshot_for_smmu_prunes_evicted_chunks() {
+        let mut smmu = MultiViewMMU::new();
+        let mut bridge = TopologySmmuBridge::new();
+
+        let outcome = make_outcome("01JTEST0001", "Sort an array", "avr", 0.9, None);
+        bridge.record_outcome(&mut smmu, outcome);
+        assert_eq!(bridge.chunk_count(), 1);
+        assert_eq!(smmu.chunk_count(), 1);
+
+        assert_eq!(smmu.evict_oldest(1), 1);
+        assert_eq!(smmu.chunk_count(), 0);
+
+        let snapshot = bridge.to_snapshot_for_smmu(&smmu);
+        assert_eq!(snapshot.chunk_meta.len(), 0);
+        let restored = TopologySmmuBridge::from_snapshot(snapshot, &smmu).unwrap();
+        assert_eq!(restored.chunk_count(), 0);
     }
 
     #[test]
