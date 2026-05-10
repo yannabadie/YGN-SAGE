@@ -943,6 +943,60 @@ def _provider_gate(
     }
 
 
+def _categorize_timeout_from_events(
+    events_path: Path,
+    *,
+    task_timeout_s: float,
+) -> dict[str, Any]:
+    """Block A5 (cgpro DESIGN 2026-05-10): categorize a runner timeout.
+
+    Reads per-task events file and forwards typed event lists to
+    `sage.bench.event_ledger.categorize_timeout`. Returns the
+    categorization dict (last_stage / elapsed_ms_by_stage /
+    provider_attempted / model_id_final / provider_final / reason_code)
+    so the runner summary can carry it as a first-class field.
+
+    Per cgpro DESIGN correction: heuristic is TIME-based (uses
+    cli_progress.payload.elapsed_ms which is cumulative since task
+    start), not count-based; provider_attempted is true only when
+    node_started events exist (model_assigned alone is not proof of a
+    call attempt).
+    """
+    progress_events: list[dict[str, Any]] = []
+    model_assigned_events: list[dict[str, Any]] = []
+    node_started_events: list[dict[str, Any]] = []
+    routing_decision_events: list[dict[str, Any]] = []
+
+    if events_path.is_file():
+        for raw in events_path.read_text(encoding="utf-8").splitlines():
+            stripped = raw.strip()
+            if not stripped:
+                continue
+            try:
+                ev = json.loads(stripped)
+            except json.JSONDecodeError:
+                continue
+            event_type = ev.get("event_type")
+            if event_type == "cli_progress":
+                progress_events.append(ev)
+            elif event_type == "model_assigned":
+                model_assigned_events.append(ev)
+            elif event_type == "node_started":
+                node_started_events.append(ev)
+            elif event_type == "routing_decision":
+                routing_decision_events.append(ev)
+
+    from sage.bench.event_ledger import categorize_timeout
+
+    return categorize_timeout(
+        progress_events=progress_events,
+        model_assigned_events=model_assigned_events,
+        node_started_events=node_started_events,
+        routing_decision_events=routing_decision_events,
+        elapsed_total_ms=task_timeout_s * 1000.0,
+    )
+
+
 def _timeout_task_result(
     task: dict[str, Any],
     output_dir: Path,
@@ -974,6 +1028,12 @@ def _timeout_task_result(
             handle.write("\n")
         handle.write(timeout_line + "\n")
     event_audit = _event_audit_from_file(per_task_events)
+    # Block A5 categorization — read AFTER the runner_timeout line is
+    # appended so the events file is in its final shape.
+    timeout_categorization = _categorize_timeout_from_events(
+        per_task_events,
+        task_timeout_s=task_timeout_s,
+    )
     summary = {
         "instance_id": instance_id,
         "exit_code": None,
@@ -987,8 +1047,14 @@ def _timeout_task_result(
         "_verifier_repair_budget_usd": None,
         "_diff_verifier_mismatches": None,
         "_diff_verifier_outcome": None,
-        "model_id_final": event_audit.get("model_id_final"),
-        "provider_final": event_audit.get("provider_final"),
+        "model_id_final": (
+            timeout_categorization.get("model_id_final")
+            or event_audit.get("model_id_final")
+        ),
+        "provider_final": (
+            timeout_categorization.get("provider_final")
+            or event_audit.get("provider_final")
+        ),
         "_observed_model_ids": event_audit.get("_observed_model_ids", []),
         "_observed_providers": event_audit.get("_observed_providers", []),
         "_assigned_model_ids": event_audit.get("_assigned_model_ids", []),
@@ -1000,6 +1066,16 @@ def _timeout_task_result(
             False,
         ),
         "_observed_event_cost_usd": event_audit.get("_observed_event_cost_usd", 0.0),
+        # Block A5: timeout categorization (cgpro DESIGN 2026-05-10).
+        # Distinguishes scoring_boot_impossible / reasoner_thinking_overflow /
+        # provider_call_timeout / stage_deadlock so a timeout reports
+        # something actionable rather than just "120s exceeded".
+        "timeout_categorization": {
+            "last_stage": timeout_categorization["last_stage"],
+            "elapsed_ms_by_stage": timeout_categorization["elapsed_ms_by_stage"],
+            "provider_attempted": timeout_categorization["provider_attempted"],
+            "reason_code": timeout_categorization["reason_code"],
+        },
         "learning_evidence_boundary": _learning_evidence_no_go(
             reason_code="task_timeout",
             detail=f"task exceeded timeout_s={task_timeout_s}",

@@ -895,6 +895,86 @@ def test_timeout_task_result_appends_runner_timeout_to_partial_events(
     ] is True
 
 
+def test_timeout_task_result_includes_a5_timeout_categorization(tmp_path) -> None:
+    """Block A5: _timeout_task_result must populate `timeout_categorization`
+    with last_stage / elapsed_ms_by_stage / provider_attempted /
+    reason_code derived from the per-task event log content.
+    """
+    output_dir = tmp_path / "out"
+    instance_id = "task-a5"
+    per_task_events = output_dir / "per_task" / f"{instance_id}.events.jsonl"
+    per_task_events.parent.mkdir(parents=True)
+    # Reasoner overflow scenario: routing + model_assigned, then cli_progress
+    # frames stuck in `decompose` covering the bulk of a 60s run.
+    per_task_events.write_text(
+        '{"event_type":"cli_started"}\n'
+        '{"event_type":"routing_decision","payload":{"model_id":"deepseek-v4-pro"}}\n'
+        '{"event_type":"model_assigned","payload":{"model_id":"deepseek-v4-pro",'
+        '"provider_id":"deepseek"}}\n'
+        '{"event_type":"cli_progress","payload":{"stage":"decompose","elapsed_ms":10000}}\n'
+        '{"event_type":"cli_progress","payload":{"stage":"decompose","elapsed_ms":25000}}\n'
+        '{"event_type":"cli_progress","payload":{"stage":"decompose","elapsed_ms":45000}}\n'
+        '{"event_type":"cli_progress","payload":{"stage":"decompose","elapsed_ms":58000}}\n',
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    result = arm_d._timeout_task_result(
+        {"instance_id": instance_id},
+        output_dir,
+        prefix="test",
+        fmt_module=_FakeFormatModule(),
+        task_timeout_s=60.0,
+        expect_default_pipeline_learn=True,
+    )
+
+    summary = result["summary"]
+    assert summary["timeout"] is True
+    assert "timeout_categorization" in summary
+    cat = summary["timeout_categorization"]
+    assert cat["reason_code"] == "reasoner_thinking_overflow"
+    assert cat["last_stage"] == "decompose"
+    # Stage duration = last - first elapsed_ms in decompose.
+    assert cat["elapsed_ms_by_stage"]["decompose"] == 48_000
+    # provider_attempted MUST be False — only model_assigned, no node_started.
+    assert cat["provider_attempted"] is False
+    # Categorization should also surface model_id_final and provider_final
+    # at the summary top level (consistent with event_audit fallback).
+    assert summary["model_id_final"] == "deepseek-v4-pro"
+    assert summary["provider_final"] == "deepseek"
+
+
+def test_timeout_task_result_categorization_scoring_boot_impossible(tmp_path) -> None:
+    """A5: empty events file (no routing, no progress, no assignment) →
+    reason_code=scoring_boot_impossible.
+    """
+    output_dir = tmp_path / "out"
+    instance_id = "task-a5-boot"
+    per_task_events = output_dir / "per_task" / f"{instance_id}.events.jsonl"
+    per_task_events.parent.mkdir(parents=True)
+    # Empty file — pipeline never produced any usable signal before timeout.
+    per_task_events.write_text("", encoding="utf-8", newline="\n")
+
+    result = arm_d._timeout_task_result(
+        {"instance_id": instance_id},
+        output_dir,
+        prefix="test",
+        fmt_module=_FakeFormatModule(),
+        task_timeout_s=60.0,
+        expect_default_pipeline_learn=True,
+    )
+
+    cat = result["summary"]["timeout_categorization"]
+    # The runner_timeout event was appended AFTER the categorization read,
+    # but in this branch the events file was empty even when the
+    # categorization reads it — the runner_timeout line itself is not
+    # one of {cli_progress, model_assigned, node_started, routing_decision}
+    # so it does not change the verdict.
+    assert cat["reason_code"] == "scoring_boot_impossible"
+    assert cat["last_stage"] is None
+    assert cat["provider_attempted"] is False
+
+
 def test_event_audit_extracts_top_level_runtime_fields_and_cost(tmp_path) -> None:
     events_path = tmp_path / "events.jsonl"
     events_path.write_text(

@@ -17,7 +17,11 @@ from pathlib import Path
 
 import pytest
 
-from sage.bench.event_ledger import BenchEventLedger, build_run_meta
+from sage.bench.event_ledger import (
+    BenchEventLedger,
+    build_run_meta,
+    categorize_timeout,
+)
 
 
 def _read_lines(path: Path) -> list[dict]:
@@ -234,3 +238,172 @@ def test_run_meta_embedded_in_run_start(tmp_path: Path) -> None:
     assert rs["run_meta"]["tier"] == "budget"
     assert rs["run_meta"]["timeout_s"] == 120
     assert rs["run_meta"]["limit"] == 8
+
+
+# ---------------------------------------------------------------------------
+# Block A5 (cgpro DESIGN 2026-05-10, conv
+# `cgpro_ygn_sage_global_analysis_20260510`):
+# `categorize_timeout` distinguishes scoring_boot_impossible vs
+# reasoner_thinking_overflow vs stage_deadlock vs provider_call_timeout
+# from the per-task event log content.
+# ---------------------------------------------------------------------------
+
+
+def _cli_progress(stage: str, elapsed_ms: int) -> dict:
+    return {
+        "event_type": "cli_progress",
+        "payload": {"stage": stage, "elapsed_ms": elapsed_ms},
+    }
+
+
+def _model_assigned(model_id: str, provider_id: str) -> dict:
+    return {
+        "event_type": "model_assigned",
+        "payload": {"model_id": model_id, "provider_id": provider_id},
+    }
+
+
+def _node_started(node_id: str) -> dict:
+    return {"event_type": "node_started", "payload": {"node_id": node_id}}
+
+
+def _routing_decision(model_id: str) -> dict:
+    return {"event_type": "routing_decision", "payload": {"model_id": model_id}}
+
+
+def test_categorize_timeout_scoring_boot_impossible() -> None:
+    """No progress, no routing, no assignment → scoring_boot_impossible."""
+    result = categorize_timeout(
+        progress_events=[],
+        model_assigned_events=[],
+        node_started_events=[],
+        routing_decision_events=[],
+        elapsed_total_ms=60_000.0,
+    )
+    assert result["reason_code"] == "scoring_boot_impossible"
+    assert result["last_stage"] is None
+    assert result["elapsed_ms_by_stage"] == {}
+    assert result["provider_attempted"] is False
+    assert result["model_id_final"] is None
+    assert result["provider_final"] is None
+
+
+def test_categorize_timeout_reasoner_thinking_overflow_time_based() -> None:
+    """Time-based heuristic per cgpro DESIGN: majority temporal of run in
+    a reasoner stage with regular heartbeats → reasoner_thinking_overflow.
+    NOT count-based — six events all at decompose with cumulative
+    elapsed_ms covering 50s of a 60s run.
+    """
+    progress = [
+        _cli_progress("decompose", 10_000),
+        _cli_progress("decompose", 20_000),
+        _cli_progress("decompose", 30_000),
+        _cli_progress("decompose", 40_000),
+        _cli_progress("decompose", 50_000),
+        _cli_progress("decompose", 58_000),
+    ]
+    result = categorize_timeout(
+        progress_events=progress,
+        model_assigned_events=[_model_assigned("deepseek-v4-pro", "deepseek")],
+        node_started_events=[],
+        routing_decision_events=[_routing_decision("deepseek-v4-pro")],
+        elapsed_total_ms=60_000.0,
+    )
+    assert result["reason_code"] == "reasoner_thinking_overflow"
+    assert result["last_stage"] == "decompose"
+    # Stage duration = last - first elapsed_ms = 58000 - 10000 = 48000 ms.
+    assert result["elapsed_ms_by_stage"]["decompose"] == 48_000
+    # provider_attempted MUST stay False — model_assigned alone is not
+    # proof of a call attempt per cgpro DESIGN correction.
+    assert result["provider_attempted"] is False
+    assert result["model_id_final"] == "deepseek-v4-pro"
+    assert result["provider_final"] == "deepseek"
+
+
+def test_categorize_timeout_stage_deadlock_silent_heartbeat() -> None:
+    """Progression then silence: last heartbeat far before timeout
+    → stage_deadlock (NOT reasoner overflow even if last_stage is a
+    reasoner stage).
+    """
+    progress = [
+        _cli_progress("decompose", 5_000),
+        _cli_progress("decompose", 10_000),
+        # Then silence: timeout fires at 60_000 ms, last heartbeat at 10s.
+        # Gap = 50_000 ms > heartbeat_max_gap_ms default 30_000.
+    ]
+    result = categorize_timeout(
+        progress_events=progress,
+        model_assigned_events=[],
+        node_started_events=[],
+        routing_decision_events=[_routing_decision("deepseek-v4-flash")],
+        elapsed_total_ms=60_000.0,
+    )
+    assert result["reason_code"] == "stage_deadlock"
+    assert result["last_stage"] == "decompose"
+
+
+def test_categorize_timeout_provider_attempted_strict_requires_node_started() -> None:
+    """provider_attempted must be False when only model_assigned is
+    emitted — cgpro DESIGN: assignment is not a call attempt.
+    """
+    only_assignment_result = categorize_timeout(
+        progress_events=[_cli_progress("execute", 30_000)],
+        model_assigned_events=[_model_assigned("deepseek-v4-flash", "deepseek")],
+        node_started_events=[],
+        routing_decision_events=[_routing_decision("deepseek-v4-flash")],
+        elapsed_total_ms=60_000.0,
+    )
+    assert only_assignment_result["provider_attempted"] is False
+
+    # Sanity: with node_started, the flag flips True.
+    with_node_started_result = categorize_timeout(
+        progress_events=[_cli_progress("execute", 30_000)],
+        model_assigned_events=[_model_assigned("deepseek-v4-flash", "deepseek")],
+        node_started_events=[_node_started("node-0")],
+        routing_decision_events=[_routing_decision("deepseek-v4-flash")],
+        elapsed_total_ms=60_000.0,
+    )
+    assert with_node_started_result["provider_attempted"] is True
+
+
+def test_categorize_timeout_provider_call_timeout() -> None:
+    """provider_attempted=True AND last_stage='execute' →
+    provider_call_timeout (positive evidence of provider RPC hang).
+    """
+    progress = [
+        _cli_progress("decompose", 5_000),
+        _cli_progress("execute", 15_000),
+        _cli_progress("execute", 30_000),
+        _cli_progress("execute", 55_000),
+    ]
+    result = categorize_timeout(
+        progress_events=progress,
+        model_assigned_events=[_model_assigned("deepseek-v4-pro", "deepseek")],
+        node_started_events=[_node_started("node-0")],
+        routing_decision_events=[_routing_decision("deepseek-v4-pro")],
+        elapsed_total_ms=60_000.0,
+    )
+    assert result["reason_code"] == "provider_call_timeout"
+    assert result["last_stage"] == "execute"
+    assert result["provider_attempted"] is True
+
+
+def test_categorize_timeout_non_reasoner_stage_is_stage_deadlock() -> None:
+    """Last stage NOT in {decompose, execute} (e.g. select_topology,
+    learn) with no provider witness → stage_deadlock, NOT
+    reasoner_thinking_overflow even if heartbeats are regular.
+    """
+    progress = [
+        _cli_progress("select_topology", 5_000),
+        _cli_progress("select_topology", 25_000),
+        _cli_progress("select_topology", 55_000),
+    ]
+    result = categorize_timeout(
+        progress_events=progress,
+        model_assigned_events=[],
+        node_started_events=[],
+        routing_decision_events=[_routing_decision("deepseek-v4-flash")],
+        elapsed_total_ms=60_000.0,
+    )
+    assert result["reason_code"] == "stage_deadlock"
+    assert result["last_stage"] == "select_topology"

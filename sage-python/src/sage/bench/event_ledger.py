@@ -59,7 +59,147 @@ except ImportError:  # pragma: no cover - ulid is a project dep, but defensive
 __all__ = [
     "BenchEventLedger",
     "build_run_meta",
+    "categorize_timeout",
 ]
+
+
+# Block A5 (cgpro DESIGN 2026-05-10, conv
+# `cgpro_ygn_sage_global_analysis_20260510`).
+# Heartbeat freshness threshold for distinguishing reasoner_thinking_overflow
+# (regular heartbeats) from stage_deadlock (silent past this gap).
+_DEFAULT_HEARTBEAT_MAX_GAP_MS = 30_000
+
+# Stages where a long stay with regular heartbeats is consistent with a
+# reasoner generating thinking tokens (decompose: planner LLM call;
+# execute: per-node provider call).
+_REASONER_STAGES = frozenset({"decompose", "execute"})
+
+
+def categorize_timeout(
+    *,
+    progress_events: list[dict[str, Any]],
+    model_assigned_events: list[dict[str, Any]],
+    node_started_events: list[dict[str, Any]],
+    routing_decision_events: list[dict[str, Any]],
+    elapsed_total_ms: float,
+    heartbeat_max_gap_ms: int = _DEFAULT_HEARTBEAT_MAX_GAP_MS,
+) -> dict[str, Any]:
+    """Categorize a task timeout from per-task event log contents.
+
+    Block A5 (cgpro DESIGN 2026-05-10) — the same 5/5-timeout pattern in
+    cycle-13 canaries (`2026-05-10-canary-n5-real-{ec0b775e,8844c42e}`)
+    can hide three distinct root causes that the bench layer must
+    distinguish so a future timeout reports something actionable rather
+    than just "timed out at 120s".
+
+    Returns a dict with keys:
+
+    - ``last_stage`` — string from the last ``cli_progress`` event's
+      ``payload.stage``, or ``None`` if there were no progress frames.
+    - ``elapsed_ms_by_stage`` — per-stage duration computed from
+      ``cli_progress.payload.elapsed_ms`` (which is cumulative since
+      task start). Stage duration = last ``elapsed_ms`` minus first
+      ``elapsed_ms`` for events of that stage.
+    - ``provider_attempted`` — bool. ``True`` ONLY if at least one
+      ``node_started`` event was emitted (or a provider execution
+      witness, future). ``model_assigned`` alone proves assignment, NOT
+      a call attempt — per cgpro DESIGN correction.
+    - ``model_id_final`` — payload.model_id of the last ``model_assigned``
+      event, or ``None``.
+    - ``provider_final`` — payload.provider_id of the last
+      ``model_assigned`` event, or ``None``.
+    - ``reason_code`` — one of:
+      - ``"scoring_boot_impossible"`` — no progress, no routing, no
+        assignment.
+      - ``"reasoner_thinking_overflow"`` — last_stage in
+        {decompose, execute}, majority TEMPORAL of the run spent in
+        that stage, with recent heartbeats (last cli_progress within
+        ``heartbeat_max_gap_ms`` of the timeout).
+      - ``"provider_call_timeout"`` — ``provider_attempted=True`` and
+        ``last_stage="execute"``. Distinct from generic stage_deadlock
+        because we have positive evidence the call was started.
+      - ``"stage_deadlock"`` — progression then silence (gap >=
+        heartbeat_max_gap_ms) OR non-reasoner stage with long block.
+    """
+    provider_attempted = bool(node_started_events)
+
+    model_id_final: str | None = None
+    provider_final: str | None = None
+    if model_assigned_events:
+        last_assigned = model_assigned_events[-1]
+        payload = last_assigned.get("payload") or {}
+        model_id_final = (
+            payload.get("model_id")
+            or last_assigned.get("model_id")
+        )
+        provider_final = (
+            payload.get("provider_id")
+            or last_assigned.get("provider_id")
+        )
+
+    elapsed_ms_by_stage: dict[str, int] = {}
+    last_stage: str | None = None
+    last_progress_elapsed_ms: int = 0
+    by_stage_first_last: dict[str, tuple[int, int]] = {}
+    for ev in progress_events:
+        payload = ev.get("payload") or {}
+        stage = payload.get("stage")
+        elapsed_ms_raw = payload.get("elapsed_ms")
+        if not stage or elapsed_ms_raw is None:
+            continue
+        try:
+            elapsed_ms = int(elapsed_ms_raw)
+        except (TypeError, ValueError):
+            continue
+        if stage in by_stage_first_last:
+            first_ms, _ = by_stage_first_last[stage]
+            by_stage_first_last[stage] = (first_ms, elapsed_ms)
+        else:
+            by_stage_first_last[stage] = (elapsed_ms, elapsed_ms)
+        last_stage = stage
+        last_progress_elapsed_ms = elapsed_ms
+
+    for stage, (first_ms, last_ms) in by_stage_first_last.items():
+        elapsed_ms_by_stage[stage] = max(0, last_ms - first_ms)
+
+    no_progress = not progress_events
+    no_routing = not routing_decision_events
+    no_assignment = not model_assigned_events
+
+    # 1. scoring_boot_impossible: pipeline never produced any usable
+    #    signal — no progress, no routing decision, no assignment.
+    if no_progress and no_routing and no_assignment:
+        reason_code = "scoring_boot_impossible"
+    # 2. provider_call_timeout: positive evidence the provider call was
+    #    started (node_started present) AND we ended in the execute
+    #    stage. Distinguishes provider RPC hang from local reasoner.
+    elif provider_attempted and last_stage == "execute":
+        reason_code = "provider_call_timeout"
+    elif last_stage in _REASONER_STAGES and elapsed_total_ms > 0:
+        # Time-based heuristic per cgpro DESIGN correction: events count
+        # is NOT a proxy for time. Use payload.elapsed_ms (cumulative
+        # task time) to compute share of the run spent in last_stage.
+        time_in_stage = elapsed_ms_by_stage.get(last_stage, 0)
+        share_in_stage = time_in_stage / float(elapsed_total_ms)
+        time_since_heartbeat = elapsed_total_ms - last_progress_elapsed_ms
+        recent_heartbeat = time_since_heartbeat < heartbeat_max_gap_ms
+        if share_in_stage > 0.5 and recent_heartbeat:
+            reason_code = "reasoner_thinking_overflow"
+        else:
+            reason_code = "stage_deadlock"
+    else:
+        # Some progress in a non-reasoner stage, or progress went silent
+        # past the heartbeat window. Both fall under stage_deadlock.
+        reason_code = "stage_deadlock"
+
+    return {
+        "last_stage": last_stage,
+        "elapsed_ms_by_stage": elapsed_ms_by_stage,
+        "provider_attempted": provider_attempted,
+        "model_id_final": model_id_final,
+        "provider_final": provider_final,
+        "reason_code": reason_code,
+    }
 
 
 def _git_sha(repo_root: Path | None = None) -> str:
