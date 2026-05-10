@@ -24,7 +24,7 @@ import warnings
 from typing import Any
 
 from sage.llm.base import LLMConfig, LLMResponse, Message
-from sage.providers.pydantic_ai_provider import route_openai_model_via_responses
+from sage.providers.openai_routing import route_openai_model_via_responses
 
 log = logging.getLogger(__name__)
 

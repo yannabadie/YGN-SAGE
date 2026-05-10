@@ -28,8 +28,6 @@ Design choices:
 """
 from __future__ import annotations
 
-import re
-
 import json
 import logging
 from typing import Any
@@ -41,6 +39,10 @@ from sage.llm.base import (
     Role,
     ToolCall,
     ToolDef,
+)
+from sage.providers.openai_routing import (
+    normalize_openai_model_id,
+    route_openai_model_via_responses,
 )
 
 log = logging.getLogger(__name__)
@@ -59,20 +61,6 @@ _PROVIDER_MAP: dict[str, dict[str, Any]] = {
     "minimax": {"kind": "custom_openai", "base_url": "https://api.minimax.io/v1"},
 }
 
-_OPENAI_RESPONSES_ROUTE_RE = re.compile(r"^gpt-5(?:\.\d+)*-pro(?:-|$)")
-
-
-def route_openai_model_via_responses(model_id: str) -> bool:
-    """Return whether SAGE routes this OpenAI model through Responses.
-
-    This is a SAGE policy/regression guard, not a live endpoint
-    availability claim. It keeps GPT-5 pro variants and explicit
-    ``responses`` aliases off the chat-model constructor path.
-    """
-    mid = (model_id or "").lower()
-    return "responses" in mid or _OPENAI_RESPONSES_ROUTE_RE.match(mid) is not None
-
-
 def _build_pydantic_model(provider_name: str, model_id: str, api_key: str | None) -> Any:
     """Return a Pydantic AI Model instance for the given (provider, model)."""
     cfg = _PROVIDER_MAP.get(provider_name.lower())
@@ -86,17 +74,20 @@ def _build_pydantic_model(provider_name: str, model_id: str, api_key: str | None
 
     if kind == "native_openai":
         from pydantic_ai.providers.openai import OpenAIProvider
-        # SAGE policy: GPT-5 pro variants and explicit responses aliases
-        # route through Pydantic AI's Responses-model class. Keep this
-        # predicate shared with the deprecated chat-completions fallback so
-        # the two OpenAI paths cannot drift.
+        normalized_model_id = normalize_openai_model_id(model_id)
+        # SAGE policy: GPT-5 pro variants and explicit Responses aliases
+        # route through Pydantic AI's Responses-model class. The alias is
+        # stripped before SDK construction so only real OpenAI model IDs
+        # reach Pydantic AI.
         if route_openai_model_via_responses(model_id):
             from pydantic_ai.models.openai import OpenAIResponsesModel
             return OpenAIResponsesModel(
-                model_id, provider=OpenAIProvider(api_key=api_key or "")
+                normalized_model_id, provider=OpenAIProvider(api_key=api_key or "")
             )
         from pydantic_ai.models.openai import OpenAIChatModel
-        return OpenAIChatModel(model_id, provider=OpenAIProvider(api_key=api_key or ""))
+        return OpenAIChatModel(
+            normalized_model_id, provider=OpenAIProvider(api_key=api_key or "")
+        )
 
     if kind == "native_google":
         from pydantic_ai.models.google import GoogleModel

@@ -101,9 +101,36 @@ def test_factory_for_every_wired_provider() -> None:
 )
 def test_openai_responses_route_policy(model_id: str, responses: bool) -> None:
     """SAGE's local OpenAI routing policy is stable across GPT-5 ids."""
-    from sage.providers.pydantic_ai_provider import route_openai_model_via_responses
+    from sage.providers.openai_routing import route_openai_model_via_responses
 
     assert route_openai_model_via_responses(model_id) is responses
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    ["gpt-5.5-profile", "gpt-5.5-proxy", "gpt-5.5-professional"],
+)
+def test_openai_responses_route_policy_does_not_overmatch(model_id: str) -> None:
+    """The GPT-5 pro rule must not catch unrelated prefix collisions."""
+    from sage.providers.openai_routing import route_openai_model_via_responses
+
+    assert route_openai_model_via_responses(model_id) is False
+
+
+@pytest.mark.parametrize(
+    ("model_id", "normalized"),
+    [
+        ("gpt-5.5-pro", "gpt-5.5-pro"),
+        ("gpt-5.5-pro-2026-04-23", "gpt-5.5-pro-2026-04-23"),
+        ("openai/responses/gpt-5.5", "gpt-5.5"),
+        ("responses/gpt-5.5", "gpt-5.5"),
+    ],
+)
+def test_openai_model_id_normalization(model_id: str, normalized: str) -> None:
+    """SAGE route aliases are stripped before passing IDs to OpenAI SDKs."""
+    from sage.providers.openai_routing import normalize_openai_model_id
+
+    assert normalize_openai_model_id(model_id) == normalized
 
 
 def test_openai_55_cards_are_present_and_openai() -> None:
@@ -140,14 +167,16 @@ def test_openai_responses_routing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(httpx.AsyncClient, "request", _no_network)
 
     cases = {
-        "gpt-5.4-pro": OpenAIResponsesModel,
-        "gpt-5.5-pro": OpenAIResponsesModel,
-        "gpt-5.4": OpenAIChatModel,
-        "gpt-5.5": OpenAIChatModel,
+        "gpt-5.4-pro": (OpenAIResponsesModel, "gpt-5.4-pro"),
+        "gpt-5.5-pro": (OpenAIResponsesModel, "gpt-5.5-pro"),
+        "openai/responses/gpt-5.5": (OpenAIResponsesModel, "gpt-5.5"),
+        "gpt-5.4": (OpenAIChatModel, "gpt-5.4"),
+        "gpt-5.5": (OpenAIChatModel, "gpt-5.5"),
     }
-    for model_id, expected_cls in cases.items():
+    for model_id, (expected_cls, expected_model_name) in cases.items():
         provider = PydanticAIProvider.for_sage_provider("openai", model_id, "k")
         assert isinstance(provider._model, expected_cls), model_id
+        assert getattr(provider._model, "_model_name", None) == expected_model_name
 
     provider = PydanticAIProvider.for_sage_provider("openai", "gpt-5.5", "k")
     assert isinstance(
