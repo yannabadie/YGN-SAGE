@@ -1176,6 +1176,238 @@ def test_cli_parses_profile_flag_and_resolves_timeout(monkeypatch, tmp_path) -> 
     assert captured["kwargs"]["profile_timeout_override"] is False
 
 
+def test_run_sage_cli_terminates_subprocess_after_cli_complete(
+    monkeypatch, tmp_path
+) -> None:
+    """B2 step 4 follow-up (2026-05-11): the SAGE CLI subprocess MAY
+    hold stdout open after emitting ``cli_complete``. The on-disk
+    evidence: protonmail task in ``2026-05-11-canary-n5-graded`` ran a
+    full success pipeline in 186s wall but the runner kept waiting on
+    ``async for raw in proc.stdout`` for another ~707s before
+    ``asyncio.wait_for(timeout=900)`` fired.
+
+    Fix: as soon as ``cli_complete`` is parsed, break out of the
+    stdout loop and ``proc.terminate()`` the subprocess instead of
+    waiting for natural EOF.
+
+    This test stubs a subprocess that emits ``cli_complete`` and then
+    yields a third frame the runner MUST NOT consume. If the fix
+    regresses, the third frame would be read and recorded.
+    """
+    import asyncio as _asyncio  # local alias to avoid clashing with arm_d.asyncio monkeypatch
+
+    class _FakeStdin:
+        def __init__(self) -> None:
+            self.data = b""
+            self.closed = False
+
+        def write(self, data: bytes) -> None:
+            self.data += data
+
+        async def drain(self) -> None:
+            return None
+
+        def close(self) -> None:
+            self.closed = True
+
+    class _CliCompleteThenHangStdout:
+        """Emits final_result + cli_complete, then BLOCKS forever.
+
+        Mimics the real post-cli_complete hang. If the runner does
+        NOT break out of the stdout loop, this iterator will park the
+        test indefinitely (caught by pytest-asyncio's default timeout
+        or by a fail-fast assertion below).
+        """
+
+        def __init__(self) -> None:
+            self._delivered = 0
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self) -> bytes:
+            if self._delivered == 0:
+                self._delivered = 1
+                return b'{"event_type":"final_result","payload":{"result":"done"}}\n'
+            if self._delivered == 1:
+                self._delivered = 2
+                return (
+                    b'{"event_type":"cli_complete","run_id":"RUN1",'
+                    b'"payload":{"outcome":"success","total_cost_usd":0.01,'
+                    b'"trace_dir":"trace"}}\n'
+                )
+            # Past cli_complete: simulate the hang. If the fix is broken
+            # and the runner keeps reading, await forever.
+            await _asyncio.sleep(3600)
+            raise AssertionError("runner read past cli_complete — fix regressed")
+
+    class _AsyncBytesStreamLocal:
+        def __init__(self, chunks: list[bytes]) -> None:
+            self._chunks = iter(chunks)
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self) -> bytes:
+            try:
+                return next(self._chunks)
+            except StopIteration:
+                raise StopAsyncIteration
+
+    class _FakeProcess:
+        def __init__(self) -> None:
+            self.stdin = _FakeStdin()
+            self.stdout = _CliCompleteThenHangStdout()
+            self.stderr = _AsyncBytesStreamLocal([])
+            self._return: int | None = None
+            self.terminated = False
+            self.killed = False
+
+        @property
+        def returncode(self) -> int | None:
+            return self._return
+
+        async def wait(self) -> int:
+            # Until terminate() / kill() is called, simulate the hang.
+            while self._return is None:
+                await _asyncio.sleep(0.01)
+            return self._return
+
+        def terminate(self) -> None:
+            self.terminated = True
+            # Allow the next ``wait()`` to resolve.
+            self._return = -15
+
+        def kill(self) -> None:
+            self.killed = True
+            self._return = -9
+
+    created: dict[str, Any] = {}
+
+    async def fake_create_subprocess_exec(*args, **kwargs):
+        proc = _FakeProcess()
+        created["proc"] = proc
+        return proc
+
+    monkeypatch.setattr(
+        arm_d.asyncio, "create_subprocess_exec", fake_create_subprocess_exec
+    )
+
+    # Hard wall-clock cap: the fix must make this complete in ~5s
+    # (matching the terminate timeout in the runner). 30s gives plenty
+    # of margin while still failing fast if the hang regresses.
+    result = asyncio.run(
+        asyncio.wait_for(
+            arm_d._run_sage_cli(
+                "fix the bug",
+                budget_usd=5.0,
+                output_events_path=tmp_path / "events.jsonl",
+                tier="budget",
+                provider_allowlist=("google",),
+                provider_denylist=("openai",),
+            ),
+            timeout=30.0,
+        )
+    )
+
+    assert result["cli_complete_payload"] is not None
+    assert result["cli_complete_payload"]["outcome"] == "success"
+    proc = created["proc"]
+    assert proc.terminated is True, "fix must call terminate() after cli_complete"
+    # exit_code returned by the runner is the post-terminate returncode.
+    assert result["exit_code"] == -15
+
+
+def test_run_sage_cli_natural_eof_path_still_works(monkeypatch, tmp_path) -> None:
+    """The break-on-cli_complete fix MUST NOT regress the cooperative
+    path: when the subprocess closes stdout naturally after
+    cli_complete (well-behaved SAGE CLI), the runner reaches the loop
+    end without needing to terminate, awaits proc.wait() once, and
+    returns. terminate() must NOT be called in this case.
+    """
+    class _AsyncBytesStreamLocal:
+        def __init__(self, chunks: list[bytes]) -> None:
+            self._chunks = iter(chunks)
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self) -> bytes:
+            try:
+                return next(self._chunks)
+            except StopIteration:
+                raise StopAsyncIteration
+
+    class _FakeStdin:
+        def __init__(self) -> None:
+            self.data = b""
+
+        def write(self, data: bytes) -> None:
+            self.data += data
+
+        async def drain(self) -> None:
+            return None
+
+        def close(self) -> None:
+            pass
+
+    class _FakeProcess:
+        def __init__(self) -> None:
+            self.stdin = _FakeStdin()
+            self.stdout = _AsyncBytesStreamLocal(
+                [
+                    b'{"event_type":"final_result","payload":{"result":"done"}}\n',
+                    (
+                        b'{"event_type":"cli_complete","run_id":"R","'
+                        b'payload":{"outcome":"success","total_cost_usd":0.0,'
+                        b'"trace_dir":"t"}}\n'
+                    ),
+                ]
+            )
+            self.stderr = _AsyncBytesStreamLocal([])
+            self.returncode = 0
+            self.terminated = False
+            self.killed = False
+
+        async def wait(self) -> int:
+            return 0
+
+        def terminate(self) -> None:
+            self.terminated = True
+
+        def kill(self) -> None:
+            self.killed = True
+
+    created: dict[str, Any] = {}
+
+    async def fake_create(*args, **kwargs):
+        proc = _FakeProcess()
+        created["proc"] = proc
+        return proc
+
+    monkeypatch.setattr(arm_d.asyncio, "create_subprocess_exec", fake_create)
+
+    result = asyncio.run(
+        arm_d._run_sage_cli(
+            "fix the bug",
+            budget_usd=5.0,
+            output_events_path=tmp_path / "events.jsonl",
+            tier="budget",
+            provider_allowlist=("google",),
+            provider_denylist=("openai",),
+        )
+    )
+    assert result["cli_complete_payload"]["outcome"] == "success"
+    # Subprocess returned 0 naturally → terminate must NOT have fired.
+    # Per the fix: terminate runs only when ``proc.returncode is None``
+    # immediately after seeing cli_complete. Here returncode is 0
+    # because wait() returns 0 — but the check is on .returncode pre-wait.
+    # _FakeProcess.returncode is 0 from init, so terminate path is skipped.
+    assert created["proc"].terminated is False
+    assert created["proc"].killed is False
+    assert result["exit_code"] == 0
+
+
 def test_cli_explicit_task_timeout_marks_profile_override(monkeypatch, tmp_path) -> None:
     """When --task-timeout-s is passed alongside --profile, the explicit
     value wins and profile_timeout_override flips True. Both pieces of

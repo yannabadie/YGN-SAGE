@@ -412,6 +412,20 @@ async def _run_sage_cli(
     model_id_final: str | None = None
     provider_final: str | None = None
 
+    # Per SAGE CLI v0 protocol (docs/contracts/SAGE_CLI_PROTOCOL.md):
+    # ``cli_complete`` is the terminal frame for a run. The subprocess
+    # MAY hold stdout / its process slot open beyond that point (the
+    # B2 step 2 / step 4 / slice-3 N=1 evidence on 2026-05-11 saw a
+    # ~707s post-cli_complete idle wait before ``async for`` hit EOF
+    # — the runner was blocked on the pipe, not doing useful work).
+    # When we observe ``cli_complete`` we stop reading and terminate
+    # the subprocess ourselves so the wall-clock budget bounds real
+    # agent work, not subprocess teardown.
+    saw_cli_complete = False
+    exit_code: int | None = None
+    latency_s: float = 0.0
+    stderr_bytes: bytes = b""
+
     try:
         with output_events_path.open("w", encoding="utf-8", newline="\n") as event_log:
             assert proc.stdout is not None
@@ -445,10 +459,33 @@ async def _run_sage_cli(
                     cli_complete_run_id = (
                         event_run_id if isinstance(event_run_id, str) else None
                     )
+                    saw_cli_complete = True
+                    break  # Terminal frame; do NOT wait for stdout EOF
 
-        exit_code = await proc.wait()
         latency_s = time.monotonic() - start
-        stderr_bytes = await stderr_task
+        if saw_cli_complete and proc.returncode is None:
+            # Subprocess may still be alive holding stdout; force closure
+            # so wall-clock measures the contract (cli_complete), not
+            # the runtime's teardown idle time.
+            proc.terminate()
+            try:
+                exit_code = await asyncio.wait_for(proc.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                proc.kill()
+                exit_code = await proc.wait()
+        else:
+            exit_code = await proc.wait()
+
+        # Stderr drain: once the subprocess has exited (or been killed
+        # above) its stderr pipe receives EOF and the drain task
+        # finishes naturally. Wait briefly; otherwise treat stderr as
+        # best-effort and move on.
+        try:
+            stderr_bytes = await asyncio.wait_for(stderr_task, timeout=5)
+        except asyncio.TimeoutError:
+            stderr_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await stderr_task
     except asyncio.CancelledError:
         if proc.returncode is None:
             proc.terminate()
