@@ -665,6 +665,34 @@ def test_provider_execution_witness_per_node_shape_uses_node_id_not_node_index()
     assert per_node[1]["node_id"] == "1"
 
 
+def test_execute_py_reroute_path_emits_witness_with_reroute_phase() -> None:
+    """Slice 10D reroute wiring (cgpro VERIFY 2026-05-11 follow-up).
+
+    The REROUTE_REBUILD path in ``sage.pipeline_v2.execute`` calls
+    ``runtime_emit_provider_execution_witness`` with
+    ``assignment_phase="reroute"`` right after
+    ``runtime_emit_model_assigned`` and BEFORE the rebuilt-runner
+    re-execution. We assert the source code carries that call (instead
+    of trying to drive a full pipeline reroute end-to-end, which
+    requires the Rust topology engine).
+    """
+    import inspect
+    from sage.pipeline_v2 import execute as execute_mod
+
+    src = inspect.getsource(execute_mod)
+    # Both branches must call the witness emit
+    assert src.count("runtime_emit_provider_execution_witness") >= 2, (
+        "execute.py must call runtime_emit_provider_execution_witness on "
+        "both the REROUTE_REBUILD path and the FrugalGPT upgrade path"
+    )
+    assert 'assignment_phase="reroute"' in src, (
+        "REROUTE_REBUILD path must use assignment_phase=\"reroute\""
+    )
+    assert 'assignment_phase="upgrade"' in src, (
+        "FrugalGPT upgrade path must use assignment_phase=\"upgrade\""
+    )
+
+
 def test_provider_execution_witness_per_node_shape_has_all_required_nested_keys() -> None:
     """cgpro VERIFY 2026-05-11 EDIT_REQUIRED: every per-node assignment
     emitted by ``runtime_emit_provider_execution_witness`` MUST contain

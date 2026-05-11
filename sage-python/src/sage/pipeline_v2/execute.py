@@ -378,6 +378,21 @@ async def execute(
                     reason="reroute",
                 )
                 runtime_events_mod.runtime_emit_model_assigned(self, ctx, event_log, run_frame_builder)
+                # Slice 10D reroute wiring (cgpro VERIFY 2026-05-11
+                # NEXT_BLOCK_ID=reroute follow-up). The reroute path
+                # produces a fresh `model_assigned` set; the witness
+                # MUST follow with `assignment_phase="reroute"` so the
+                # downstream chain (routing → policy → assignments) is
+                # reconstructible per reroute attempt.
+                runtime_events_mod.runtime_emit_provider_execution_witness(
+                    self,
+                    ctx,
+                    event_log,
+                    routing_model_id=getattr(
+                        self, "_last_runtime_routing_model_id", ""
+                    ) or "",
+                    assignment_phase="reroute",
+                )
                 ctx.executed_model_ids = [
                     model_id for _, model_id in sorted(ctx.assignments.items())
                 ]
@@ -502,6 +517,21 @@ async def execute(
                             ctx,
                             event_log,
                             run_frame_builder,
+                        )
+                        # Slice 10D upgrade wiring (cgpro VERIFY
+                        # 2026-05-11): FrugalGPT cascade re-assigns
+                        # individual nodes in place. Distinct from
+                        # REROUTE_REBUILD (which rebuilds the whole
+                        # topology), so we use `assignment_phase=
+                        # "upgrade"` to disambiguate downstream.
+                        runtime_events_mod.runtime_emit_provider_execution_witness(
+                            self,
+                            ctx,
+                            event_log,
+                            routing_model_id=getattr(
+                                self, "_last_runtime_routing_model_id", ""
+                            ) or "",
+                            assignment_phase="upgrade",
                         )
                         provider_policy_mod.enforce_provider_policy(
                             self,
