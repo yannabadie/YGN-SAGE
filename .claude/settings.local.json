@@ -38,7 +38,9 @@
       "Bash(git -C /c/Code/YGN-SAGE add docs/benchmarks/2026-04-23-diff-verifier-observe-smoke/)",
       "Bash(git -C /c/Code/YGN-SAGE commit -m ' *)",
       "Bash(rm -f .git/COMMIT_MSG_ANNEX)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(gh:*)",
+      "PowerShell(gh:*)"
     ]
   }
 }
