@@ -660,6 +660,13 @@ impl ModelAssigner {
                             needs_json,
                             node_budget,
                         ) {
+                            // cgpro Phase 2 VERIFY drift fix
+                            // (2026-05-11): the preassigned card was
+                            // inactive — record that rejection BEFORE
+                            // the early `continue`, otherwise the
+                            // substitution story (alias → replacement)
+                            // is invisible to the witness.
+                            self.push_filter_rejection(&preassigned_model_id, REASON_CARD_INACTIVE);
                             remaining_budget -= self
                                 .registry
                                 .get(&replacement_id)
@@ -949,6 +956,12 @@ impl ModelAssigner {
                         needs_json,
                         options.budget_usd,
                     ) {
+                        // cgpro Phase 2 VERIFY drift fix (2026-05-11):
+                        // record the inactive preassigned card before
+                        // the early return — the substitution story
+                        // (alias → replacement) must be visible to
+                        // the witness.
+                        self.push_filter_rejection(&preassigned_model_id, REASON_CARD_INACTIVE);
                         let node_idx_pg = petgraph::graph::NodeIndex::new(node_idx);
                         if let Some(node_mut) = graph.inner_graph_mut().node_weight_mut(node_idx_pg)
                         {
@@ -2671,16 +2684,57 @@ code = 0.9
     #[test]
     fn test_phase2_clean_assignment_returns_empty_list() {
         // cgpro Phase 2 test "no rejection after clean assignment -> []"
-        let registry = test_registry();
+        // cgpro VERIFY 2026-05-11 EDIT_REQUIRED drift 1: this test
+        // MUST assert `Some(vec![])` exactly, with a fixture where
+        // every model considered is eligible. The previous version
+        // used two_node_graph + test_registry, which triggers
+        // capability_mismatch on cheap-fast — not actually clean.
+        //
+        // Clean fixture: a 1-card registry (the eligible model) + a
+        // 1-node graph that doesn't require tools/json and has a
+        // generous budget.
+        let toml = r#"
+            [[models]]
+            id = "only-card"
+            provider = "alpha"
+            family = "test"
+            code_score = 0.9
+            reasoning_score = 0.9
+            tool_use_score = 0.9
+            math_score = 0.9
+            formal_z3_strength = 0.5
+            cost_input_per_m = 0.1
+            cost_output_per_m = 0.2
+            latency_ttft_ms = 100.0
+            tokens_per_sec = 200.0
+            s1_affinity = 0.9
+            s2_affinity = 0.9
+            s3_affinity = 0.9
+            recommended_topologies = ["sequential"]
+            supports_tools = true
+            supports_json_mode = true
+            supports_vision = false
+            context_window = 128000
+            runtime_selectable = true
+            [models.domain_scores]
+            code = 0.9
+        "#;
+        let registry = ModelRegistry::from_toml_str(toml).unwrap();
         let assigner = ModelAssigner::from_registry(&registry);
-        let mut graph = two_node_graph();
+        let mut graph = TopologyGraph::try_new("sequential").unwrap();
+        // No required capabilities, generous budget.
+        let node = TopologyNode::new("actor".into(), "".into(), 2, vec![], 0, 10.0, 60.0);
+        graph.add_node(node);
         assigner.assign_models_inner(&mut graph, "code", 100.0);
-        let rejections = assigner.py_last_filter_rejections();
-        assert!(rejections.is_some());
-        // With test_registry (only 2 cards: cheap-fast no-tools + expensive-smart tools),
-        // the coder node (needs tools) will reject cheap-fast (capability_mismatch).
-        // The reviewer node has no constraints, both cards eligible → no rejections.
-        // Net effect: at least one rejection but no truncation.
+
+        // Exact-shape assertion per cgpro EDIT_REQUIRED drift 1:
+        assert_eq!(
+            assigner.py_last_filter_rejections(),
+            Some(vec![]),
+            "clean assignment MUST yield Some(vec![]) — neither None \
+             (no recording happened) nor Some(non-empty) (something \
+             was rejected)"
+        );
         assert!(!assigner.py_last_filter_rejections_truncated());
     }
 
@@ -2889,6 +2943,104 @@ code = 0.9
         // Newest 20 retained (FIFO eviction of oldest)
         assert_eq!(rejections[0].0, "model-5");
         assert_eq!(rejections.last().unwrap().0, "model-24");
+    }
+
+    #[test]
+    fn test_phase2_preassigned_runtime_alias_replacement_records_card_inactive() {
+        // cgpro VERIFY 2026-05-11 EDIT_REQUIRED drift 2: when a
+        // preassigned non-runtime-selectable card has a valid
+        // runtime replacement, the early `continue` / `return` would
+        // previously skip recording the inactive preassigned card.
+        // The push now happens BEFORE the early exit so the
+        // substitution story (alias → replacement) is visible.
+        let toml = r#"
+            [[models]]
+            id = "legacy-alias"
+            provider = "alpha"
+            family = "test"
+            code_score = 0.5
+            reasoning_score = 0.5
+            tool_use_score = 0.5
+            math_score = 0.5
+            formal_z3_strength = 0.3
+            cost_input_per_m = 0.1
+            cost_output_per_m = 0.2
+            latency_ttft_ms = 100.0
+            tokens_per_sec = 200.0
+            s1_affinity = 0.5
+            s2_affinity = 0.5
+            s3_affinity = 0.5
+            recommended_topologies = ["sequential"]
+            supports_tools = true
+            supports_json_mode = true
+            supports_vision = false
+            context_window = 128000
+            runtime_selectable = false
+            runtime_replacement = "fresh-replacement"
+            [models.domain_scores]
+            code = 0.5
+
+            [[models]]
+            id = "fresh-replacement"
+            provider = "alpha"
+            family = "test"
+            code_score = 0.9
+            reasoning_score = 0.9
+            tool_use_score = 0.9
+            math_score = 0.9
+            formal_z3_strength = 0.5
+            cost_input_per_m = 0.1
+            cost_output_per_m = 0.2
+            latency_ttft_ms = 100.0
+            tokens_per_sec = 200.0
+            s1_affinity = 0.9
+            s2_affinity = 0.9
+            s3_affinity = 0.9
+            recommended_topologies = ["sequential"]
+            supports_tools = true
+            supports_json_mode = true
+            supports_vision = false
+            context_window = 128000
+            runtime_selectable = true
+            [models.domain_scores]
+            code = 0.9
+        "#;
+        let registry = ModelRegistry::from_toml_str(toml).unwrap();
+        let assigner = ModelAssigner::from_registry(&registry);
+        let mut graph = TopologyGraph::try_new("sequential").unwrap();
+        // Preassign the legacy-alias model_id
+        let node = TopologyNode::new(
+            "actor".into(),
+            "legacy-alias".into(),
+            2,
+            vec![],
+            0,
+            10.0,
+            60.0,
+        );
+        graph.add_node(node);
+        assigner.assign_models_inner(&mut graph, "code", 100.0);
+
+        // Replacement should be applied
+        assert_eq!(
+            graph.try_get_node(0).unwrap().model_id,
+            "fresh-replacement",
+            "runtime alias must redirect to its declared replacement"
+        );
+
+        // ...AND the inactive preassigned alias must be visible in
+        // the rejection list per cgpro Phase 2 lock §6
+        let rejections = assigner
+            .py_last_filter_rejections()
+            .expect("should have observed rejections");
+        assert!(
+            rejections
+                .iter()
+                .any(|(mid, rc)| { mid == "legacy-alias" && rc == REASON_CARD_INACTIVE }),
+            "preassigned runtime-alias replacement MUST record \
+             card_inactive for the inactive alias; got {:?}",
+            rejections
+        );
     }
 
     #[test]
