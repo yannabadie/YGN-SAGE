@@ -464,8 +464,25 @@ class RuntimeEventLog:
         error_type: str,
         message: str,
         node_id: str = "",
+        correlation_witness_seq: int | None = None,
     ) -> int | None:
-        payload = {"kind": kind, "error_type": error_type, "message": message}
+        """Emit a `failure` event.
+
+        ``correlation_witness_seq`` (cgpro DESIGN_LOCKED 2026-05-12
+        I11_FAILURE_CORRELATION_METADATA): when this failure is the
+        enforcement consequence of an earlier
+        `provider_execution_witness` event, pass its `seq` here so
+        close-time invariant audit can pair witness ↔ failure by
+        explicit identity rather than LIFO + dispatch-window
+        heuristic. Optional; legacy callers omit it.
+        """
+        payload: dict[str, Any] = {
+            "kind": kind,
+            "error_type": error_type,
+            "message": message,
+        }
+        if correlation_witness_seq is not None:
+            payload["correlation_witness_seq"] = int(correlation_witness_seq)
         return self._emit(
             _Failure,
             "failure",
@@ -796,14 +813,35 @@ class RuntimeEventLog:
             elif event_type == "failure":
                 if event.get("error_type") != "provider_policy_violation":
                     continue
-                # LIFO pairing: scan from the end for the most recent
-                # unmatched witness that has not been invalidated by
-                # dispatch / another witness.
+                # cgpro DESIGN_LOCKED 2026-05-12
+                # I11_FAILURE_CORRELATION_METADATA: prefer explicit
+                # `correlation_witness_seq` from the failure payload.
+                # Falls back to LIFO + dispatch-window pairing when
+                # the correlation is absent (legacy traces).
+                payload = event.get("payload") or {}
+                corr_seq = None
+                if isinstance(payload, dict):
+                    raw = payload.get("correlation_witness_seq")
+                    if isinstance(raw, int):
+                        corr_seq = raw
                 matched_index = None
-                for i in range(len(unmatched) - 1, -1, -1):
-                    if not unmatched[i]["dispatch_seen"]:
-                        matched_index = i
-                        break
+                if corr_seq is not None:
+                    # Explicit identity pairing — find the unmatched
+                    # entry whose witness_seq == corr_seq. Dispatch
+                    # state is irrelevant when identity is asserted.
+                    for i, entry in enumerate(unmatched):
+                        if entry["witness_seq"] == corr_seq:
+                            matched_index = i
+                            break
+                if matched_index is None:
+                    # Fallback: LIFO + dispatch-window. Scan from the
+                    # end for the most recent unmatched witness that
+                    # has not been invalidated by dispatch / another
+                    # witness.
+                    for i in range(len(unmatched) - 1, -1, -1):
+                        if not unmatched[i]["dispatch_seen"]:
+                            matched_index = i
+                            break
                 if matched_index is not None:
                     unmatched.pop(matched_index)
                 # An unrelated provider_policy_violation failure (no

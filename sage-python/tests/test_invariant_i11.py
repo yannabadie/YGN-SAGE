@@ -765,6 +765,153 @@ def test_i11_close_time_audit_raises_under_fail_closed(
         log.validate_invariants()
 
 
+def test_emit_failure_includes_correlation_witness_seq_when_passed(
+    tmp_trace_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """cgpro DESIGN_LOCKED 2026-05-12 I11_FAILURE_CORRELATION_METADATA:
+    `emit_failure(..., correlation_witness_seq=N)` MUST emit a
+    failure event whose payload carries the correlation field. Legacy
+    callers (no kwarg) MUST still emit valid failures without the
+    field.
+    """
+    monkeypatch.delenv("SAGE_TRACE_FAIL_CLOSED", raising=False)
+    monkeypatch.setenv("SAGE_TRACE_RAW", "1")
+    run_id = "01I11FAILCORRSEQ00000001"
+    log = RuntimeEventLog(run_id=run_id, trace_dir=tmp_trace_dir)
+    log.set_task_text("t")
+    log.emit_task_started("t")
+
+    # With correlation
+    log.emit_failure(
+        kind="provider_policy",
+        error_type="provider_policy_violation",
+        message="denied",
+        correlation_witness_seq=42,
+    )
+    # Legacy (no correlation)
+    log.emit_failure(
+        kind="other",
+        error_type="some_other_error",
+        message="x",
+    )
+    log.emit_final_result(status="failure", output="", total_cost_usd=0, total_latency_ms=1.0, node_count=0)
+    log.close()
+
+    events = _read_events(tmp_trace_dir / f"{run_id}.jsonl")
+    failures = [e for e in events if e["event_type"] == "failure"]
+    assert len(failures) == 2
+    # First failure has correlation
+    assert failures[0]["payload"]["correlation_witness_seq"] == 42
+    # Second has no correlation key (or it's null)
+    assert (
+        "correlation_witness_seq" not in failures[1]["payload"]
+        or failures[1]["payload"]["correlation_witness_seq"] is None
+    )
+
+
+def test_i11_close_time_audit_uses_correlation_when_present(
+    tmp_trace_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the failure event carries `correlation_witness_seq`, the
+    close-time audit MUST pair by witness identity, not by LIFO
+    window. This proves the fail-secure semantics when the
+    correlation metadata is available.
+
+    Trace shape (correlation explicit, LIFO would pair wrong):
+      W_initial (seq=N1, blocked)
+      W_reroute (seq=N2, blocked)
+      F (provider_policy_violation, correlation=N1)
+    → W_initial pairs with F (identity), W_reroute remains unmatched
+      and yields a violation.
+    """
+    monkeypatch.delenv("SAGE_TRACE_FAIL_CLOSED", raising=False)
+    monkeypatch.setenv("SAGE_TRACE_RAW", "1")
+    run_id = "01I11AUDITCORRPAIR000001"
+    log = RuntimeEventLog(run_id=run_id, trace_dir=tmp_trace_dir)
+    log.set_task_text("t")
+    log.emit_task_started("t")
+    # Witness 1 (initial)
+    log.emit_provider_execution_witness(
+        witness_schema_version="v0", assignment_phase="initial",
+        routing={"routing_model_id": "gpt-5.4-pro", "routing_provider_id": "openai"},
+        policy={
+            "active": True, "source": "cli",
+            "allowlist": [], "denylist": ["openai"],
+            "routing_candidate_decision": "blocked",
+            "routing_candidate_reason_code": "provider_in_denylist",
+        },
+        per_node_assignments=[
+            {
+                "node_id": "0", "node_role": "actor",
+                "assigned_model_id": "gpt-5.4-pro",
+                "assigned_provider_id": "openai",
+                "required_capabilities": [],
+                "assignment_policy_decision": "blocked",
+                "assignment_policy_reason_code": "provider_in_denylist",
+            }
+        ],
+        substitution_summary={
+            "routing_model_distinct_from_assignments": False,
+            "routing_candidate_blocked_by_policy": True,
+            "executed_models_distinct_from_routing": False,
+            "assignment_count": 1, "allowed_assignment_count": 0,
+            "blocked_assignment_count": 1,
+            "rust_filter_details_observed": False,
+        },
+    )
+    witness1_state = log._last_witness_state
+    assert witness1_state is not None
+    w1_seq = witness1_state["witness_seq"]
+
+    # Witness 2 (reroute) — same shape, new seq
+    log.emit_provider_execution_witness(
+        witness_schema_version="v0", assignment_phase="reroute",
+        routing={"routing_model_id": "gpt-5.4-pro", "routing_provider_id": "openai"},
+        policy={
+            "active": True, "source": "cli",
+            "allowlist": [], "denylist": ["openai"],
+            "routing_candidate_decision": "blocked",
+            "routing_candidate_reason_code": "provider_in_denylist",
+        },
+        per_node_assignments=[
+            {
+                "node_id": "0", "node_role": "actor",
+                "assigned_model_id": "gpt-5.4-pro",
+                "assigned_provider_id": "openai",
+                "required_capabilities": [],
+                "assignment_policy_decision": "blocked",
+                "assignment_policy_reason_code": "provider_in_denylist",
+            }
+        ],
+        substitution_summary={
+            "routing_model_distinct_from_assignments": False,
+            "routing_candidate_blocked_by_policy": True,
+            "executed_models_distinct_from_routing": False,
+            "assignment_count": 1, "allowed_assignment_count": 0,
+            "blocked_assignment_count": 1,
+            "rust_filter_details_observed": False,
+        },
+    )
+
+    # Failure references the FIRST witness explicitly — LIFO would
+    # have paired with witness 2 instead.
+    log.emit_failure(
+        kind="provider_policy",
+        error_type="provider_policy_violation",
+        message="openai denied (initial)",
+        correlation_witness_seq=w1_seq,
+    )
+    log.emit_final_result(status="failure", output="", total_cost_usd=0, total_latency_ms=1.0, node_count=0)
+
+    violations = log.validate_invariants()
+    log.close()
+    # Witness 2 (reroute) remains unmatched
+    assert len(violations) == 1
+    assert violations[0]["witness_phase"] == "reroute"
+
+
 def test_witness_reads_policy_from_pipeline_underscore_attrs() -> None:
     """Production-drift regression (2026-05-12 paid canary discovery
     at HEAD `381445fd`): the witness helper MUST read the policy via

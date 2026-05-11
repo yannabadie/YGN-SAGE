@@ -323,11 +323,33 @@ def enforce_provider_policy(
     if decision.violations:
         message = _violation_message(decision)
         if event_log is not None:
-            event_log.emit_failure(
-                kind="provider_policy",
-                error_type="provider_policy_violation",
-                message=message,
-            )
+            # cgpro DESIGN_LOCKED 2026-05-12
+            # I11_FAILURE_CORRELATION_METADATA: when a witness has
+            # been emitted for this same attempt, pass its seq so
+            # close-time invariant audit can pair witness ↔ failure
+            # by explicit identity. Legacy writers without the new
+            # kwarg accept it via Python kwargs forwarding (gets
+            # dropped in the payload if unknown — defensive).
+            witness_state = getattr(event_log, "_last_witness_state", None)
+            witness_seq_corr = None
+            if isinstance(witness_state, dict):
+                ws = witness_state.get("witness_seq")
+                if isinstance(ws, int):
+                    witness_seq_corr = ws
+            try:
+                event_log.emit_failure(
+                    kind="provider_policy",
+                    error_type="provider_policy_violation",
+                    message=message,
+                    correlation_witness_seq=witness_seq_corr,
+                )
+            except TypeError:
+                # Legacy writer signature — fall back to v1 emit.
+                event_log.emit_failure(
+                    kind="provider_policy",
+                    error_type="provider_policy_violation",
+                    message=message,
+                )
         # Mandatory evidence has been written. If the I-11 escalation
         # was queued, raise it now so the abort happens AFTER the
         # failure event — preserves the witness → assertion → failure

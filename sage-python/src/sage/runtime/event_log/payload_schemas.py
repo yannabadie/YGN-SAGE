@@ -641,6 +641,8 @@ PAYLOAD_SCHEMAS: dict[str, dict[PayloadSchemaVersion, EventPayloadSchema]] = {
         )
     },
     "failure": {
+        # v1 — pre-correlation, kept as legacy_read_only so existing
+        # traces validate.
         "v1": _schema(
             event_type="failure",
             version="v1",
@@ -656,8 +658,39 @@ PAYLOAD_SCHEMAS: dict[str, dict[PayloadSchemaVersion, EventPayloadSchema]] = {
                 "error_type": _string(256),
             },
             payload_kind="dict",
+            current=False,
+            legacy_read_only=True,
+        ),
+        # v1_1 (cgpro DESIGN_LOCKED 2026-05-11 follow-up:
+        # I11_FAILURE_CORRELATION_METADATA) — adds optional
+        # `correlation_witness_seq` for `provider_policy_violation`
+        # failures. Lets close-time audit pair by witness identity
+        # instead of relying solely on LIFO + dispatch-sentinel
+        # window semantics. Additive: old v1 traces validate via
+        # legacy_read_only; new emits include the field when known.
+        "v1_1": _schema(
+            event_type="failure",
+            version="v1_1",
+            allowed_fields=(
+                "kind",
+                "error_type",
+                "message",
+                "correlation_witness_seq",
+            ),
+            required_fields=("kind", "error_type", "message"),
+            field_specs={
+                "kind": _string(128),
+                "error_type": _string(256),
+                "message": _string(1024),
+                "correlation_witness_seq": _f(("int", "null")),
+            },
+            top_level_field_specs={
+                "kind": _string(128),
+                "error_type": _string(256),
+            },
+            payload_kind="dict",
             current=True,
-        )
+        ),
     },
     "budget": {
         "v1": _schema(
