@@ -444,7 +444,7 @@ def test_provider_execution_witness_payload_schema_rejects_missing_required_fiel
         "assignment_phase": "initial",
         "routing": {"routing_model_id": "deepseek-v4-pro"},
         "policy": {"active": False, "routing_candidate_decision": "allowed"},
-        "per_node_assignments": [{"node_index": 0, "node_role": "coder"}],
+        "per_node_assignments": [{"node_id": "0", "node_role": "coder"}],
         "substitution_summary": {"assignment_count": 1},
     }
 
@@ -500,10 +500,11 @@ def test_provider_execution_witness_payload_visible_when_forced_without_trace_ra
         },
         per_node_assignments=[
             {
-                "node_index": 0,
+                "node_id": "0",
                 "node_role": "coder",
                 "assigned_model_id": "deepseek-v4-pro",
                 "assigned_provider_id": "deepseek",
+                "required_capabilities": [],
                 "assignment_policy_decision": "allowed",
                 "assignment_policy_reason_code": "passes_policy",
             }
@@ -622,6 +623,88 @@ def test_helper_emits_schema_valid_payload_through_real_writer(
     assert p["substitution_summary"]["routing_candidate_blocked_by_policy"] is True
 
 
+def test_provider_execution_witness_per_node_shape_uses_node_id_not_node_index() -> None:
+    """cgpro VERIFY 2026-05-11 EDIT_REQUIRED: every per-node assignment
+    emitted by ``runtime_emit_provider_execution_witness`` MUST carry
+    ``node_id`` and MUST NOT carry ``node_index``.
+
+    Catches the drift class that the original artefact + summary shipped:
+    a hand-built example used ``node_index`` but the real helper emits
+    ``node_id`` — the shallow ``list[dict]`` schema couldn't catch this.
+    """
+    pipeline = _make_pipeline({
+        "deepseek-v4-pro": "deepseek",
+        "gemini-3-flash-preview": "google",
+    })
+    nodes = [
+        _make_node("coder", caps=("code_generation",)),
+        _make_node("synthesizer", caps=("text_processing",)),
+    ]
+    ctx = _make_ctx(
+        nodes,
+        assignments={0: "deepseek-v4-pro", 1: "gemini-3-flash-preview"},
+    )
+    event_log = _FakeEventLog()
+    runtime_emit_provider_execution_witness(
+        pipeline, ctx, event_log,
+        routing_model_id="deepseek-v4-pro",
+    )
+    per_node = event_log.calls[0]["per_node_assignments"]
+    assert len(per_node) == 2
+    for entry in per_node:
+        assert "node_id" in entry, (
+            "per-node assignment MUST carry 'node_id' (helper contract). "
+            f"Got keys: {sorted(entry.keys())}"
+        )
+        assert "node_index" not in entry, (
+            "per-node assignment MUST NOT carry 'node_index' (legacy drift). "
+            f"Got keys: {sorted(entry.keys())}"
+        )
+    # node_id is a string of the topology index
+    assert per_node[0]["node_id"] == "0"
+    assert per_node[1]["node_id"] == "1"
+
+
+def test_provider_execution_witness_per_node_shape_has_all_required_nested_keys() -> None:
+    """cgpro VERIFY 2026-05-11 EDIT_REQUIRED: every per-node assignment
+    emitted by ``runtime_emit_provider_execution_witness`` MUST contain
+    the 7 nested keys that the helper contract promises. The v1 schema
+    only validates ``per_node_assignments`` as ``list[dict]`` — this test
+    enforces the nested-dict contract that the schema does not.
+    """
+    pipeline = _make_pipeline({"deepseek-v4-pro": "deepseek"})
+    nodes = [_make_node("coder", caps=("code_generation", "reasoning"))]
+    ctx = _make_ctx(nodes, assignments={0: "deepseek-v4-pro"})
+    event_log = _FakeEventLog()
+    runtime_emit_provider_execution_witness(
+        pipeline, ctx, event_log,
+        routing_model_id="deepseek-v4-pro",
+    )
+    REQUIRED_NESTED_KEYS = {
+        "node_id",
+        "node_role",
+        "assigned_model_id",
+        "assigned_provider_id",
+        "required_capabilities",
+        "assignment_policy_decision",
+        "assignment_policy_reason_code",
+    }
+    per_node = event_log.calls[0]["per_node_assignments"]
+    assert per_node, "helper should emit at least one per-node assignment"
+    for entry in per_node:
+        missing = REQUIRED_NESTED_KEYS - set(entry.keys())
+        assert not missing, (
+            f"per-node assignment missing required nested keys: {missing}. "
+            f"Got keys: {sorted(entry.keys())}"
+        )
+        # required_capabilities is a list (possibly empty)
+        assert isinstance(entry["required_capabilities"], list)
+        # decision is one of {allowed, blocked, unresolved}
+        assert entry["assignment_policy_decision"] in {
+            "allowed", "blocked", "unresolved",
+        }
+
+
 def test_provider_execution_witness_does_not_mask_provider_policy_violation(
     tmp_trace_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -660,10 +743,11 @@ def test_provider_execution_witness_does_not_mask_provider_policy_violation(
         },
         per_node_assignments=[
             {
-                "node_index": 0,
+                "node_id": "0",
                 "node_role": "coder",
                 "assigned_model_id": "deepseek-v4-pro",
                 "assigned_provider_id": "deepseek",
+                "required_capabilities": [],
                 "assignment_policy_decision": "allowed",
                 "assignment_policy_reason_code": "passes_policy",
             }
