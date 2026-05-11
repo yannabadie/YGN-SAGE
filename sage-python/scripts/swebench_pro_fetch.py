@@ -60,6 +60,84 @@ _DATASET_NAME = "ScaleAI/SWE-bench_Pro"
 _DATASET_SPLIT = "test"
 
 
+# Block `canary-stage-timing-budget` slice 4 (cgpro DESIGN 2026-05-11,
+# conv `cgpro_ygn_sage_global_analysis_20260510`).
+#
+# Fields a difficulty triage MUST NEVER consult. They are the ground-truth
+# solution signal SWE-bench grades against, so using their size or content
+# to "pick easy tasks" would be hidden cheating: the bench result would
+# be conditioned on the answer being short, not on the agent being good.
+#
+# - patch / test_patch: ground-truth diffs.
+# - fail_to_pass / pass_to_pass: evaluation labels; SWE-bench resolution
+#   is computed from fail-to-pass passing under the agent's patch.
+# Casing variants are included because the upstream dataset has shipped
+# both lowercase and UPPER_CASE forms across revisions.
+_DIFFICULTY_TRIAGE_BANNED_FIELDS: frozenset[str] = frozenset(
+    {
+        "patch",
+        "test_patch",
+        "fail_to_pass",
+        "pass_to_pass",
+        "FAIL_TO_PASS",
+        "PASS_TO_PASS",
+    }
+)
+
+
+def _problem_statement_chars(row: dict[str, Any]) -> int:
+    """Return the character count of ``row["problem_statement"]`` or 0.
+
+    Public non-solution metadata per cgpro DESIGN 2026-05-11: the issue
+    description is what the agent sees, not how the issue gets fixed.
+    """
+    statement = row.get("problem_statement") or ""
+    if isinstance(statement, str):
+        return len(statement)
+    return 0
+
+
+def _difficulty_proxy_key(row: dict[str, Any]) -> tuple[int, str, str]:
+    """Stable sort key for difficulty triage.
+
+    Returns ``(problem_statement_chars, language_bucket, instance_id)``:
+
+    - **Primary**: shorter problem statement first. Hypothesis (NOT a
+      claim): shorter issues tend to bound the change surface. This is
+      a hypothesis-grade proxy, not a calibrated metric — it will be
+      revisited if N=5+ graded evidence shows poor correlation.
+    - **Secondary**: ``language`` / ``repo_language`` alphabetically.
+      Spreads buckets so a small problem statement in one language
+      doesn't push out everything in another.
+    - **Tertiary**: ``instance_id`` for full determinism.
+
+    None of the components reference
+    ``_DIFFICULTY_TRIAGE_BANNED_FIELDS``; the regression test in
+    ``test_swebench_pro_fetch.py`` enforces that source invariant.
+    """
+    statement_chars = _problem_statement_chars(row)
+    language = (
+        row.get("language")
+        or row.get("repo_language")
+        or "lang_unknown"
+    )
+    if not isinstance(language, str):
+        language = "lang_unknown"
+    instance_id = row.get("instance_id") or ""
+    if not isinstance(instance_id, str):
+        instance_id = str(instance_id)
+    return (statement_chars, language, instance_id)
+
+
+def _sort_by_difficulty_proxy(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Reorder selected rows lightest-first by the non-leakage proxy.
+
+    Idempotent and deterministic: callers can pass the output through
+    repeatedly without drift.
+    """
+    return sorted(rows, key=_difficulty_proxy_key)
+
+
 def _load_dataset() -> Any:
     """Load SWE-bench Pro `test` split via HuggingFace `datasets` lib.
 
@@ -168,8 +246,24 @@ def _instance_record(row: dict[str, Any]) -> dict[str, Any]:
     return record
 
 
-def fetch(n: int, output_dir: Path, seed: int) -> dict[str, Any]:
-    """Fetch + stratify + cache. Returns the manifest dict."""
+def fetch(
+    n: int,
+    output_dir: Path,
+    seed: int,
+    *,
+    difficulty_first: bool = False,
+) -> dict[str, Any]:
+    """Fetch + stratify + cache. Returns the manifest dict.
+
+    ``difficulty_first`` (cgpro DESIGN 2026-05-11 slice 4): when True,
+    re-orders the stratified sample lightest-first by
+    ``_difficulty_proxy_key`` so the first tasks the canary attempts
+    are the most likely to produce a non-empty patch within the
+    profile's timeout budget. Strictly non-leakage: only
+    ``problem_statement`` length, ``language``, ``instance_id`` are
+    consulted. Does NOT change which tasks get selected — only the
+    order within the selected N.
+    """
     rng = random.Random(seed)
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -182,6 +276,10 @@ def fetch(n: int, output_dir: Path, seed: int) -> dict[str, Any]:
 
     selected = _stratified_sample(rows, n=n, rng=rng)
     log.info("Stratified to %d rows", len(selected))
+
+    if difficulty_first:
+        selected = _sort_by_difficulty_proxy(selected)
+        log.info("Difficulty-first triage applied (non-leakage proxy)")
 
     instances = [_instance_record(r) for r in selected]
 
@@ -223,6 +321,13 @@ def fetch(n: int, output_dir: Path, seed: int) -> dict[str, Any]:
         "repo_distribution": dict(repo_counts),
         "known_bug_excluded": sorted(_KNOWN_BUG_INSTANCES),
         "instance_ids": [inst["instance_id"] for inst in instances],
+        "difficulty_first": bool(difficulty_first),
+        "difficulty_triage_inputs": (
+            ["problem_statement_chars", "language", "instance_id"]
+            if difficulty_first
+            else []
+        ),
+        "difficulty_triage_banned_fields": sorted(_DIFFICULTY_TRIAGE_BANNED_FIELDS),
     }
     (output_dir / "manifest.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False),
@@ -247,6 +352,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--seed", type=int, default=42, help="stratification RNG seed")
     parser.add_argument(
+        "--difficulty-first",
+        action="store_true",
+        help=(
+            "Re-order the stratified sample lightest-first by a "
+            "non-leakage proxy (problem_statement length, language, "
+            "instance_id). DOES NOT change which tasks are selected — "
+            "only the order. patch / test_patch / fail_to_pass / "
+            "pass_to_pass are NEVER consulted (HARD NO per cgpro "
+            "DESIGN 2026-05-11; using them would be ground-truth "
+            "leakage)."
+        ),
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -258,7 +376,12 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
 
-    manifest = fetch(args.n, args.output_dir, args.seed)
+    manifest = fetch(
+        args.n,
+        args.output_dir,
+        args.seed,
+        difficulty_first=args.difficulty_first,
+    )
     print(json.dumps(manifest, indent=2, ensure_ascii=False))
     return 0
 
