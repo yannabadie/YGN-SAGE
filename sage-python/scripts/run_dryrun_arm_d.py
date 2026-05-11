@@ -67,6 +67,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+# Slice 7 of `canary-stage-timing-budget` (2026-05-11): use the canonical
+# SWE-bench prompt builder + patch extractor. Without these, the canary
+# sent a bare "Produce a unified diff" string and the agent returned
+# synthesizer reasoning text — 0/5 patches across the first real N=5
+# run (cumulative_cost_usd=$0.36, no provider_call_timeouts, 0 diffs).
+# These helpers live in sage-python source (library code, not runtime
+# contracts) so the harness can stay decoupled from runtime internals.
+from sage.bench.swebench_bench import _extract_patch as _swebench_extract_patch
+from sage.input.swebench import normalize_swebench, render_swebench_prompt
+
 log = logging.getLogger("sage.bench.run_dryrun_arm_d")
 
 # Default model when running in real mode. Per cgpro plan §"Models per
@@ -1201,16 +1211,15 @@ async def _run_one_task(
             newline="\n",
         )
     else:
-        # Build the prompt: problem_statement + minimal "produce a
-        # unified diff" framing (NOT a sophisticated SWE-bench prompt
-        # — Tier 2.1 smoke only validates wire-up).
-        problem = task.get("problem_statement", "").strip()
-        prompt = (
-            f"{problem}\n\n"
-            f"---\n\n"
-            f"Produce a unified diff (`diff --git`) that resolves the "
-            f"issue above. Output ONLY the diff."
-        )
+        # Build the SWE-bench prompt: the canonical
+        # ``SWEBENCH_SYSTEM_TEMPLATE`` (or the SEARCH/REPLACE variant
+        # if ``SAGE_EMISSION_FORMAT=search-replace``). This is what
+        # ``sage-python/src/sage/bench/swebench_bench.py`` ships for
+        # SWE-bench Lite generate-only runs. Without it the agent
+        # gets a bare problem_statement and returns reasoning text
+        # rather than a unified diff — confirmed empirically on the
+        # 2026-05-11 N=5 run (0/5 patches across 5 successful tasks).
+        prompt = render_swebench_prompt(normalize_swebench(task))
         cli_result = await _run_sage_cli(
             prompt,
             budget_usd=budget_usd,
@@ -1232,7 +1241,12 @@ async def _run_one_task(
                     agent_output = val
                     break
 
-        patch = _extract_patch_from_text(agent_output)
+        # Use the swebench_bench extractor (handles raw diffs, fenced
+        # ```diff blocks, mixed text-with-embedded-diff, sentinel
+        # rejection, Unix line-ending normalization). The local
+        # ``_extract_patch_from_text`` is kept for older callers that
+        # only need the dumb header-scan path.
+        patch = _swebench_extract_patch(agent_output)
         if claim_default_pipeline_learning_evidence:
             cli_complete_payload = cli_result.get("cli_complete_payload")
             cli_outcome = (

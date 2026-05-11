@@ -1318,6 +1318,162 @@ def test_run_sage_cli_terminates_subprocess_after_cli_complete(
     assert result["exit_code"] == -15
 
 
+def test_run_one_task_uses_swebench_template_prompt(monkeypatch, tmp_path) -> None:
+    """Slice 7 (2026-05-11): the canary MUST send the canonical
+    SWEBENCH_SYSTEM_TEMPLATE (or its SR variant) to the agent, not a
+    bare "Produce a unified diff" string. Empirical evidence: the
+    first real N=5 graded canary run (commit 77b6dd98) produced 0/5
+    patches because the agent received only the problem_statement +
+    a single-line instruction, returned synthesizer reasoning text,
+    and the extractor found no `diff --git` header.
+
+    This test stubs the SAGE CLI subprocess + extractor + Pro format
+    module, then asserts the prompt sent to ``_run_sage_cli`` starts
+    with the canonical SWE-bench instruction sentence.
+    """
+    instance = {
+        "instance_id": "test-instance-1",
+        "repo": "owner/repo",
+        "base_commit": "deadbeef",
+        "problem_statement": "Bug in `foo` when `bar` is None.",
+    }
+
+    captured_prompts: list[str] = []
+
+    async def _capture_cli(prompt, *, budget_usd, output_events_path, tier,
+                          provider_allowlist=(), provider_denylist=()):
+        captured_prompts.append(prompt)
+        output_events_path.parent.mkdir(parents=True, exist_ok=True)
+        output_events_path.write_text("", encoding="utf-8")
+        return {
+            "exit_code": 0,
+            "latency_ms": 100,
+            "final_result_payload": {"result": "no diff here, just reasoning"},
+            "cli_complete_payload": {
+                "outcome": "success",
+                "total_cost_usd": 0.0,
+                "trace_dir": str(tmp_path / "trace"),
+            },
+            "run_id": "RUN-X",
+            "model_id_final": "fake-model",
+            "provider_final": "fake-provider",
+            "total_cost_usd": 0.0,
+        }
+
+    monkeypatch.setattr(arm_d, "_run_sage_cli", _capture_cli)
+
+    fmt_module = _FakeFormatModule()
+
+    asyncio.run(
+        arm_d._run_one_task(
+            instance,
+            tmp_path / "out",
+            mock=False,
+            budget_usd=5.0,
+            tier="budget",
+            provider_allowlist=("google",),
+            provider_denylist=("openai",),
+            prefix="test",
+            fmt_module=fmt_module,
+            claim_default_pipeline_learning_evidence=False,
+            expect_default_pipeline_learn=False,
+        )
+    )
+
+    assert len(captured_prompts) == 1
+    prompt = captured_prompts[0]
+    # The SWEBENCH_SYSTEM_TEMPLATE opens with this sentence — the
+    # load-bearing instruction that tells the agent to emit a diff.
+    assert (
+        "You are an expert software engineer" in prompt
+    ), f"Prompt missing SWEBENCH_SYSTEM_TEMPLATE opener:\n{prompt[:300]}"
+    # And carries the strict Patch Format section.
+    assert "## Patch Format" in prompt
+    # AND embeds the instance's problem_statement verbatim.
+    assert "Bug in `foo` when `bar` is None." in prompt
+    # AND identifies the repo + base_commit, which the agent needs.
+    assert "owner/repo" in prompt
+    assert "deadbeef" in prompt
+
+
+def test_run_one_task_extracts_fenced_diff_via_swebench_extractor(
+    monkeypatch, tmp_path
+) -> None:
+    """Slice 7 (2026-05-11): the local Tier-2.1 dumb extractor missed
+    diffs wrapped in markdown ```diff fences. The slice-7 upgrade
+    delegates to ``swebench_bench._extract_patch`` which handles all
+    three formats (raw, fenced, embedded). Smoke that a fenced diff
+    in the agent reply is now extracted to a non-empty patch.
+    """
+    instance = {
+        "instance_id": "test-instance-2",
+        "repo": "owner/repo",
+        "base_commit": "deadbeef",
+        "problem_statement": "Fix the off-by-one.",
+    }
+
+    fake_response = (
+        "Looking at the code, the loop bound is wrong. Here is the fix:\n\n"
+        "```diff\n"
+        "diff --git a/src/foo.py b/src/foo.py\n"
+        "--- a/src/foo.py\n"
+        "+++ b/src/foo.py\n"
+        "@@ -10,3 +10,3 @@\n"
+        " def f(xs):\n"
+        "-    for i in range(len(xs) + 1):\n"
+        "+    for i in range(len(xs)):\n"
+        "         yield xs[i]\n"
+        "```\n\n"
+        "That removes the off-by-one."
+    )
+
+    async def _fake_cli(prompt, *, budget_usd, output_events_path, tier,
+                       provider_allowlist=(), provider_denylist=()):
+        output_events_path.parent.mkdir(parents=True, exist_ok=True)
+        output_events_path.write_text("", encoding="utf-8")
+        return {
+            "exit_code": 0,
+            "latency_ms": 100,
+            "final_result_payload": {"result": fake_response},
+            "cli_complete_payload": {
+                "outcome": "success",
+                "total_cost_usd": 0.01,
+                "trace_dir": str(tmp_path / "trace"),
+            },
+            "run_id": "RUN-Y",
+            "model_id_final": "fake-model",
+            "provider_final": "fake-provider",
+            "total_cost_usd": 0.01,
+        }
+
+    monkeypatch.setattr(arm_d, "_run_sage_cli", _fake_cli)
+    fmt_module = _FakeFormatModule()
+
+    result = asyncio.run(
+        arm_d._run_one_task(
+            instance,
+            tmp_path / "out",
+            mock=False,
+            budget_usd=5.0,
+            tier="budget",
+            provider_allowlist=("google",),
+            provider_denylist=("openai",),
+            prefix="test",
+            fmt_module=fmt_module,
+            claim_default_pipeline_learning_evidence=False,
+            expect_default_pipeline_learn=False,
+        )
+    )
+
+    summary = result["summary"]
+    record = result["record"]
+    assert summary["extracted_patch_present"] is True
+    chars = summary["extracted_patch_chars"]
+    assert chars > 0, f"expected non-empty patch, got chars={chars}"
+    # The Pro record carries the extracted diff verbatim.
+    assert "diff --git" in record.get("patch", "")
+
+
 def test_run_sage_cli_natural_eof_path_still_works(monkeypatch, tmp_path) -> None:
     """The break-on-cli_complete fix MUST NOT regress the cooperative
     path: when the subprocess closes stdout naturally after
