@@ -358,6 +358,93 @@ _WITNESS_REASON_CODES = (
 )
 
 
+# Rust filter rejection reason codes (cgpro DESIGN_LOCKED v1_1,
+# 2026-05-11). Map 1:1 to predicates in
+# `sage-core/src/routing/model_assigner.rs`. Order is significant:
+# first-match wins per Rust predicate order (cgpro Q2 lock).
+_RUST_FILTER_REASON_CARD_INACTIVE = "card_inactive"
+_RUST_FILTER_REASON_PROVIDER_UNKNOWN = "provider_excluded_policy_unknown_provider"
+_RUST_FILTER_REASON_PROVIDER_DENYLIST = "provider_excluded_policy_denylist"
+_RUST_FILTER_REASON_PROVIDER_ALLOWLIST = "provider_excluded_policy_allowlist"
+_RUST_FILTER_REASON_PROVIDER_DEAD = "provider_excluded_dead"
+_RUST_FILTER_REASON_EXCLUDED_BY_CALLER = "excluded_by_caller"
+_RUST_FILTER_REASON_CAPABILITY_MISMATCH = "capability_mismatch"
+_RUST_FILTER_REASON_COST_ABOVE_BUDGET = "cost_above_budget"
+
+_RUST_FILTER_REASON_CODES = (
+    _RUST_FILTER_REASON_CARD_INACTIVE,
+    _RUST_FILTER_REASON_PROVIDER_UNKNOWN,
+    _RUST_FILTER_REASON_PROVIDER_DENYLIST,
+    _RUST_FILTER_REASON_PROVIDER_ALLOWLIST,
+    _RUST_FILTER_REASON_PROVIDER_DEAD,
+    _RUST_FILTER_REASON_EXCLUDED_BY_CALLER,
+    _RUST_FILTER_REASON_CAPABILITY_MISMATCH,
+    _RUST_FILTER_REASON_COST_ABOVE_BUDGET,
+)
+
+# Cap per cgpro DESIGN_LOCK Q3 + substitution_summary 8 KB UTF-8 budget.
+_RUST_FILTER_REJECTIONS_CAP = 20
+
+
+def _runtime_read_rust_filter_rejections(
+    pipeline: Any,
+) -> tuple[list[dict[str, str]] | None, bool]:
+    """Read structured filter rejections from the Rust ModelAssigner.
+
+    Returns ``(rejections, truncated)`` where:
+    - ``rejections`` is ``None`` if Rust didn't run a recording-aware
+      path (legacy wheel without the v1_1 methods, or assigner absent),
+      ``[]`` if it ran and rejected nothing, or a non-empty list of
+      ``{model_id, reason_code}`` dicts.
+    - ``truncated`` is ``True`` iff the Rust side truncated the list to
+      the 20-entry cap.
+
+    Defensive: any unexpected shape or AttributeError returns
+    ``(None, False)`` so observability never breaks the run.
+    """
+    assigner = getattr(pipeline, "assigner", None)
+    if assigner is None:
+        return None, False
+    raw_rejections = None
+    raw_truncated = False
+    try:
+        getter = getattr(assigner, "last_filter_rejections", None)
+        if getter is None:
+            return None, False
+        raw_rejections = getter()
+        trunc_getter = getattr(
+            assigner, "last_filter_rejections_truncated", None
+        )
+        if trunc_getter is not None:
+            raw_truncated = bool(trunc_getter())
+    except (AttributeError, RuntimeError, TypeError):
+        return None, False
+    if raw_rejections is None:
+        return None, False
+    if not isinstance(raw_rejections, (list, tuple)):
+        return None, False
+    rejections: list[dict[str, str]] = []
+    for entry in raw_rejections:
+        if not isinstance(entry, (list, tuple)) or len(entry) != 2:
+            # Unrecognized shape — fail-closed to None so callers don't
+            # half-record. Better silent than half-true.
+            return None, False
+        model_id, reason_code = entry
+        model_id = str(model_id or "")
+        reason_code = str(reason_code or "")
+        if reason_code not in _RUST_FILTER_REASON_CODES:
+            # Drop entries with unknown reason codes — could be a Rust
+            # version that uses a code we don't recognise. Don't fail
+            # the run; just don't surface unknown labels.
+            continue
+        rejections.append(
+            {"model_id": model_id, "reason_code": reason_code}
+        )
+        if len(rejections) >= _RUST_FILTER_REJECTIONS_CAP:
+            break
+    return rejections, raw_truncated
+
+
 def _classify_provider_against_policy(
     provider_id: str,
     *,
@@ -488,6 +575,18 @@ def runtime_emit_provider_execution_witness(
     allowed_count = sum(
         1 for a in per_node if a.get("assignment_policy_decision") == "allowed"
     )
+    # Rust filter details (cgpro DESIGN_LOCKED v1_1, 2026-05-11):
+    # ModelAssigner may expose a structured rejection list via
+    # `last_filter_rejections()` (returns list of `(model_id,
+    # reason_code)` tuples) and `last_filter_rejections_truncated()`
+    # (bool). Read defensively — older Rust wheels don't have these
+    # methods yet. Null/empty semantics:
+    #   None       — Rust did not run a recording-aware path
+    #   []         — Rust ran and rejected nothing
+    #   non-empty  — Rust recorded the listed rejections
+    rust_rejections, rust_truncated = _runtime_read_rust_filter_rejections(
+        pipeline
+    )
     substitution_summary = {
         "routing_model_distinct_from_assignments": routing_model_distinct,
         "routing_candidate_blocked_by_policy": routing_decision == "blocked",
@@ -495,9 +594,9 @@ def runtime_emit_provider_execution_witness(
         "assignment_count": len(per_node),
         "allowed_assignment_count": allowed_count,
         "blocked_assignment_count": blocked_count,
-        # We intentionally do NOT claim visibility into Rust's
-        # internal candidate filter (cgpro DESIGN_LOCK case-1-only).
-        "rust_filter_details_observed": False,
+        "rust_filter_details_observed": rust_rejections is not None,
+        "rust_filter_rejections": rust_rejections,
+        "rust_filter_rejections_truncated": rust_truncated,
     }
 
     routing_payload = {

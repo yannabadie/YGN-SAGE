@@ -825,6 +825,9 @@ PAYLOAD_SCHEMAS: dict[str, dict[PayloadSchemaVersion, EventPayloadSchema]] = {
     # reason_code enum is documented in
     # docs/superpowers/plans/2026-05-10-handoff-recovery-plan.md.
     "provider_execution_witness": {
+        # Slice 10D Route A v0 — original 6-field payload (no Rust filter
+        # details). Kept as legacy read-only so pre-v1_1 traces still
+        # validate.
         "v1": _schema(
             event_type="provider_execution_witness",
             version="v1",
@@ -855,8 +858,47 @@ PAYLOAD_SCHEMAS: dict[str, dict[PayloadSchemaVersion, EventPayloadSchema]] = {
                 "substitution_summary": _dict_or_null(4096),
             },
             payload_kind="dict",
+            current=False,
+            legacy_read_only=True,
+        ),
+        # v1_1 (cgpro DESIGN_LOCKED 2026-05-11 Rust filter details bump):
+        # additive — same top-level shape, substitution_summary now
+        # carries 3 extra optional fields (rust_filter_details_observed,
+        # rust_filter_rejections, rust_filter_rejections_truncated).
+        # substitution_summary cap raised 4096 → 8192 because 20
+        # rejections × long model IDs can exceed 4 KB.
+        "v1_1": _schema(
+            event_type="provider_execution_witness",
+            version="v1_1",
+            allowed_fields=(
+                "witness_schema_version",
+                "assignment_phase",
+                "routing",
+                "policy",
+                "per_node_assignments",
+                "substitution_summary",
+            ),
+            required_fields=(
+                "witness_schema_version",
+                "routing",
+                "policy",
+                "per_node_assignments",
+                "substitution_summary",
+            ),
+            field_specs={
+                "witness_schema_version": _string(16),
+                "assignment_phase": _string(32),
+                "routing": _dict_or_null(8192),
+                "policy": _dict_or_null(8192),
+                "per_node_assignments": _list(
+                    max_json_utf8_bytes=16384,
+                    item_type="dict",
+                ),
+                "substitution_summary": _dict_or_null(8192),
+            },
+            payload_kind="dict",
             current=True,
-        )
+        ),
     },
 }
 

@@ -27,7 +27,10 @@ from typing import Any
 import pytest
 
 from sage.pipeline_v2.runtime_events import (
+    _RUST_FILTER_REASON_CODES,
+    _RUST_FILTER_REJECTIONS_CAP,
     _classify_provider_against_policy,
+    _runtime_read_rust_filter_rejections,
     runtime_emit_provider_execution_witness,
 )
 from sage.runtime.event_log.payload_schemas import (
@@ -48,11 +51,17 @@ def test_event_type_registered() -> None:
 
 
 def test_payload_schema_v1_registered() -> None:
-    """The v1 schema must exist + be current."""
+    """v1 schema MUST remain registered (legacy_read_only=True) so
+    pre-v1_1 traces keep validating. v1_1 (cgpro DESIGN_LOCKED
+    2026-05-11) is the current version.
+    """
     versions = PAYLOAD_SCHEMAS["provider_execution_witness"]
     assert "v1" in versions
+    assert "v1_1" in versions
+    assert versions["v1"].legacy_read_only is True
+    assert versions["v1"].current is False
     current = _current_schema_for("provider_execution_witness")
-    assert current.version == "v1"
+    assert current.version == "v1_1"
     assert current.payload_kind == "dict"
 
 
@@ -691,6 +700,148 @@ def test_execute_py_reroute_path_emits_witness_with_reroute_phase() -> None:
     assert 'assignment_phase="upgrade"' in src, (
         "FrugalGPT upgrade path must use assignment_phase=\"upgrade\""
     )
+
+
+def test_v1_1_substitution_summary_has_rust_filter_fields() -> None:
+    """v1_1 (cgpro DESIGN_LOCKED 2026-05-11): the witness's
+    substitution_summary MUST include the 3 new Rust-filter fields.
+    Defaults are 'not observed' when no Rust assigner is wired:
+    rust_filter_details_observed=False, rejections=None,
+    rejections_truncated=False.
+    """
+    pipeline = _make_pipeline({"deepseek-v4-pro": "deepseek"})
+    # No `assigner` attr → _runtime_read_rust_filter_rejections returns
+    # (None, False), surfacing as "not observed".
+    nodes = [_make_node("coder")]
+    ctx = _make_ctx(nodes, assignments={0: "deepseek-v4-pro"})
+    event_log = _FakeEventLog()
+    runtime_emit_provider_execution_witness(
+        pipeline, ctx, event_log,
+        routing_model_id="deepseek-v4-pro",
+    )
+    summary = event_log.calls[0]["substitution_summary"]
+    assert "rust_filter_details_observed" in summary
+    assert "rust_filter_rejections" in summary
+    assert "rust_filter_rejections_truncated" in summary
+    assert summary["rust_filter_details_observed"] is False
+    assert summary["rust_filter_rejections"] is None
+    assert summary["rust_filter_rejections_truncated"] is False
+
+
+def test_rust_filter_rejections_helper_reads_from_assigner() -> None:
+    """When ``pipeline.assigner`` exposes ``last_filter_rejections``,
+    the helper reads them, validates against the 8-code enum, caps at
+    20 entries, and tags 'observed=True'.
+    """
+    rejections = [
+        ("gpt-5.4-pro", "provider_excluded_policy_denylist"),
+        ("legacy-model-x", "card_inactive"),
+        ("future-model", "cost_above_budget"),
+    ]
+    assigner = SimpleNamespace(
+        last_filter_rejections=lambda _r=rejections: list(_r),
+        last_filter_rejections_truncated=lambda: False,
+    )
+    pipeline = SimpleNamespace(assigner=assigner)
+    surfaced, truncated = _runtime_read_rust_filter_rejections(pipeline)
+    assert surfaced is not None
+    assert len(surfaced) == 3
+    assert truncated is False
+    for entry in surfaced:
+        assert set(entry.keys()) == {"model_id", "reason_code"}
+        assert entry["reason_code"] in _RUST_FILTER_REASON_CODES
+
+
+def test_rust_filter_rejections_helper_drops_unknown_reason_codes() -> None:
+    """Unknown reason codes are silently dropped — never surfaced as
+    unknown labels. This protects against a future Rust version using
+    a code Python doesn't recognise: the Python side stays consistent
+    with its own enum rather than half-recording.
+    """
+    rejections = [
+        ("gpt-5.4-pro", "provider_excluded_policy_denylist"),
+        ("legacy-model-x", "totally_unknown_reason_2099"),
+        ("another-model", "card_inactive"),
+    ]
+    assigner = SimpleNamespace(
+        last_filter_rejections=lambda _r=rejections: list(_r),
+        last_filter_rejections_truncated=lambda: False,
+    )
+    pipeline = SimpleNamespace(assigner=assigner)
+    surfaced, _ = _runtime_read_rust_filter_rejections(pipeline)
+    assert surfaced is not None
+    # 2 of 3 retained (unknown one dropped)
+    assert len(surfaced) == 2
+    assert all(
+        e["reason_code"] in _RUST_FILTER_REASON_CODES for e in surfaced
+    )
+
+
+def test_rust_filter_rejections_helper_caps_at_20() -> None:
+    """Helper caps the surfaced list at the 20-entry cgpro DESIGN cap
+    even if Rust returns more.
+    """
+    many = [
+        (f"model-{i}", "provider_excluded_policy_denylist")
+        for i in range(50)
+    ]
+    assigner = SimpleNamespace(
+        last_filter_rejections=lambda _r=many: list(_r),
+        last_filter_rejections_truncated=lambda: True,
+    )
+    pipeline = SimpleNamespace(assigner=assigner)
+    surfaced, truncated = _runtime_read_rust_filter_rejections(pipeline)
+    assert surfaced is not None
+    assert len(surfaced) == _RUST_FILTER_REJECTIONS_CAP
+    assert truncated is True
+
+
+def test_rust_filter_rejections_helper_returns_empty_list_when_rust_recorded_nothing() -> None:
+    """Empty rejection list = Rust ran the recording path but rejected
+    nothing. Distinct from None (= Rust didn't run the path).
+    """
+    assigner = SimpleNamespace(
+        last_filter_rejections=lambda: [],
+        last_filter_rejections_truncated=lambda: False,
+    )
+    pipeline = SimpleNamespace(assigner=assigner)
+    surfaced, truncated = _runtime_read_rust_filter_rejections(pipeline)
+    assert surfaced == []
+    assert truncated is False
+
+
+def test_rust_filter_rejections_helper_handles_assigner_without_methods() -> None:
+    """Defensive: legacy Rust wheels without the v1_1 methods MUST
+    surface as (None, False) — observability never breaks the run.
+    """
+    legacy_assigner = SimpleNamespace()
+    pipeline = SimpleNamespace(assigner=legacy_assigner)
+    surfaced, truncated = _runtime_read_rust_filter_rejections(pipeline)
+    assert surfaced is None
+    assert truncated is False
+
+
+def test_rust_filter_rejections_helper_handles_no_assigner_at_all() -> None:
+    """Defensive: if pipeline has no `assigner` attribute, return
+    (None, False).
+    """
+    pipeline = SimpleNamespace()
+    surfaced, truncated = _runtime_read_rust_filter_rejections(pipeline)
+    assert surfaced is None
+    assert truncated is False
+
+
+def test_rust_filter_rejections_helper_handles_runtime_error_in_getter() -> None:
+    """Defensive: if the Rust getter raises, fall back to (None,
+    False) — never propagate.
+    """
+    def _broken_getter():
+        raise RuntimeError("Rust deserialization failed")
+    assigner = SimpleNamespace(last_filter_rejections=_broken_getter)
+    pipeline = SimpleNamespace(assigner=assigner)
+    surfaced, truncated = _runtime_read_rust_filter_rejections(pipeline)
+    assert surfaced is None
+    assert truncated is False
 
 
 def test_provider_execution_witness_per_node_shape_has_all_required_nested_keys() -> None:
