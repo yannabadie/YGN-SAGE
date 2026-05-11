@@ -504,13 +504,42 @@ def runtime_emit_provider_execution_witness(
     if event_log is None:
         return None
 
-    # Resolve allowlist / denylist from ctx if present. The CLI
-    # adapter populates these as tuples; tests may pass lists.
-    allowlist_raw = getattr(ctx, "provider_allowlist", None) or ()
-    denylist_raw = getattr(ctx, "provider_denylist", None) or ()
-    allowlist = tuple(str(p) for p in allowlist_raw if p)
-    denylist = tuple(str(p) for p in denylist_raw if p)
-    policy_active = bool(allowlist or denylist)
+    # Resolve allowlist / denylist via the same single source of
+    # truth `enforce_provider_policy` uses (`effective_provider_policy`).
+    # Falls back to ctx-level attrs for legacy/test callers that set
+    # the policy directly on ctx without going through the pipeline
+    # configuration step.
+    #
+    # cgpro VERIFY 2026-05-12 prod-canary discovery: reading from
+    # `ctx.provider_allowlist` directly missed the CLI path which
+    # sets `pipeline._provider_allowlist` via
+    # `configure_pipeline_provider_policy`. The CLI canary at HEAD
+    # `381445fd` produced witness with `policy.active=False` even
+    # though Rust had clearly applied the policy (18
+    # rust_filter_rejections recorded). Fix: try pipeline-level
+    # policy FIRST (the production single source of truth), only
+    # fall back to ctx if pipeline policy is empty.
+    allowlist: tuple[str, ...] = ()
+    denylist: tuple[str, ...] = ()
+    policy_active = False
+    try:
+        from sage.pipeline_v2.provider_policy import (
+            effective_provider_policy as _pol_helper,
+        )
+        _policy_obj = _pol_helper(pipeline)
+        if _policy_obj.active:
+            policy_active = True
+            allowlist = tuple(sorted(_policy_obj.allowlist or ()))
+            denylist = tuple(sorted(_policy_obj.denylist or ()))
+    except Exception:  # noqa: BLE001 — defensive: ignore + fall back
+        pass
+    if not policy_active:
+        # Legacy / test fallback: read directly from ctx attrs.
+        allowlist_raw = getattr(ctx, "provider_allowlist", None) or ()
+        denylist_raw = getattr(ctx, "provider_denylist", None) or ()
+        allowlist = tuple(str(p) for p in allowlist_raw if p)
+        denylist = tuple(str(p) for p in denylist_raw if p)
+        policy_active = bool(allowlist or denylist)
 
     # Resolve routing provider
     routing_provider_id = ""

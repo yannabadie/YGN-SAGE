@@ -765,6 +765,78 @@ def test_i11_close_time_audit_raises_under_fail_closed(
         log.validate_invariants()
 
 
+def test_witness_reads_policy_from_pipeline_underscore_attrs() -> None:
+    """Production-drift regression (2026-05-12 paid canary discovery
+    at HEAD `381445fd`): the witness helper MUST read the policy via
+    `effective_provider_policy(pipeline)` so it sees the
+    pipeline._provider_allowlist / _denylist attrs that the CLI sets
+    via `configure_pipeline_provider_policy`. Reading directly from
+    `ctx.provider_allowlist` missed this path, and the canary trace
+    showed `policy.active=False` even though Rust had recorded 18
+    real rust_filter_rejections. Without this fix, the I-11 inline
+    binding skips in production (no_policy_active exclusion).
+    """
+    from sage.pipeline_v2.runtime_events import (
+        runtime_emit_provider_execution_witness,
+    )
+
+    # Pipeline-level policy (matches CLI / production path)
+    pool = SimpleNamespace()
+    pool.infer_provider = lambda mid: (
+        "deepseek" if mid == "deepseek-v4-pro" else
+        "openai" if mid == "gpt-5.4-pro" else ""
+    )
+    pipeline = SimpleNamespace()
+    pipeline.provider_pool = pool
+    pipeline._provider_allowlist = ("deepseek",)
+    pipeline._provider_denylist = ("openai",)
+    pipeline._provider_policy_source = "cli"
+    pipeline.llm_config = None
+
+    # ctx has NO provider_allowlist / _denylist — production CLI flow
+    nodes = [SimpleNamespace(role="coder", model_id="deepseek-v4-pro",
+                             required_capabilities=())]
+    topo = SimpleNamespace()
+    topo._nodes = nodes
+    topo.id = "t1"
+    topo.template_type = "sequential"
+    topo.get_node = lambda idx, _t=topo: _t._nodes[idx]
+    topo.node_count = lambda _t=topo: len(_t._nodes)
+    ctx = SimpleNamespace()
+    ctx.topology = topo
+    ctx.assignments = {0: "deepseek-v4-pro"}
+    ctx.provider_hints = {}
+    ctx.routing_source = "rust_system_router"
+    ctx.system = 3
+    ctx.domain = "code"
+    ctx.confidence = 0.85
+
+    class _Recorder:
+        def __init__(self):
+            self.calls = []
+
+        def emit_provider_execution_witness(self, **kw):
+            self.calls.append(kw)
+            return 1
+
+    log = _Recorder()
+    runtime_emit_provider_execution_witness(
+        pipeline, ctx, log, routing_model_id="gpt-5.4-pro",
+    )
+    assert len(log.calls) == 1
+    pol = log.calls[0]["policy"]
+    assert pol["active"] is True, (
+        "policy.active MUST be True when "
+        "pipeline._provider_allowlist/_denylist are set even if "
+        "ctx.provider_allowlist is absent — production CLI flow drift "
+        "discovered in the 2026-05-12 paid canary"
+    )
+    assert pol["allowlist"] == ["deepseek"]
+    assert pol["denylist"] == ["openai"]
+    assert pol["routing_candidate_decision"] == "blocked"
+    assert pol["routing_candidate_reason_code"] == "provider_in_denylist"
+
+
 def test_i11_close_time_audit_intervening_witness_invalidates_prior_unmatched_blocked_witness(
     tmp_trace_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
