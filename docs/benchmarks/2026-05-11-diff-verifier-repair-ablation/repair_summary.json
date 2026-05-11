@@ -1,0 +1,319 @@
+{
+  "llm_tier": "budget",
+  "mode": "repair",
+  "n_tasks": 5,
+  "per_task": [
+    {
+      "base_commit": "373580e2fc209cdf010f5f14d08bed546adb8a92",
+      "instance_id": "instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858",
+      "mismatch_count_after_repair": 1,
+      "mismatch_count_before_repair": 1,
+      "mode": "repair",
+      "observe": {
+        "mismatch_count": 1,
+        "mismatches": [
+          {
+            "file": "src/app/components/subscription/SubscriptionPromptModal.tsx",
+            "hunk_index": 0,
+            "kind": "file_missing",
+            "match_ratio": 0.0,
+            "old_count": 18,
+            "old_start": 1
+          }
+        ],
+        "outcome": "file_missing",
+        "reason_events": [
+          {
+            "file": "src/app/components/subscription/SubscriptionPromptModal.tsx",
+            "reason": "file_missing",
+            "scope": "hunk"
+          }
+        ]
+      },
+      "original_patch_chars": 1145,
+      "post_repair": {
+        "mismatch_count": 1,
+        "mismatches": [
+          {
+            "file": "src/app/components/SubscriptionPromptModal.tsx",
+            "hunk_index": 0,
+            "kind": "file_missing",
+            "match_ratio": 0.0,
+            "old_count": 18,
+            "old_start": 1
+          }
+        ],
+        "outcome": "file_missing",
+        "reason_events": [
+          {
+            "file": "src/app/components/SubscriptionPromptModal.tsx",
+            "reason": "file_missing",
+            "scope": "hunk"
+          }
+        ]
+      },
+      "repair": {
+        "new_patch_chars": 1093,
+        "patch_unchanged": false,
+        "stage": "verifier_repair"
+      },
+      "repaired_patch": "diff --git a/src/app/components/SubscriptionPromptModal.tsx b/src/app/components/SubscriptionPromptModal.tsx\n--- a/src/app/components/SubscriptionPromptModal.tsx\n+++ b/src/app/components/SubscriptionPromptModal.tsx\n@@ -1,18 +1,27 @@\n import React from 'react';\n import { Prompt } from 'proton-components';\n+import { c } from 'ttag';\n \n+interface SubscriptionManager {\n+  renew: () => void;\n+}\n+\n+type SubscriptionPlatformContext = 'Apple App Store' | 'Google Play Store' | 'Web';\n+\n interface SubscriptionPromptModalProps {\n-  subscriptionManager: any;\n-  platformContext: any;\n+  subscriptionManager: SubscriptionManager;\n+  platformContext: SubscriptionPlatformContext;\n   onClose: () => void;\n }\n \n const SubscriptionPromptModal: React.FC<SubscriptionPromptModalProps> = ({\n   subscriptionManager,\n   platformContext,\n   onClose,\n }) => {\n-  const message = `Your subscription will expire soon. Please renew via ${platformContext}.`;\n+  const message = c(\n+    'Subscription prompt'\n+  )`Your subscription will expire soon. Please renew via ${platformContext}.`;\n \n   return (\n     <Prompt\n",
+      "repo": "protonmail/webclients",
+      "repo_context_status": "ready",
+      "verdict": "repair_did_not_reduce_mismatches"
+    },
+    {
+      "base_commit": "a51596d8d779935e1dfa8d0fabce39d9edd91457",
+      "instance_id": "instance_gravitational__teleport-6eaaf3a27e64f4ef4ef855bd35d7ec338cf17460-v626ec2a48416b10a88641359a169d99e935ff037",
+      "mismatch_count_before_repair": 0,
+      "mode": "repair",
+      "observe": {
+        "mismatch_count": 0,
+        "mismatches": [],
+        "outcome": "hunk_body_count_mismatch",
+        "reason_events": [
+          {
+            "file": "lib/benchmark/linear.go",
+            "reason": "file_creation_or_deletion",
+            "scope": "file"
+          },
+          {
+            "file": "lib/benchmark/linear.go",
+            "reason": "hunk_body_count_mismatch",
+            "scope": "hunk"
+          }
+        ]
+      },
+      "original_patch_chars": 1880,
+      "repair": {
+        "stage": "skipped_no_mismatches"
+      },
+      "repo": "gravitational/teleport",
+      "repo_context_status": "ready",
+      "verdict": "no_repair_needed"
+    },
+    {
+      "base_commit": "9dfb7c231f98a2d3bf48a99577d8a55cfdb2480b",
+      "instance_id": "instance_tutao__tutanota-219bc8f05d7b980e038bc1524cb021bf56397a1b-vee878bb72091875e912c52fc32bc60ec3760227b",
+      "mismatch_count_before_repair": 1,
+      "mode": "repair",
+      "observe": {
+        "mismatch_count": 1,
+        "mismatches": [
+          {
+            "file": "src/api/worker/EventBusClient.ts",
+            "hunk_index": 2,
+            "kind": "content_mismatch",
+            "match_ratio": 0.020802377414561663,
+            "old_count": 10,
+            "old_start": 40
+          }
+        ],
+        "outcome": "hunk_body_count_mismatch",
+        "reason_events": [
+          {
+            "file": "src/api/worker/EventBusClient.ts",
+            "reason": "hunk_body_count_mismatch",
+            "scope": "hunk"
+          },
+          {
+            "file": "src/api/worker/EventBusClient.ts",
+            "reason": "hunk_body_count_mismatch",
+            "scope": "hunk"
+          },
+          {
+            "file": "src/api/worker/EventBusClient.ts",
+            "reason": "content_mismatch",
+            "scope": "hunk"
+          }
+        ]
+      },
+      "original_patch_chars": 3006,
+      "repair": {
+        "new_patch_chars": 3006,
+        "patch_unchanged": true,
+        "stage": "verifier_repair_empty"
+      },
+      "repo": "tutao/tutanota",
+      "repo_context_status": "ready",
+      "verdict": "verifier_repair_empty"
+    },
+    {
+      "base_commit": "a3e1a666b876e0b3ccbb5284dd826c8c90c113b4",
+      "instance_id": "instance_NodeBB__NodeBB-76c6e30282906ac664f2c9278fc90999b27b1f48-vd59a5728dfc977f44533186ace531248c2917516",
+      "mismatch_count_before_repair": 0,
+      "mode": "repair",
+      "observe": {
+        "mismatch_count": 0,
+        "mismatches": [],
+        "outcome": "hunk_body_count_mismatch",
+        "reason_events": [
+          {
+            "file": "src/plugins/index.js",
+            "reason": "hunk_body_count_mismatch",
+            "scope": "hunk"
+          },
+          {
+            "file": "src/plugins/index.js",
+            "reason": "hunk_body_count_mismatch",
+            "scope": "hunk"
+          }
+        ]
+      },
+      "original_patch_chars": 1195,
+      "repair": {
+        "stage": "skipped_no_mismatches"
+      },
+      "repo": "NodeBB/NodeBB",
+      "repo_context_status": "ready",
+      "verdict": "no_repair_needed"
+    },
+    {
+      "base_commit": "d9e1c91e933cf66ec9660231f9e19f66bb8e58e1",
+      "instance_id": "instance_tutao__tutanota-db90ac26ab78addf72a8efaff3c7acc0fbd6d000-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf",
+      "mismatch_count_after_repair": 4,
+      "mismatch_count_before_repair": 4,
+      "mode": "repair",
+      "observe": {
+        "mismatch_count": 4,
+        "mismatches": [
+          {
+            "file": "src/app/controllers/loginController.ts",
+            "hunk_index": 0,
+            "kind": "file_missing",
+            "match_ratio": 0.0,
+            "old_count": 5,
+            "old_start": 1
+          },
+          {
+            "file": "src/app/controllers/loginController.ts",
+            "hunk_index": 1,
+            "kind": "file_missing",
+            "match_ratio": 0.0,
+            "old_count": 7,
+            "old_start": 12
+          },
+          {
+            "file": "src/app/controllers/loginController.ts",
+            "hunk_index": 2,
+            "kind": "file_missing",
+            "match_ratio": 0.0,
+            "old_count": 7,
+            "old_start": 20
+          },
+          {
+            "file": "src/app/controllers/loginController.ts",
+            "hunk_index": 3,
+            "kind": "file_missing",
+            "match_ratio": 0.0,
+            "old_count": 6,
+            "old_start": 30
+          }
+        ],
+        "outcome": "file_missing",
+        "reason_events": [
+          {
+            "file": "src/app/controllers/loginController.ts",
+            "reason": "file_missing",
+            "scope": "hunk"
+          },
+          {
+            "file": "src/app/controllers/loginController.ts",
+            "reason": "file_missing",
+            "scope": "hunk"
+          },
+          {
+            "file": "src/app/controllers/loginController.ts",
+            "reason": "file_missing",
+            "scope": "hunk"
+          },
+          {
+            "file": "src/app/controllers/loginController.ts",
+            "reason": "file_missing",
+            "scope": "hunk"
+          }
+        ]
+      },
+      "original_patch_chars": 1574,
+      "post_repair": {
+        "mismatch_count": 4,
+        "mismatches": [
+          {
+            "file": "src/controllers/loginController.ts",
+            "hunk_index": 0,
+            "kind": "file_missing",
+            "match_ratio": 0.0,
+            "old_count": 5,
+            "old_start": 1
+          },
+          {
+            "file": "src/controllers/loginController.ts",
+            "hunk_index": 1,
+            "kind": "file_missing",
+            "match_ratio": 0.0,
+            "old_count": 7,
+            "old_start": 12
+          },
+          {
+            "file": "src/controllers/loginController.ts",
+            "hunk_index": 2,
+            "kind": "file_missing",
+            "match_ratio": 0.0,
+            "old_count": 7,
+            "old_start": 20
+          },
+          {
+            "file": "src/controllers/loginController.ts",
+            "hunk_index": 3,
+            "kind": "file_missing",
+            "match_ratio": 0.0,
+            "old_count": 6,
+            "old_start": 30
+          }
+        ],
+        "outcome": "file_missing",
+        "reason_events": [
+          {
+            "file": "src/controllers/loginController.ts",
+            "reason": "file_missing",
+            "scope": "hunk"
+          },
+          {
+            "file": "src/controllers/loginController.ts",
+            "reason": "file_missing",
+            "scope": "hunk"
+          },
+          {
+            "file": "src/controllers/loginController.ts",
+            "reason": "file_missing",
+            "scope": "hunk"
+          },
+          {
+            "file": "src/controllers/loginController.ts",
+            "reason": "file_missing",
+            "scope": "hunk"
+          }
+        ]
+      },
+      "repair": {
+        "new_patch_chars": 1558,
+        "patch_unchanged": false,
+        "stage": "verifier_repair"
+      },
+      "repaired_patch": "diff --git a/src/controllers/loginController.ts b/src/controllers/loginController.ts\n--- a/src/controllers/loginController.ts\n+++ b/src/controllers/loginController.ts\n@@ -1,5 +1,6 @@\n import { Credentials } from '../models/credentials';\n import { LoginService } from '../services/loginService';\n+import { SessionData } from '../models/sessionData';\n import { User } from '../models/user';\n import { UserDataService } from '../services/userDataService';\n import { UserLoginData } from '../models/userLoginData';\n@@ -12,7 +13,7 @@\n   constructor(private loginService: LoginService, private userDataService: UserDataService) {}\n \n   /**\n-   * Creates a new session for the given user login data.\n+   * Creates a new session for the given user login data, returning comprehensive session data.\n    * @param userLoginData The user login data.\n    * @returns The credentials of the created session.\n    */\n@@ -20,7 +21,7 @@\n     userLoginData: UserLoginData,\n     rememberMe: boolean,\n     existingDbKey?: string\n-  ): Promise<Credentials> {\n+  ): Promise<SessionData> {\n     const credentials = await this.loginService.login(userLoginData);\n     const user = await this.userDataService.getUser(credentials.userId);\n \n@@ -30,6 +31,10 @@\n       user.setRememberMe(rememberMe);\n     }\n \n-    return credentials;\n+    return {\n+      credentials: credentials,\n+      dbKey: existingDbKey || credentials.dbKey, // Reuse existingDbKey if provided, otherwise use the one from credentials\n+      // Add other session metadata here if needed in the future\n+    };\n   }\n }\n",
+      "repo": "tutao/tutanota",
+      "repo_context_status": "ready",
+      "verdict": "repair_did_not_reduce_mismatches"
+    }
+  ],
+  "run_dir": "docs\\benchmarks\\2026-05-11-canary-patch-focused-prompt-profile\\run",
+  "schema_version": "diff_verifier_repair_ablation_v1",
+  "tasks_with_post_repair_count": 2,
+  "total_mismatches_after_repair": 5,
+  "total_mismatches_before": 6,
+  "verdict_tally": {
+    "no_repair_needed": 2,
+    "repair_did_not_reduce_mismatches": 2,
+    "verifier_repair_empty": 1
+  }
+}

