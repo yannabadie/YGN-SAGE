@@ -691,6 +691,181 @@ def _event_audit_from_file(events_path: Path) -> dict[str, Any]:
     }
 
 
+# ── Slice 10A topology / control-surface audit (cgpro VERIFY RF#C MODIFY) ──
+# Captures the topology selection rationale + control-surface
+# completeness markers so paired-reruns can attribute outcomes to
+# prompt/profile changes vs bandit-Thompson noise. Does NOT alter
+# any runtime contract — pure event-log post-processing.
+
+_SENTINEL_MARKER_RUNTIME = "[sage: agent exited after"
+
+
+def _topology_audit_from_file(events_path: Path) -> dict[str, Any]:
+    """Extract topology + per-node + routing-vs-execution + oracle +
+    control-surface metadata from a per-task events.jsonl.
+
+    All fields are derived from events that already exist; this
+    function does not add new event types or runtime behavior.
+    """
+    if not events_path.is_file():
+        return {
+            "topology_template": None,
+            "topology_id": None,
+            "node_count": None,
+            "edge_count": None,
+            "routing_model_id": None,
+            "routing_confidence": None,
+            "routing_source": None,
+            "routing_system": None,
+            "routing_domain": None,
+            "nodes": [],
+            "oracle": None,
+            "control_surface": {
+                "routing_decision_emitted": False,
+                "topology_selected_emitted": False,
+                "model_assigned_for_all_nodes": False,
+                "oracle_verdict_emitted": False,
+                "cli_complete_emitted": False,
+            },
+            "provider_policy_substitution_detected": False,
+        }
+
+    topology_template = None
+    topology_id = None
+    node_count = None
+    edge_count = None
+    routing_model_id = None
+    routing_confidence = None
+    routing_source = None
+    routing_system = None
+    routing_domain = None
+
+    nodes_by_id: dict[str, dict[str, Any]] = {}
+
+    oracle_payload: dict[str, Any] | None = None
+
+    has_routing = False
+    has_topology = False
+    has_oracle = False
+    has_cli_complete = False
+
+    with events_path.open(encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            ev_type = event.get("event_type")
+
+            if ev_type == "routing_decision":
+                has_routing = True
+                routing_model_id = _event_value(event, "model_id")
+                routing_confidence = _event_value(event, "confidence")
+                routing_source = _event_value(event, "routing_source")
+                routing_system = _event_value(event, "system")
+                routing_domain = _event_value(event, "domain")
+
+            elif ev_type == "topology_selected":
+                has_topology = True
+                topology_template = _event_value(event, "template_type")
+                topology_id = _event_value(event, "topology_id")
+                node_count = _event_value(event, "node_count")
+                edge_count = _event_value(event, "edge_count")
+
+            elif ev_type == "model_assigned":
+                nid = str(_event_value(event, "node_id") or "")
+                if not nid:
+                    continue
+                node = nodes_by_id.setdefault(nid, {"node_id": nid})
+                node["assigned_role"] = _event_value(event, "node_role")
+                node["assigned_model_id"] = _event_value(event, "model_id")
+                node["assigned_provider_id"] = _event_value(event, "provider_id")
+
+            elif ev_type == "node_completed":
+                nid = str(_event_value(event, "node_id") or "")
+                if not nid:
+                    continue
+                node = nodes_by_id.setdefault(nid, {"node_id": nid})
+                node["completed_role"] = _event_value(event, "node_role")
+                node["completed_model_id"] = _event_value(event, "model_id")
+                node["completed_provider_id"] = _event_value(event, "provider_id")
+                node["latency_ms"] = _event_value(event, "latency_ms")
+                node["cost_usd"] = _event_value(event, "cost_usd")
+                node["output_length"] = _event_value(event, "output_length")
+                # Sentinel detection: the runtime emits payload as a string
+                # in raw mode; if it matches the sentinel prefix, mark it.
+                payload = event.get("payload")
+                if isinstance(payload, str):
+                    node["is_sentinel"] = _SENTINEL_MARKER_RUNTIME in payload
+                else:
+                    node["is_sentinel"] = (node.get("output_length") or 0) <= 51
+
+            elif ev_type == "oracle_verdict":
+                has_oracle = True
+                payload = event.get("payload")
+                if isinstance(payload, dict):
+                    oracle_payload = {
+                        "trainable": payload.get("trainable"),
+                        "verdict_source": payload.get("verdict_source"),
+                        "quality_label": payload.get("quality_label"),
+                        "score": payload.get("score"),
+                        "reason_codes": payload.get("reason_codes"),
+                    }
+
+            elif ev_type == "cli_complete":
+                has_cli_complete = True
+
+    nodes_sorted = sorted(nodes_by_id.values(), key=lambda n: int(n.get("node_id", "0") or "0"))
+
+    # Provider-policy substitution: the routing layer picked one model,
+    # but the actual execution used different model(s). Per the
+    # slice 9 forensic finding, this happens silently — no dedicated
+    # event. Slice 10A surfaces it as a derived flag pending the
+    # full I-11 witness chain (10D).
+    substitution_detected = False
+    if routing_model_id:
+        executed_models = {
+            n.get("completed_model_id")
+            for n in nodes_by_id.values()
+            if isinstance(n.get("completed_model_id"), str)
+        }
+        if executed_models and routing_model_id not in executed_models:
+            substitution_detected = True
+
+    all_nodes_assigned = bool(
+        node_count is not None
+        and len(nodes_by_id) >= int(node_count)
+        and all("assigned_model_id" in n for n in nodes_by_id.values())
+    )
+
+    return {
+        "topology_template": topology_template,
+        "topology_id": topology_id,
+        "node_count": node_count,
+        "edge_count": edge_count,
+        "routing_model_id": routing_model_id,
+        "routing_confidence": routing_confidence,
+        "routing_source": routing_source,
+        "routing_system": routing_system,
+        "routing_domain": routing_domain,
+        "nodes": nodes_sorted,
+        "oracle": oracle_payload,
+        "control_surface": {
+            "routing_decision_emitted": has_routing,
+            "topology_selected_emitted": has_topology,
+            "model_assigned_for_all_nodes": all_nodes_assigned,
+            "oracle_verdict_emitted": has_oracle,
+            "cli_complete_emitted": has_cli_complete,
+        },
+        "provider_policy_substitution_detected": substitution_detected,
+    }
+
+
 # ── Synthetic patch generators (mock mode) ───────────────────────────────────
 
 
@@ -1596,6 +1771,10 @@ def _timeout_task_result(
             archived_trace_dir=None,
             expect_default_pipeline_learn=expect_default_pipeline_learn,
         ),
+        # Slice 10A: topology audit also stamped on the timeout path so
+        # paired-rerun analysis can compare timeout-vs-success runs at
+        # the same control-surface granularity.
+        "topology_audit": _topology_audit_from_file(per_task_events),
     }
     return {
         "summary": summary,
@@ -1799,6 +1978,10 @@ async def _run_one_task(
                 "failure_reason": repo_context["failure_reason"],
             },
             "prompt_metadata": prompt_metadata,
+            # Slice 10A (RF#C MODIFY): topology + control-surface audit
+            # so paired-reruns can attribute outcomes to prompt/profile
+            # vs bandit-Thompson noise. NOT making topology deterministic.
+            "topology_audit": _topology_audit_from_file(per_task_events),
         }
 
     record = fmt_module.format_patch(instance_id, patch, prefix=prefix)
