@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -283,82 +281,17 @@ class AgentSystem:
         await self._persist_memory()
         return result, frame
 
-    def _record_topology_outcome(self, task: str, result: str, topology_result: Any, bandit_decision: Any = None, run_start: float = 0.0) -> None:
-        """Record outcome into topology engine's learning loop (S-MMU + MAP-Elites)."""
-        if not self.topology_engine or topology_result is None:
-            return
-        try:
-            # Estimate quality from result — returns float or None (abstain)
-            from sage.quality_estimator import QualityEstimator  # noqa: E402
-            _qe = QualityEstimator()
-            quality = _qe.estimate(
-                task, result, latency_ms=(time.perf_counter() - run_start) * 1000,
-            )
-            cost = self.agent_loop.total_cost_usd
-            latency_ms = (time.perf_counter() - run_start) * 1000
-
-            # P1.5 (2026-04-22 audit remediation): when quality is unknown
-            # (QualityEstimator abstains), the bandit / MAP-Elites / router
-            # now ABSTAIN from recording instead of injecting a fabricated
-            # 0.5 reward. Pre-fix behaviour contaminated Thompson posteriors
-            # with non-evidence and let the learner drift toward the
-            # evaluator's blind spots (audit AUDIT2 §4, AUDIT3#5).
-            if quality is None:
-                _log.info(
-                    "Topology outcome: quality=None — abstaining from bandit/archive/router update"
-                )
-                return
-
-            # Extract keywords from task
-            keywords = list(set(
-                w.lower() for w in re.findall(r'\b\w{4,}\b', task)
-            ))[:10]
-
-            topology_id = topology_result.topology.id
-            # Compute real embedding for S-MMU record
-            outcome_embedding = None
-            try:
-                from sage.memory.embedder import Embedder
-                _emb = Embedder()
-                if _emb.is_semantic:
-                    outcome_embedding = _emb.embed(task[:500])
-            except (ImportError, RuntimeError):
-                pass
-            self.topology_engine.record_outcome(
-                topology_id,
-                task[:200],
-                keywords,
-                outcome_embedding,
-                quality,
-                cost,
-                latency_ms,
-            )
-            _log.info(
-                "Topology outcome recorded: id=%s, quality=%.2f, cost=%.4f, latency=%.0fms",
-                topology_id, quality, cost, latency_ms,
-            )
-
-            # Update bandit posteriors
-            if self.bandit and bandit_decision is not None:
-                try:
-                    self.bandit.record(
-                        bandit_decision.decision_id, quality, cost, latency_ms,
-                    )
-                except (ImportError, RuntimeError) as e2:
-                    _log.warning("Bandit outcome recording failed (%s)", e2)
-
-            # Feed telemetry back to SystemRouter
-            if self.rust_router and hasattr(self.rust_router, 'record_outcome'):
-                try:
-                    _decision = getattr(self, '_last_decision', None)
-                    self.rust_router.record_outcome(
-                        getattr(_decision, 'decision_id', ''),
-                        quality, cost, latency_ms,
-                    )
-                except (ImportError, RuntimeError) as e3:
-                    _log.debug("Router telemetry recording failed (%s)", e3)
-        except (ImportError, RuntimeError, ValueError) as e:
-            _log.warning("Topology outcome recording failed (%s)", e)
+    # Note (audit fix 2026-05-11, claim #39): the previous
+    # ``_record_topology_outcome`` method on AgentSystem has been
+    # REMOVED. It was only ever referenced inside ``boot.py`` itself
+    # (no call sites across the runtime) and the canonical learning
+    # path now lives in ``pipeline_v2/learn.py`` Stage 5, gated by the
+    # oracle verdict + bandit attribution + learning side-effect ledger
+    # (invariants 2, 6, 13 of ``docs/contracts/runtime-integrity-ledger.md``).
+    # A second, untested path here was a real risk of producing
+    # double-records or competing reward signals — exactly the trap
+    # the runtime ledger guards against. Deletion is safer than wiring
+    # an unverified second learning loop.
 
     async def _persist_memory(self) -> None:
         """Persist semantic and causal memory after a run."""
@@ -372,6 +305,21 @@ class AgentSystem:
                 self.agent_loop.causal_memory.save()
             except (IOError, OSError):
                 _log.warning("Failed to persist causal memory", exc_info=True)
+
+
+def _safe_subprocess_env() -> dict[str, str]:
+    """Module-level thin wrapper around ``sage.tools._env_safe.safe_subprocess_env``.
+
+    Audit fix 2026-05-11 (claim #41 of AUDIT/audit-checklist.md): the
+    previous in-function definition inside ``boot_agent_system()``
+    contradicted the comment "module-level thin wrapper" — making
+    ``from sage.boot import _safe_subprocess_env`` from tests / external
+    callers fail. Kept here at module top-level so the import contract
+    matches the comment.
+    """
+    from sage.tools._env_safe import safe_subprocess_env
+
+    return safe_subprocess_env()
 
 
 def boot_agent_system(
@@ -402,6 +350,14 @@ def boot_agent_system(
     set_current_tool_policy(ToolPolicy.from_environment())
 
     llm_tier = _resolve_boot_llm_tier(llm_tier)
+
+    # Audit fix 2026-05-11 (claim #37): normalize ``event_bus`` BEFORE
+    # the first downstream consumer (``init_tools``). The previous
+    # ordering passed a possibly-None ``event_bus`` into init_tools()
+    # — currently a no-op there, but a latent bug for any future change
+    # that starts using event_bus inside init_tools. Move the normalize
+    # to here so all downstream consumers see a real EventBus.
+    event_bus = event_bus or EventBus()
 
     # 1. LLM provider
     provider, llm_config = init_llm_provider(use_mock_llm, llm_tier)
@@ -448,8 +404,8 @@ def boot_agent_system(
         dangerous_tools=_read_truthy_env("SAGE_DANGEROUS_TOOLS", default=False),
     )
 
-    # Event bus (central nervous system)
-    event_bus = event_bus or EventBus()
+    # Event bus normalized above (audit fix #37 2026-05-11).
+    assert event_bus is not None
 
     # 6. Memory tiers
     # We need the agent loop first to wire memory into it, but we need memory_compressor
@@ -555,7 +511,6 @@ def boot_agent_system(
     #   their config. See sage.tools.typed_repo and
     #   docs/superpowers/specs/2026-04-22-safe-sandbox-redesign-spec.md.
     from sage.tools.base import Tool
-    from sage.tools._env_safe import safe_subprocess_env
     from sage.tools.typed_repo import create_typed_repo_tools
     from sage.llm.base import ToolDef
 
@@ -568,11 +523,6 @@ def boot_agent_system(
         )
     else:
         _log.info("Core tools: repo tools NOT registered (register_repo_tools=False)")
-
-    # Keep a module-level thin wrapper so existing imports (boot.py
-    # tests etc.) that used `_safe_subprocess_env` still work.
-    def _safe_subprocess_env() -> dict[str, str]:
-        return safe_subprocess_env()
 
     async def _execute_bash_handler(command: str, timeout: int = 30, **_kwargs) -> str:
         """Execute a bash command in a subprocess. Returns stdout+stderr.
