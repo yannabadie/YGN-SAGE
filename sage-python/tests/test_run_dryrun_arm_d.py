@@ -4,10 +4,15 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 _SCRIPT_PATH = (
     Path(__file__).parent.parent / "scripts" / "run_dryrun_arm_d.py"
@@ -1341,7 +1346,7 @@ def test_run_one_task_uses_swebench_template_prompt(monkeypatch, tmp_path) -> No
     captured_prompts: list[str] = []
 
     async def _capture_cli(prompt, *, budget_usd, output_events_path, tier,
-                          provider_allowlist=(), provider_denylist=()):
+                          provider_allowlist=(), provider_denylist=(), cwd=None):
         captured_prompts.append(prompt)
         output_events_path.parent.mkdir(parents=True, exist_ok=True)
         output_events_path.write_text("", encoding="utf-8")
@@ -1361,6 +1366,26 @@ def test_run_one_task_uses_swebench_template_prompt(monkeypatch, tmp_path) -> No
         }
 
     monkeypatch.setattr(arm_d, "_run_sage_cli", _capture_cli)
+    # Stub repo setup so the test doesn't try a real git clone over
+    # the network. Slice 8 path: _setup_repo_for_canary is called
+    # before the CLI subprocess; tests don't need a real checkout.
+    monkeypatch.setattr(
+        arm_d,
+        "_setup_repo_for_canary",
+        lambda inst: {
+            "repo_context_status": "ready",
+            "repo_dir": str(tmp_path / "fake_repo"),
+            "repo_url": f"https://github.com/{inst['repo']}.git",
+            "base_commit": inst["base_commit"],
+            "checkout_sha": inst["base_commit"],
+            "clone_elapsed_ms": 0,
+            "fetch_fallback_used": False,
+            "failure_reason": None,
+        },
+    )
+    monkeypatch.setattr(
+        arm_d, "_cleanup_repo_dir", lambda repo_dir, *, tmp_root=None: "removed"
+    )
 
     fmt_module = _FakeFormatModule()
 
@@ -1428,7 +1453,7 @@ def test_run_one_task_extracts_fenced_diff_via_swebench_extractor(
     )
 
     async def _fake_cli(prompt, *, budget_usd, output_events_path, tier,
-                       provider_allowlist=(), provider_denylist=()):
+                       provider_allowlist=(), provider_denylist=(), cwd=None):
         output_events_path.parent.mkdir(parents=True, exist_ok=True)
         output_events_path.write_text("", encoding="utf-8")
         return {
@@ -1447,6 +1472,23 @@ def test_run_one_task_extracts_fenced_diff_via_swebench_extractor(
         }
 
     monkeypatch.setattr(arm_d, "_run_sage_cli", _fake_cli)
+    monkeypatch.setattr(
+        arm_d,
+        "_setup_repo_for_canary",
+        lambda inst: {
+            "repo_context_status": "ready",
+            "repo_dir": str(tmp_path / "fake_repo"),
+            "repo_url": f"https://github.com/{inst['repo']}.git",
+            "base_commit": inst["base_commit"],
+            "checkout_sha": inst["base_commit"],
+            "clone_elapsed_ms": 0,
+            "fetch_fallback_used": False,
+            "failure_reason": None,
+        },
+    )
+    monkeypatch.setattr(
+        arm_d, "_cleanup_repo_dir", lambda repo_dir, *, tmp_root=None: "removed"
+    )
     fmt_module = _FakeFormatModule()
 
     result = asyncio.run(
@@ -1562,6 +1604,489 @@ def test_run_sage_cli_natural_eof_path_still_works(monkeypatch, tmp_path) -> Non
     assert created["proc"].terminated is False
     assert created["proc"].killed is False
     assert result["exit_code"] == 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Block `canary-real-repo-context` slice 8 (cgpro DESIGN 2026-05-11):
+# per-task repo checkout so SWE-bench Pro tools see real source.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class _FakeCompletedProcess:
+    """Stand-in for ``subprocess.CompletedProcess`` in unit tests."""
+
+    def __init__(self, returncode: int = 0, stdout: bytes = b"", stderr: bytes = b"") -> None:
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def _mock_subprocess_factory(script: list[Any]) -> Any:
+    """Build a fake ``subprocess.run`` from a list of return values.
+
+    Each script entry is one of:
+    - ``_FakeCompletedProcess`` — returned for the next call.
+    - ``"timeout"`` — raises ``subprocess.TimeoutExpired``.
+    - callable — invoked with the kwargs and must return a
+      ``_FakeCompletedProcess``.
+    """
+    calls: list[tuple[Any, ...]] = []
+    idx = [0]
+
+    def _fake_run(*args, **kwargs):  # type: ignore[no-untyped-def]
+        argv = args[0] if args else kwargs.get("args")
+        calls.append(tuple(argv))
+        if idx[0] >= len(script):
+            raise AssertionError(f"subprocess.run called more times than scripted: {argv}")
+        entry = script[idx[0]]
+        idx[0] += 1
+        if entry == "timeout":
+            raise subprocess.TimeoutExpired(cmd=argv, timeout=1)
+        if callable(entry):
+            return entry(*args, **kwargs)
+        return entry
+
+    return _fake_run, calls
+
+
+def test_setup_repo_for_canary_happy_path(monkeypatch, tmp_path) -> None:
+    """Shallow clone + detached checkout works first try → status=ready,
+    checkout_sha populated from rev-parse, no fetch fallback used.
+    """
+    script = [
+        _FakeCompletedProcess(0),                # clone
+        _FakeCompletedProcess(0),                # checkout --detach <base>
+        _FakeCompletedProcess(0, stdout=b"abc123def456\n"),  # rev-parse HEAD
+    ]
+    fake_run, calls = _mock_subprocess_factory(script)
+    monkeypatch.setattr(arm_d.subprocess, "run", fake_run)
+
+    instance = {
+        "instance_id": "x",
+        "repo": "owner/proj",
+        "base_commit": "abc123def456",
+    }
+    result = arm_d._setup_repo_for_canary(instance)
+
+    assert result["repo_context_status"] == "ready"
+    assert result["repo_url"] == "https://github.com/owner/proj.git"
+    assert result["base_commit"] == "abc123def456"
+    assert result["checkout_sha"] == "abc123def456"
+    assert result["fetch_fallback_used"] is False
+    assert result["repo_dir"] is not None
+    assert result["repo_dir"].endswith("proj") or "proj" in result["repo_dir"]
+    assert result["clone_elapsed_ms"] >= 0
+    assert result["failure_reason"] is None
+    # 3 subprocess calls: clone, checkout, rev-parse.
+    assert len(calls) == 3
+    assert calls[0][0] == "git" and "clone" in calls[0]
+    assert calls[1][0] == "git" and "checkout" in calls[1]
+    assert calls[2][0] == "git" and "rev-parse" in calls[2]
+
+    # Cleanup the tempdir the function created.
+    arm_d._cleanup_repo_dir(result["repo_dir"], tmp_root=os.path.dirname(result["repo_dir"]))
+
+
+def test_setup_repo_for_canary_fetch_fallback(monkeypatch, tmp_path) -> None:
+    """Shallow clone OK, first checkout fails (commit not in shallow
+    clone), fetch --depth 1 origin <base> succeeds, second checkout
+    succeeds → status=ready, fetch_fallback_used=True.
+    """
+    script = [
+        _FakeCompletedProcess(0),                # clone OK
+        _FakeCompletedProcess(1, stderr=b"unknown revision"),  # first checkout fails
+        _FakeCompletedProcess(0),                # fetch fallback OK
+        _FakeCompletedProcess(0),                # second checkout OK
+        _FakeCompletedProcess(0, stdout=b"deadbeef\n"),  # rev-parse
+    ]
+    fake_run, calls = _mock_subprocess_factory(script)
+    monkeypatch.setattr(arm_d.subprocess, "run", fake_run)
+
+    instance = {
+        "instance_id": "y",
+        "repo": "owner/proj",
+        "base_commit": "deadbeef",
+    }
+    result = arm_d._setup_repo_for_canary(instance)
+
+    assert result["repo_context_status"] == "ready"
+    assert result["fetch_fallback_used"] is True
+    assert result["checkout_sha"] == "deadbeef"
+    assert len(calls) == 5
+    assert "fetch" in calls[2]
+    arm_d._cleanup_repo_dir(result["repo_dir"], tmp_root=os.path.dirname(result["repo_dir"]))
+
+
+def test_setup_repo_for_canary_missing_inputs() -> None:
+    """No repo or no base_commit → status=missing_inputs, repo_dir=None,
+    no subprocess calls.
+    """
+    r1 = arm_d._setup_repo_for_canary({"instance_id": "z"})
+    assert r1["repo_context_status"] == "missing_inputs"
+    assert r1["repo_dir"] is None
+
+    r2 = arm_d._setup_repo_for_canary({"instance_id": "z", "repo": "x/y"})
+    assert r2["repo_context_status"] == "missing_inputs"
+    assert r2["repo_dir"] is None
+
+
+def test_setup_repo_for_canary_clone_failed(monkeypatch) -> None:
+    script = [_FakeCompletedProcess(128, stderr=b"could not resolve host")]
+    fake_run, _ = _mock_subprocess_factory(script)
+    monkeypatch.setattr(arm_d.subprocess, "run", fake_run)
+
+    result = arm_d._setup_repo_for_canary({
+        "instance_id": "z",
+        "repo": "ghost/repo",
+        "base_commit": "abc",
+    })
+    assert result["repo_context_status"] == "clone_failed"
+    assert "could not resolve host" in (result["failure_reason"] or "")
+    assert result["repo_dir"] is None
+
+
+def test_setup_repo_for_canary_fetch_failed(monkeypatch) -> None:
+    """Clone OK, checkout fails, fetch also fails → status=fetch_failed."""
+    script = [
+        _FakeCompletedProcess(0),                # clone OK
+        _FakeCompletedProcess(1, stderr=b"unknown revision"),  # checkout fails
+        _FakeCompletedProcess(128, stderr=b"object not found upstream"),  # fetch fails
+    ]
+    fake_run, _ = _mock_subprocess_factory(script)
+    monkeypatch.setattr(arm_d.subprocess, "run", fake_run)
+
+    result = arm_d._setup_repo_for_canary({
+        "instance_id": "z",
+        "repo": "x/y",
+        "base_commit": "abc",
+    })
+    assert result["repo_context_status"] == "fetch_failed"
+    assert result["fetch_fallback_used"] is True
+
+
+def test_setup_repo_for_canary_timeout(monkeypatch) -> None:
+    """A timeout on any git step is caught and surfaced as status=timeout."""
+    script = ["timeout"]
+    fake_run, _ = _mock_subprocess_factory(script)
+    monkeypatch.setattr(arm_d.subprocess, "run", fake_run)
+
+    result = arm_d._setup_repo_for_canary({
+        "instance_id": "z",
+        "repo": "x/y",
+        "base_commit": "abc",
+    })
+    assert result["repo_context_status"] == "timeout"
+
+
+def test_cleanup_repo_dir_removes_tree(tmp_path) -> None:
+    """Cleanup removes the tempdir tree and drops it from the cleanup
+    registry. Subsequent atexit handler is then a no-op for that path.
+    """
+    real_tmp = tempfile.mkdtemp(prefix="sage_canary_repo_test_")
+    arm_d._CANARY_REPO_TMPDIRS.add(real_tmp)
+    # Drop a sentinel file so we can verify the directory existed.
+    Path(real_tmp, "marker.txt").write_text("x", encoding="utf-8")
+    assert os.path.exists(real_tmp)
+
+    status = arm_d._cleanup_repo_dir(
+        repo_dir=os.path.join(real_tmp, "sub"),
+        tmp_root=real_tmp,
+    )
+    assert status == "removed"
+    assert not os.path.exists(real_tmp)
+    assert real_tmp not in arm_d._CANARY_REPO_TMPDIRS
+
+
+def test_cleanup_repo_dir_handles_missing_path() -> None:
+    """Path does not exist → status=missing, no exception."""
+    status = arm_d._cleanup_repo_dir(None)
+    assert status == "missing"
+    status2 = arm_d._cleanup_repo_dir("/no/such/path/here", tmp_root="/no/such/path/here")
+    assert status2 == "missing"
+
+
+def test_run_one_task_passes_cwd_and_records_repo_context(
+    monkeypatch, tmp_path
+) -> None:
+    """End-to-end shape check: when repo setup succeeds, the canary
+    must pass ``cwd=repo_dir`` to ``_run_sage_cli`` AND record the
+    full repo_context block in the per-task summary.
+    """
+    instance = {
+        "instance_id": "test-cwd",
+        "repo": "owner/proj",
+        "base_commit": "abc123",
+        "problem_statement": "Bug in foo.",
+    }
+
+    captured_cwd: dict[str, Any] = {}
+
+    async def _fake_cli(prompt, *, budget_usd, output_events_path, tier,
+                       provider_allowlist=(), provider_denylist=(), cwd=None):
+        captured_cwd["value"] = cwd
+        output_events_path.parent.mkdir(parents=True, exist_ok=True)
+        output_events_path.write_text("", encoding="utf-8")
+        return {
+            "exit_code": 0,
+            "latency_ms": 100,
+            "final_result_payload": {"result": "diff --git a/x b/x\n+y\n"},
+            "cli_complete_payload": {
+                "outcome": "success",
+                "total_cost_usd": 0.0,
+                "trace_dir": str(tmp_path / "trace"),
+            },
+            "run_id": "RUN-Z",
+            "model_id_final": "fake-model",
+            "provider_final": "fake-provider",
+            "total_cost_usd": 0.0,
+        }
+
+    monkeypatch.setattr(arm_d, "_run_sage_cli", _fake_cli)
+
+    fake_repo_dir = str(tmp_path / "fake_repo_canary" / "proj")
+    cleanup_log: list[Any] = []
+
+    def _fake_setup(inst):
+        return {
+            "repo_context_status": "ready",
+            "repo_dir": fake_repo_dir,
+            "repo_url": "https://github.com/owner/proj.git",
+            "base_commit": "abc123",
+            "checkout_sha": "abc123",
+            "clone_elapsed_ms": 1234,
+            "fetch_fallback_used": False,
+            "failure_reason": None,
+        }
+
+    def _fake_cleanup(repo_dir, *, tmp_root=None):
+        cleanup_log.append((repo_dir, tmp_root))
+        return "removed"
+
+    monkeypatch.setattr(arm_d, "_setup_repo_for_canary", _fake_setup)
+    monkeypatch.setattr(arm_d, "_cleanup_repo_dir", _fake_cleanup)
+
+    result = asyncio.run(
+        arm_d._run_one_task(
+            instance,
+            tmp_path / "out",
+            mock=False,
+            budget_usd=5.0,
+            tier="budget",
+            provider_allowlist=("google",),
+            provider_denylist=("openai",),
+            prefix="test",
+            fmt_module=_FakeFormatModule(),
+            claim_default_pipeline_learning_evidence=False,
+            expect_default_pipeline_learn=False,
+        )
+    )
+
+    # cwd was forwarded to _run_sage_cli.
+    assert captured_cwd["value"] == fake_repo_dir
+    # Cleanup ran with the right tmp_root (parent of repo_dir).
+    assert len(cleanup_log) == 1
+    assert cleanup_log[0][0] == fake_repo_dir
+    assert cleanup_log[0][1] == os.path.dirname(fake_repo_dir)
+    # Per-task summary carries the full repo_context block.
+    summary = result["summary"]
+    rc = summary["repo_context"]
+    assert rc["status"] == "ready"
+    assert rc["repo_url"] == "https://github.com/owner/proj.git"
+    assert rc["base_commit"] == "abc123"
+    assert rc["checkout_sha"] == "abc123"
+    assert rc["clone_elapsed_ms"] == 1234
+    assert rc["fetch_fallback_used"] is False
+    assert rc["subprocess_cwd"] == fake_repo_dir
+    assert rc["repo_dir_cleanup_status"] == "removed"
+    assert rc["failure_reason"] is None
+    # Extracted patch lands in the record (proves end-to-end with cwd).
+    assert "diff --git" in result["record"]["patch"]
+
+
+def test_run_one_task_continues_when_repo_setup_fails(monkeypatch, tmp_path) -> None:
+    """Repo setup failure does NOT abort the task — the subprocess
+    still runs (from the inherited cwd) so the failure mode is
+    observable in the per-task events. The repo_context status
+    surfaces the failure for downstream gates.
+    """
+    instance = {
+        "instance_id": "fail",
+        "repo": "x/y",
+        "base_commit": "deadbeef",
+        "problem_statement": "Bug in bar.",
+    }
+
+    captured_cwd: dict[str, Any] = {"value": "<unset>"}
+
+    async def _fake_cli(prompt, *, budget_usd, output_events_path, tier,
+                       provider_allowlist=(), provider_denylist=(), cwd=None):
+        captured_cwd["value"] = cwd
+        output_events_path.parent.mkdir(parents=True, exist_ok=True)
+        output_events_path.write_text("", encoding="utf-8")
+        return {
+            "exit_code": 0,
+            "latency_ms": 50,
+            "final_result_payload": {"result": "no diff"},
+            "cli_complete_payload": {
+                "outcome": "success",
+                "total_cost_usd": 0.0,
+                "trace_dir": str(tmp_path / "trace"),
+            },
+            "run_id": "RUN-W",
+            "model_id_final": "fake",
+            "provider_final": "fake",
+            "total_cost_usd": 0.0,
+        }
+
+    monkeypatch.setattr(arm_d, "_run_sage_cli", _fake_cli)
+    monkeypatch.setattr(
+        arm_d,
+        "_setup_repo_for_canary",
+        lambda inst: {
+            "repo_context_status": "clone_failed",
+            "repo_dir": None,
+            "repo_url": "https://github.com/x/y.git",
+            "base_commit": "deadbeef",
+            "checkout_sha": None,
+            "clone_elapsed_ms": 30000,
+            "fetch_fallback_used": False,
+            "failure_reason": "git_clone_exit=128 stderr=could not resolve host",
+        },
+    )
+    monkeypatch.setattr(
+        arm_d, "_cleanup_repo_dir", lambda repo_dir, *, tmp_root=None: "missing"
+    )
+
+    result = asyncio.run(
+        arm_d._run_one_task(
+            instance,
+            tmp_path / "out",
+            mock=False,
+            budget_usd=5.0,
+            tier="budget",
+            provider_allowlist=("google",),
+            provider_denylist=("openai",),
+            prefix="test",
+            fmt_module=_FakeFormatModule(),
+            claim_default_pipeline_learning_evidence=False,
+            expect_default_pipeline_learn=False,
+        )
+    )
+
+    # cwd=None means the subprocess inherits Python's cwd (YGN repo root).
+    assert captured_cwd["value"] is None
+    rc = result["summary"]["repo_context"]
+    assert rc["status"] == "clone_failed"
+    # The stub does NOT simulate a tmp_root (real
+    # _setup_repo_for_canary would record one even on clone failure),
+    # so the canary has nothing to clean. ``not_attempted`` is the
+    # correct downstream status for that input shape.
+    assert rc["repo_dir_cleanup_status"] == "not_attempted"
+    assert "could not resolve host" in (rc["failure_reason"] or "")
+    assert rc["subprocess_cwd"] is None
+
+
+def test_setup_repo_for_canary_real_git_fixture(tmp_path) -> None:
+    """Real-git end-to-end smoke. Creates a local git repo with two
+    commits + a clone-source bare repo, then asks
+    ``_setup_repo_for_canary`` to clone & check out the older commit
+    (which is NOT in a shallow clone of HEAD → forces fetch fallback).
+    Skipped if git is not on PATH (e.g. sandboxed CI without git).
+    """
+    if shutil.which("git") is None:
+        pytest.skip("git not installed; skip real-git fixture")
+
+    upstream = tmp_path / "upstream"
+    upstream.mkdir()
+    git_env = {"GIT_CONFIG_NOSYSTEM": "1", "HOME": str(tmp_path), **os.environ}
+
+    def _g(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["git", *args],
+            cwd=str(upstream),
+            capture_output=True,
+            check=True,
+            env=git_env,
+            timeout=60,
+        )
+
+    subprocess.run(
+        ["git", "init", "-b", "main", str(upstream)],
+        check=True, capture_output=True, env=git_env, timeout=30,
+    )
+    _g("config", "user.email", "test@example.com")
+    _g("config", "user.name", "test")
+    (upstream / "file1.txt").write_text("v1", encoding="utf-8")
+    _g("add", "file1.txt")
+    _g("commit", "-m", "first")
+    commit1 = (
+        subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(upstream),
+            env=git_env,
+            timeout=10,
+        )
+        .decode("utf-8")
+        .strip()
+    )
+    (upstream / "file2.txt").write_text("v2", encoding="utf-8")
+    _g("add", "file2.txt")
+    _g("commit", "-m", "second")
+    commit2 = (
+        subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(upstream),
+            env=git_env,
+            timeout=10,
+        )
+        .decode("utf-8")
+        .strip()
+    )
+    assert commit1 != commit2
+
+    # Patch the URL builder to point at the file:// upstream so
+    # _setup_repo_for_canary can clone without network. We do this by
+    # rewriting the instance dict's ``repo`` to a value that produces
+    # the right URL — easier: monkeypatch the f-string composition via
+    # an env var would be intrusive; instead we expose the file URL
+    # through a closure over subprocess.run.
+    file_url = (upstream.resolve().as_uri())
+
+    real_run = subprocess.run
+
+    def _rewriting_run(*args, **kwargs):
+        argv = list(args[0]) if args else list(kwargs.get("args") or [])
+        if argv and argv[0] == "git" and len(argv) >= 5 and "clone" in argv:
+            # Replace the github.com URL with our local file:// URL.
+            for i, a in enumerate(argv):
+                if isinstance(a, str) and a.startswith("https://github.com/"):
+                    argv[i] = file_url
+                    break
+            if args:
+                args = (argv, *args[1:])
+            else:
+                kwargs["args"] = argv
+        return real_run(*args, **kwargs)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(arm_d.subprocess, "run", _rewriting_run)
+
+        result = arm_d._setup_repo_for_canary({
+            "instance_id": "fixture",
+            "repo": "fake/fixture",  # rewritten by _rewriting_run
+            "base_commit": commit1,  # OLDER commit → likely needs fetch fallback
+        })
+
+    assert result["repo_context_status"] == "ready", result
+    assert result["checkout_sha"] == commit1
+    # Either the shallow clone happened to include commit1 (small repo
+    # — sometimes git includes both), or we used the fetch fallback.
+    # Both are valid; the contract is "checkout_sha == base_commit".
+    assert result["fetch_fallback_used"] in (True, False)
+    assert os.path.isdir(result["repo_dir"])
+    assert (Path(result["repo_dir"]) / "file1.txt").read_text(encoding="utf-8") == "v1"
+
+    arm_d._cleanup_repo_dir(result["repo_dir"], tmp_root=os.path.dirname(result["repo_dir"]))
 
 
 def test_cli_explicit_task_timeout_marks_profile_override(monkeypatch, tmp_path) -> None:

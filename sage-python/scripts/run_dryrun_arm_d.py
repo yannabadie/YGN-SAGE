@@ -62,6 +62,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -78,6 +79,284 @@ from sage.bench.swebench_bench import _extract_patch as _swebench_extract_patch
 from sage.input.swebench import normalize_swebench, render_swebench_prompt
 
 log = logging.getLogger("sage.bench.run_dryrun_arm_d")
+
+# ── Slice 8 / `canary-real-repo-context` (cgpro DESIGN 2026-05-11) ──
+# After slice 7 still produced 0/5 patches, root cause shifted: the
+# SWEBENCH_SYSTEM_TEMPLATE mandates ≥3 tool calls against the working
+# directory before the agent emits a patch. The canary subprocess
+# inherited the YGN repo root as CWD (no per-task checkout), so
+# read_file / search_repo / list_files / run_tests all failed and the
+# agent exhausted its step budget with the EMPTY_STEP_SENTINEL.
+#
+# Slice 8 clones each SWE-bench Pro instance's repo at base_commit into
+# a per-task tempdir and launches the sage CLI subprocess with
+# cwd=repo_dir so the tools see real source. Cleanup runs in
+# try/finally per task, plus an atexit registry catches any leftovers
+# from interrupted runs.
+
+# Module-level registry of tempdirs the canary created. Populated by
+# _setup_repo_for_canary, drained by _cleanup_repo_dir; anything still
+# present at process exit is removed by _atexit_cleanup_canary_repos
+# (registered once at import time below).
+_CANARY_REPO_TMPDIRS: set[str] = set()
+
+# Git CLI exit code budget. Shallow clone + checkout typically completes
+# in 10–60 s on a healthy network; a single big repo (e.g. ansible)
+# can push past 120 s. 180 s is a defensible upper bound for the
+# initial clone; 60 s is enough for the fetch fallback (since we only
+# fetch one specific commit at --depth 1).
+_GIT_CLONE_TIMEOUT_S = 180.0
+_GIT_FETCH_TIMEOUT_S = 120.0
+_GIT_CHECKOUT_TIMEOUT_S = 60.0
+
+
+def _atexit_cleanup_canary_repos() -> None:
+    """Remove every tempdir still listed at process exit.
+
+    Called once via ``atexit.register``. The try/finally inside
+    ``_run_one_task`` removes its tempdir under normal control flow;
+    this catches the interrupt case (SIGINT / unhandled exception
+    above the finally block / asyncio cancellation that bubbled past
+    cleanup).
+    """
+    for path in list(_CANARY_REPO_TMPDIRS):
+        try:
+            shutil.rmtree(path, ignore_errors=True)
+        except Exception:  # noqa: BLE001 — best-effort, atexit handler
+            pass
+        _CANARY_REPO_TMPDIRS.discard(path)
+
+
+import atexit  # noqa: E402  — registered immediately so any tempdir
+                #                survives an interrupted main()
+atexit.register(_atexit_cleanup_canary_repos)
+
+
+def _setup_repo_for_canary(instance: dict[str, Any]) -> dict[str, Any]:
+    """Clone ``instance.repo`` at ``instance.base_commit`` into a tempdir.
+
+    Returns a dict with the metadata the canary needs to record per
+    task:
+
+    - ``repo_context_status`` — "ready" on success, otherwise a
+      machine-readable failure tag.
+    - ``repo_dir`` — the tempdir path (or ``None`` on failure).
+    - ``repo_url`` — the GitHub URL the clone targeted.
+    - ``base_commit`` — echoed back from the instance dict.
+    - ``checkout_sha`` — what ``git rev-parse HEAD`` returns after the
+      checkout step (should equal ``base_commit`` on success).
+    - ``clone_elapsed_ms`` — wall-clock for the clone+checkout sequence.
+    - ``fetch_fallback_used`` — bool. ``True`` when the shallow clone
+      did not contain ``base_commit`` and we ran an explicit
+      ``git fetch --depth 1 origin <base_commit>``.
+    - ``failure_reason`` — populated on non-ready statuses.
+
+    The caller must pass ``repo_dir`` as ``cwd`` to the subprocess that
+    runs SAGE, and call ``_cleanup_repo_dir(repo_dir)`` in a finally.
+    """
+    repo = (instance.get("repo") or "").strip()
+    base_commit = (instance.get("base_commit") or "").strip()
+    metadata: dict[str, Any] = {
+        "repo_context_status": "missing_inputs",
+        "repo_dir": None,
+        # ``tmp_root`` is the ``mkdtemp`` prefix root. Kept in the
+        # metadata so the caller can always clean up even when the
+        # ``repo_dir`` (a subdirectory of tmp_root) was never created
+        # or got partially populated. ``None`` only when no tempdir
+        # was created (missing-inputs early-return below).
+        "tmp_root": None,
+        "repo_url": None,
+        "base_commit": base_commit or None,
+        "checkout_sha": None,
+        "clone_elapsed_ms": 0,
+        "fetch_fallback_used": False,
+        "failure_reason": None,
+    }
+    if not repo or not base_commit:
+        metadata["failure_reason"] = (
+            f"missing_inputs repo={repo!r} base_commit={base_commit!r}"
+        )
+        return metadata
+
+    repo_url = f"https://github.com/{repo}.git"
+    metadata["repo_url"] = repo_url
+
+    tmp_root = tempfile.mkdtemp(prefix="sage_canary_repo_")
+    _CANARY_REPO_TMPDIRS.add(tmp_root)
+    metadata["tmp_root"] = tmp_root
+    # Place the checkout inside the prefix dir so the dir's basename is
+    # readable for diagnostics if cleanup ever skips.
+    repo_dir = os.path.join(tmp_root, repo.split("/")[-1])
+
+    start = time.monotonic()
+    try:
+        clone = subprocess.run(  # noqa: S603 — git is trusted; args validated above
+            ["git", "clone", "--no-tags", "--depth", "1", repo_url, repo_dir],
+            capture_output=True,
+            timeout=_GIT_CLONE_TIMEOUT_S,
+            check=False,
+        )
+        if clone.returncode != 0:
+            metadata["repo_context_status"] = "clone_failed"
+            stderr_tail = (clone.stderr or b"").decode(
+                "utf-8", errors="replace"
+            )[-2000:]
+            metadata["failure_reason"] = f"git_clone_exit={clone.returncode} stderr={stderr_tail}"
+            return metadata
+
+        # Detached HEAD on the target commit. If the shallow clone does
+        # not contain it (commit older than the tip), git checkout
+        # exits non-zero and we run the fetch fallback.
+        checkout = subprocess.run(  # noqa: S603
+            ["git", "-C", repo_dir, "checkout", "--detach", base_commit],
+            capture_output=True,
+            timeout=_GIT_CHECKOUT_TIMEOUT_S,
+            check=False,
+        )
+        if checkout.returncode != 0:
+            metadata["fetch_fallback_used"] = True
+            fetch = subprocess.run(  # noqa: S603
+                ["git", "-C", repo_dir, "fetch", "--depth", "1", "origin", base_commit],
+                capture_output=True,
+                timeout=_GIT_FETCH_TIMEOUT_S,
+                check=False,
+            )
+            if fetch.returncode != 0:
+                metadata["repo_context_status"] = "fetch_failed"
+                stderr_tail = (fetch.stderr or b"").decode(
+                    "utf-8", errors="replace"
+                )[-2000:]
+                metadata["failure_reason"] = (
+                    f"git_fetch_exit={fetch.returncode} stderr={stderr_tail}"
+                )
+                return metadata
+            checkout2 = subprocess.run(  # noqa: S603
+                ["git", "-C", repo_dir, "checkout", "--detach", base_commit],
+                capture_output=True,
+                timeout=_GIT_CHECKOUT_TIMEOUT_S,
+                check=False,
+            )
+            if checkout2.returncode != 0:
+                metadata["repo_context_status"] = "checkout_failed"
+                stderr_tail = (checkout2.stderr or b"").decode(
+                    "utf-8", errors="replace"
+                )[-2000:]
+                metadata["failure_reason"] = (
+                    f"git_checkout_after_fetch_exit={checkout2.returncode} "
+                    f"stderr={stderr_tail}"
+                )
+                return metadata
+
+        # Verify what we actually checked out — drift here would be a
+        # serious silent bug.
+        head = subprocess.run(  # noqa: S603
+            ["git", "-C", repo_dir, "rev-parse", "HEAD"],
+            capture_output=True,
+            timeout=_GIT_CHECKOUT_TIMEOUT_S,
+            check=False,
+        )
+        if head.returncode != 0:
+            metadata["repo_context_status"] = "rev_parse_failed"
+            metadata["failure_reason"] = (
+                f"git_rev_parse_exit={head.returncode}"
+            )
+            return metadata
+        metadata["checkout_sha"] = head.stdout.decode("utf-8").strip()
+
+        metadata["repo_context_status"] = "ready"
+        metadata["repo_dir"] = repo_dir
+        return metadata
+    except subprocess.TimeoutExpired as exc:
+        metadata["repo_context_status"] = "timeout"
+        metadata["failure_reason"] = f"timeout cmd={exc.cmd[:3]!r}"
+        return metadata
+    except (OSError, FileNotFoundError) as exc:
+        metadata["repo_context_status"] = "os_error"
+        metadata["failure_reason"] = f"os_error {exc!r}"
+        return metadata
+    finally:
+        metadata["clone_elapsed_ms"] = int((time.monotonic() - start) * 1000)
+
+
+def _load_ygn_dotenv_into(env: dict[str, str]) -> int:
+    """Read ``<_REPO_ROOT>/.env`` and merge into ``env`` if absent.
+
+    Returns the count of keys loaded. Keys already present in ``env``
+    are NOT overwritten — the subprocess environment wins over the
+    on-disk file. No-op if the .env file does not exist.
+
+    Slice 8 follow-up (2026-05-11): with the canary now running each
+    subprocess in cwd=cloned_repo, python-dotenv's auto-discovery
+    (which walks UP from cwd) cannot find ``<YGN>/.env``. Pre-loading
+    here preserves the historical behavior where the subprocess
+    starts from the YGN repo root.
+    """
+    env_file = _REPO_ROOT / ".env"
+    if not env_file.is_file():
+        return 0
+    n_loaded = 0
+    try:
+        text = env_file.read_text(encoding="utf-8")
+    except OSError:
+        return 0
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        if not key or key in env:
+            continue
+        # Strip surrounding quotes (single or double) if present.
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        env[key] = value
+        n_loaded += 1
+    return n_loaded
+
+
+def _cleanup_repo_dir(repo_dir: str | None, *, tmp_root: str | None = None) -> str:
+    """Remove the tempdir tree and drop it from the cleanup registry.
+
+    Returns one of:
+    - ``"removed"`` on success
+    - ``"missing"`` when the path is ``None`` or does not exist
+    - ``"failed"`` when ``shutil.rmtree`` raised even with ignore_errors
+
+    The cleanup target is the tempdir prefix root (``tmp_root``), not
+    just the ``<repo>`` subdir, so we get the whole ``sage_canary_repo_*``
+    parent gone. When called with only ``repo_dir`` we infer the prefix
+    by climbing one level (the canonical layout placed by
+    ``_setup_repo_for_canary``).
+    """
+    candidate: str | None
+    if tmp_root is not None:
+        candidate = tmp_root
+    elif repo_dir:
+        candidate = os.path.dirname(repo_dir.rstrip(os.sep + "/"))
+    else:
+        candidate = None
+
+    if not candidate or not os.path.exists(candidate):
+        # Still drop from registry in case the tempdir was already
+        # cleaned by atexit on a prior interrupt.
+        if candidate is not None:
+            _CANARY_REPO_TMPDIRS.discard(candidate)
+        return "missing"
+
+    try:
+        shutil.rmtree(candidate, ignore_errors=True)
+        _CANARY_REPO_TMPDIRS.discard(candidate)
+        # ignore_errors=True can leave directories on Windows under
+        # readonly bits (.git/objects/...). Best-effort second pass.
+        if os.path.exists(candidate):
+            return "failed"
+        return "removed"
+    except OSError:
+        return "failed"
 
 # Default model when running in real mode. Per cgpro plan §"Models per
 # arm": cycle-13 main run forces SAGE_LLM_TIER=reasoner (Opus 4.7) for
@@ -348,6 +627,7 @@ async def _run_sage_cli(
     tier: str,
     provider_allowlist: tuple[str, ...] = (),
     provider_denylist: tuple[str, ...] = (),
+    cwd: str | Path | None = None,
 ) -> dict[str, Any]:
     """Invoke `python -m sage.cli run --jsonl` as subprocess.
 
@@ -369,6 +649,23 @@ async def _run_sage_cli(
         "cycle-13 E Tier 2.1 arm D smoke run; bypass disables atexit "
         "save so smokes do not pollute ~/.sage/ across consecutive runs")
     env.setdefault("SAGE_OPERATOR_ID", "ygn-sage-arm-d-smoke")
+    # Slice 8 follow-up #2: SAGE CLI default writes redacted payloads
+    # (``payload: None`` on stdout for runtime events). The canary
+    # needs the final_result payload to extract a unified diff — under
+    # the default, agent_output is always "" and the extractor always
+    # returns empty. SAGE_TRACE_RAW=1 keeps credential redaction but
+    # surfaces arbitrary text content so the canary can read the
+    # agent's output. Per sage-python/src/sage/runtime/event_log/
+    # writer.py:169 + redaction.py — credential-shaped patterns are
+    # still stripped before serialization.
+    env.setdefault("SAGE_TRACE_RAW", "1")
+    # Slice 8 follow-up: when ``cwd`` is set to a cloned repo (not the
+    # YGN root), python-dotenv auto-discovery inside sage cannot find
+    # ``<YGN>/.env`` because it walks UP from cwd. Pre-load YGN's .env
+    # into the subprocess env so API keys reach the sage CLI
+    # regardless of cwd. Existing entries in os.environ win, so this
+    # is a strict no-op when keys are already loaded.
+    _load_ygn_dotenv_into(env)
 
     cmd = [
         sys.executable, "-m", "sage.cli", "run", "--jsonl",
@@ -387,6 +684,7 @@ async def _run_sage_cli(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env=env,
+        cwd=str(cwd) if cwd is not None else None,
     )
 
     # Exercise the canonical inbound JSONL protocol, not the legacy
@@ -1211,23 +1509,61 @@ async def _run_one_task(
             newline="\n",
         )
     else:
+        # Slice 8 / `canary-real-repo-context` (cgpro DESIGN 2026-05-11):
+        # clone the instance's repo at base_commit and run the sage CLI
+        # subprocess with cwd=repo_dir so read_file / search_repo /
+        # list_files / run_tests resolve against the real source tree.
+        # Without this, the SWEBENCH_SYSTEM_TEMPLATE Mandatory Workflow
+        # (≥3 tool calls before emitting a patch) forces the agent to
+        # call tools that fail → step budget exhausted → EMPTY_STEP_SENTINEL.
+        repo_context = _setup_repo_for_canary(task)
+        repo_dir = repo_context.get("repo_dir")
+        # The tempdir prefix to clean up after the run is the
+        # ``mkdtemp`` root, kept in ``repo_context["tmp_root"]`` even
+        # when the clone/checkout failed and ``repo_dir`` is None.
+        # Fall back to deriving from repo_dir if tmp_root is absent
+        # (e.g. test stubs that don't simulate the full metadata).
+        tmp_root_to_clean = repo_context.get("tmp_root")
+        if tmp_root_to_clean is None and isinstance(repo_dir, str):
+            tmp_root_to_clean = os.path.dirname(repo_dir)
+
+        if repo_context.get("repo_context_status") != "ready":
+            log.warning(
+                "[%s] Repo context NOT ready (%s); subprocess will run "
+                "from YGN repo root and tools will likely fail. "
+                "Continuing so the failure is observable in events.",
+                instance_id,
+                repo_context.get("repo_context_status"),
+            )
+
         # Build the SWE-bench prompt: the canonical
         # ``SWEBENCH_SYSTEM_TEMPLATE`` (or the SEARCH/REPLACE variant
         # if ``SAGE_EMISSION_FORMAT=search-replace``). This is what
         # ``sage-python/src/sage/bench/swebench_bench.py`` ships for
-        # SWE-bench Lite generate-only runs. Without it the agent
-        # gets a bare problem_statement and returns reasoning text
-        # rather than a unified diff — confirmed empirically on the
-        # 2026-05-11 N=5 run (0/5 patches across 5 successful tasks).
+        # SWE-bench Lite generate-only runs.
         prompt = render_swebench_prompt(normalize_swebench(task))
-        cli_result = await _run_sage_cli(
-            prompt,
-            budget_usd=budget_usd,
-            output_events_path=per_task_events,
-            tier=tier,
-            provider_allowlist=provider_allowlist,
-            provider_denylist=provider_denylist,
+        cleanup_status = "not_attempted"
+        try:
+            cli_result = await _run_sage_cli(
+                prompt,
+                budget_usd=budget_usd,
+                output_events_path=per_task_events,
+                tier=tier,
+                provider_allowlist=provider_allowlist,
+                provider_denylist=provider_denylist,
+                cwd=repo_dir if isinstance(repo_dir, str) else None,
+            )
+        finally:
+            if tmp_root_to_clean is not None:
+                cleanup_status = _cleanup_repo_dir(
+                    repo_dir, tmp_root=tmp_root_to_clean
+                )
+        # Stamp final metadata on the repo_context record so it lands
+        # in the per-task summary verbatim.
+        repo_context["subprocess_cwd"] = (
+            repo_dir if isinstance(repo_dir, str) else None
         )
+        repo_context["repo_dir_cleanup_status"] = cleanup_status
 
         # Extract patch from final_result
         agent_output = ""
@@ -1306,6 +1642,17 @@ async def _run_one_task(
             "_diff_verifier_outcome": None,
             "stderr_chars": len(cli_result.get("stderr", "")),
             "learning_evidence_boundary": learning_evidence,
+            "repo_context": {
+                "status": repo_context["repo_context_status"],
+                "repo_url": repo_context["repo_url"],
+                "base_commit": repo_context["base_commit"],
+                "checkout_sha": repo_context["checkout_sha"],
+                "clone_elapsed_ms": repo_context["clone_elapsed_ms"],
+                "fetch_fallback_used": repo_context["fetch_fallback_used"],
+                "subprocess_cwd": repo_context.get("subprocess_cwd"),
+                "repo_dir_cleanup_status": repo_context.get("repo_dir_cleanup_status"),
+                "failure_reason": repo_context["failure_reason"],
+            },
         }
 
     record = fmt_module.format_patch(instance_id, patch, prefix=prefix)
