@@ -1,0 +1,451 @@
+{
+  "run_started_at_utc": "2026-05-11T11:14:01.702527+00:00",
+  "run_ended_at_utc": "2026-05-11T11:37:58.192875+00:00",
+  "mode": "real",
+  "tier": "budget",
+  "tasks_run": 5,
+  "tasks_in_set": 10,
+  "cumulative_cost_usd": 0.806092714527933,
+  "cumulative_latency_ms": 1296022,
+  "budget": {
+    "budget_usd_per_task": 5.0,
+    "global_budget_usd": 25.0,
+    "task_timeout_s": 900.0,
+    "effective_profile": "graded_patch_generation",
+    "profile_timeout_default_s": 900.0,
+    "profile_timeout_override": false,
+    "stop_reasons": []
+  },
+  "prompt": {
+    "swebench_prompt_profile": "patch_focused",
+    "topology_override_used": false,
+    "system_hint_forced": false
+  },
+  "predictions_path": "predictions.json",
+  "predictions_jsonl_path": "predictions.jsonl",
+  "events_path": "events.jsonl",
+  "per_task_dir": "per_task/",
+  "patches_extracted": 5,
+  "patches_empty": 0,
+  "task_summaries": [
+    {
+      "instance_id": "instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858",
+      "exit_code": 1,
+      "latency_ms": 221875,
+      "total_cost_usd": 0.1635181059421217,
+      "extracted_patch_present": true,
+      "extracted_patch_chars": 1145,
+      "mock": false,
+      "timeout": false,
+      "events_path": "per_task\\instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858.events.jsonl",
+      "model_id_final": "gemini-2.5-flash",
+      "provider_final": "google",
+      "_observed_model_ids": [
+        "deepseek-v4-pro",
+        "gemini-2.5-flash",
+        "gemini-3-flash-preview",
+        "gpt-5.4-pro"
+      ],
+      "_observed_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_assigned_model_ids": [
+        "deepseek-v4-pro",
+        "gemini-2.5-flash",
+        "gemini-3-flash-preview"
+      ],
+      "_assigned_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_execution_model_ids": [
+        "deepseek-v4-pro",
+        "gemini-2.5-flash",
+        "gemini-3-flash-preview"
+      ],
+      "_execution_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_provider_policy_failure_seen": false,
+      "_observed_event_cost_usd": 0.1635181059421217,
+      "_verifier_repair_budget_usd": null,
+      "_diff_verifier_mismatches": null,
+      "_diff_verifier_outcome": null,
+      "stderr_chars": 1621,
+      "learning_evidence_boundary": {
+        "claimed": false,
+        "status": "skipped",
+        "reason_code": "not_claimed"
+      },
+      "repo_context": {
+        "status": "ready",
+        "repo_url": "https://github.com/protonmail/webclients.git",
+        "base_commit": "373580e2fc209cdf010f5f14d08bed546adb8a92",
+        "checkout_sha": "373580e2fc209cdf010f5f14d08bed546adb8a92",
+        "clone_elapsed_ms": 63011,
+        "fetch_fallback_used": true,
+        "subprocess_cwd": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_canary_repo_l3o91h4i\\webclients",
+        "repo_dir_cleanup_status": "failed",
+        "failure_reason": null
+      },
+      "prompt_metadata": {
+        "prompt_profile": "patch_focused",
+        "prompt_sha256": "f6c9d8d54fe1a45c6a79f3287620fffa7decc02747c3bc5d4fa6d157d178ec78",
+        "topology_override_used": false,
+        "system_hint_forced": false
+      }
+    },
+    {
+      "instance_id": "instance_gravitational__teleport-6eaaf3a27e64f4ef4ef855bd35d7ec338cf17460-v626ec2a48416b10a88641359a169d99e935ff037",
+      "exit_code": 1,
+      "latency_ms": 338432,
+      "total_cost_usd": 0.1486568858188698,
+      "extracted_patch_present": true,
+      "extracted_patch_chars": 1880,
+      "mock": false,
+      "timeout": false,
+      "events_path": "per_task\\instance_gravitational__teleport-6eaaf3a27e64f4ef4ef855bd35d7ec338cf17460-v626ec2a48416b10a88641359a169d99e935ff037.events.jsonl",
+      "model_id_final": "gemini-2.5-flash",
+      "provider_final": "google",
+      "_observed_model_ids": [
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
+        "gemini-2.5-flash",
+        "gpt-5.4-pro"
+      ],
+      "_observed_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_assigned_model_ids": [
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
+        "gemini-2.5-flash"
+      ],
+      "_assigned_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_execution_model_ids": [
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
+        "gemini-2.5-flash"
+      ],
+      "_execution_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_provider_policy_failure_seen": false,
+      "_observed_event_cost_usd": 0.1486568858188698,
+      "_verifier_repair_budget_usd": null,
+      "_diff_verifier_mismatches": null,
+      "_diff_verifier_outcome": null,
+      "stderr_chars": 3997,
+      "learning_evidence_boundary": {
+        "claimed": false,
+        "status": "skipped",
+        "reason_code": "not_claimed"
+      },
+      "repo_context": {
+        "status": "ready",
+        "repo_url": "https://github.com/gravitational/teleport.git",
+        "base_commit": "a51596d8d779935e1dfa8d0fabce39d9edd91457",
+        "checkout_sha": "a51596d8d779935e1dfa8d0fabce39d9edd91457",
+        "clone_elapsed_ms": 39333,
+        "fetch_fallback_used": true,
+        "subprocess_cwd": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_canary_repo_ipxij2bn\\teleport",
+        "repo_dir_cleanup_status": "failed",
+        "failure_reason": null
+      },
+      "prompt_metadata": {
+        "prompt_profile": "patch_focused",
+        "prompt_sha256": "c7d3524d59d855200c84c9b75efd0cffd3f2731c15d49d548c0ca47b3f3d5cae",
+        "topology_override_used": false,
+        "system_hint_forced": false
+      }
+    },
+    {
+      "instance_id": "instance_tutao__tutanota-219bc8f05d7b980e038bc1524cb021bf56397a1b-vee878bb72091875e912c52fc32bc60ec3760227b",
+      "exit_code": 1,
+      "latency_ms": 272191,
+      "total_cost_usd": 0.11773798566949459,
+      "extracted_patch_present": true,
+      "extracted_patch_chars": 3006,
+      "mock": false,
+      "timeout": false,
+      "events_path": "per_task\\instance_tutao__tutanota-219bc8f05d7b980e038bc1524cb021bf56397a1b-vee878bb72091875e912c52fc32bc60ec3760227b.events.jsonl",
+      "model_id_final": "gemini-2.5-flash",
+      "provider_final": "google",
+      "_observed_model_ids": [
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
+        "gemini-2.5-flash",
+        "gpt-5.4-pro"
+      ],
+      "_observed_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_assigned_model_ids": [
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
+        "gemini-2.5-flash"
+      ],
+      "_assigned_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_execution_model_ids": [
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
+        "gemini-2.5-flash"
+      ],
+      "_execution_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_provider_policy_failure_seen": false,
+      "_observed_event_cost_usd": 0.11773798566949459,
+      "_verifier_repair_budget_usd": null,
+      "_diff_verifier_mismatches": null,
+      "_diff_verifier_outcome": null,
+      "stderr_chars": 3167,
+      "learning_evidence_boundary": {
+        "claimed": false,
+        "status": "skipped",
+        "reason_code": "not_claimed"
+      },
+      "repo_context": {
+        "status": "ready",
+        "repo_url": "https://github.com/tutao/tutanota.git",
+        "base_commit": "9dfb7c231f98a2d3bf48a99577d8a55cfdb2480b",
+        "checkout_sha": "9dfb7c231f98a2d3bf48a99577d8a55cfdb2480b",
+        "clone_elapsed_ms": 12288,
+        "fetch_fallback_used": true,
+        "subprocess_cwd": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_canary_repo_iooski84\\tutanota",
+        "repo_dir_cleanup_status": "failed",
+        "failure_reason": null
+      },
+      "prompt_metadata": {
+        "prompt_profile": "patch_focused",
+        "prompt_sha256": "c1f38c855777eb448b2b693033c9393d116cabb0db17c71bf1d08f6f9829635a",
+        "topology_override_used": false,
+        "system_hint_forced": false
+      }
+    },
+    {
+      "instance_id": "instance_NodeBB__NodeBB-76c6e30282906ac664f2c9278fc90999b27b1f48-vd59a5728dfc977f44533186ace531248c2917516",
+      "exit_code": 1,
+      "latency_ms": 215812,
+      "total_cost_usd": 0.1926026410695985,
+      "extracted_patch_present": true,
+      "extracted_patch_chars": 1195,
+      "mock": false,
+      "timeout": false,
+      "events_path": "per_task\\instance_NodeBB__NodeBB-76c6e30282906ac664f2c9278fc90999b27b1f48-vd59a5728dfc977f44533186ace531248c2917516.events.jsonl",
+      "model_id_final": "gemini-2.5-flash",
+      "provider_final": "google",
+      "_observed_model_ids": [
+        "deepseek-v4-pro",
+        "gemini-2.5-flash",
+        "gpt-5.4-pro"
+      ],
+      "_observed_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_assigned_model_ids": [
+        "deepseek-v4-pro",
+        "gemini-2.5-flash"
+      ],
+      "_assigned_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_execution_model_ids": [
+        "deepseek-v4-pro",
+        "gemini-2.5-flash"
+      ],
+      "_execution_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_provider_policy_failure_seen": false,
+      "_observed_event_cost_usd": 0.1926026410695985,
+      "_verifier_repair_budget_usd": null,
+      "_diff_verifier_mismatches": null,
+      "_diff_verifier_outcome": null,
+      "stderr_chars": 1752,
+      "learning_evidence_boundary": {
+        "claimed": false,
+        "status": "skipped",
+        "reason_code": "not_claimed"
+      },
+      "repo_context": {
+        "status": "ready",
+        "repo_url": "https://github.com/NodeBB/NodeBB.git",
+        "base_commit": "a3e1a666b876e0b3ccbb5284dd826c8c90c113b4",
+        "checkout_sha": "a3e1a666b876e0b3ccbb5284dd826c8c90c113b4",
+        "clone_elapsed_ms": 9091,
+        "fetch_fallback_used": true,
+        "subprocess_cwd": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_canary_repo_hcuq3nb9\\NodeBB",
+        "repo_dir_cleanup_status": "failed",
+        "failure_reason": null
+      },
+      "prompt_metadata": {
+        "prompt_profile": "patch_focused",
+        "prompt_sha256": "be14c22890f9c9dededb564b69e999dfbe134e89748aa26f39e2dae705c8310b",
+        "topology_override_used": false,
+        "system_hint_forced": false
+      }
+    },
+    {
+      "instance_id": "instance_tutao__tutanota-db90ac26ab78addf72a8efaff3c7acc0fbd6d000-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf",
+      "exit_code": 1,
+      "latency_ms": 247712,
+      "total_cost_usd": 0.1835770960278483,
+      "extracted_patch_present": true,
+      "extracted_patch_chars": 1574,
+      "mock": false,
+      "timeout": false,
+      "events_path": "per_task\\instance_tutao__tutanota-db90ac26ab78addf72a8efaff3c7acc0fbd6d000-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf.events.jsonl",
+      "model_id_final": "gemini-2.5-flash",
+      "provider_final": "google",
+      "_observed_model_ids": [
+        "deepseek-v4-pro",
+        "gemini-2.5-flash",
+        "gemini-3-flash-preview",
+        "gpt-5.4-pro"
+      ],
+      "_observed_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_assigned_model_ids": [
+        "deepseek-v4-pro",
+        "gemini-2.5-flash",
+        "gemini-3-flash-preview"
+      ],
+      "_assigned_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_execution_model_ids": [
+        "deepseek-v4-pro",
+        "gemini-2.5-flash",
+        "gemini-3-flash-preview"
+      ],
+      "_execution_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_provider_policy_failure_seen": false,
+      "_observed_event_cost_usd": 0.1835770960278483,
+      "_verifier_repair_budget_usd": null,
+      "_diff_verifier_mismatches": null,
+      "_diff_verifier_outcome": null,
+      "stderr_chars": 1736,
+      "learning_evidence_boundary": {
+        "claimed": false,
+        "status": "skipped",
+        "reason_code": "not_claimed"
+      },
+      "repo_context": {
+        "status": "ready",
+        "repo_url": "https://github.com/tutao/tutanota.git",
+        "base_commit": "d9e1c91e933cf66ec9660231f9e19f66bb8e58e1",
+        "checkout_sha": "d9e1c91e933cf66ec9660231f9e19f66bb8e58e1",
+        "clone_elapsed_ms": 13183,
+        "fetch_fallback_used": true,
+        "subprocess_cwd": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_canary_repo_c879yjll\\tutanota",
+        "repo_dir_cleanup_status": "failed",
+        "failure_reason": null
+      },
+      "prompt_metadata": {
+        "prompt_profile": "patch_focused",
+        "prompt_sha256": "16f64ea20f4e9455cee1a9746567b4d5fa27564211df1f142a2948229d5e0ff1",
+        "topology_override_used": false,
+        "system_hint_forced": false
+      }
+    }
+  ],
+  "learning_evidence_gate": {
+    "claimed": false,
+    "status": "NOT_CLAIMED",
+    "expect_default_pipeline_learn": false,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 5
+  },
+  "budget_gate": {
+    "status": "PASS",
+    "cumulative_cost_usd": 0.806092714527933,
+    "global_budget_usd": 25.0,
+    "stop_reasons": []
+  },
+  "timeout_gate": {
+    "status": "PASS",
+    "timeouts": 0
+  },
+  "launch_manifest_path": "launch_manifest.json",
+  "acceptance_gate_results": {
+    "manifest_gate": {
+      "status": "BLOCKED",
+      "reasons": [
+        "manifest_commit_not_frozen"
+      ]
+    },
+    "budget_gate": {
+      "status": "PASS",
+      "cumulative_cost_usd": 0.806092714527933,
+      "global_budget_usd": 25.0,
+      "stop_reasons": []
+    },
+    "timeout_gate": {
+      "status": "PASS",
+      "timeouts": 0
+    },
+    "provider_gate": {
+      "status": "PASS",
+      "reason": null,
+      "observed_providers": [
+        "deepseek",
+        "google"
+      ],
+      "assigned_providers": [
+        "deepseek",
+        "google"
+      ],
+      "execution_providers": [
+        "deepseek",
+        "google"
+      ],
+      "provider_policy_failure_seen": false,
+      "missing_provider_or_model": [],
+      "assigned_denied_providers": [],
+      "execution_denied_providers": [],
+      "assigned_outside_allowlist": [],
+      "execution_outside_allowlist": [],
+      "provider_allowlist": [
+        "google",
+        "deepseek"
+      ],
+      "provider_denylist": [
+        "openai"
+      ]
+    },
+    "grading_gate": {
+      "status": "BLOCKED",
+      "reason": "grader_preflight_artifact_not_supplied",
+      "path": null
+    },
+    "ci_gate": {
+      "status": "BLOCKED",
+      "reason": "ci_green_artifact_not_supplied",
+      "path": null
+    }
+  },
+  "canary_decision": "BLOCKED"
+}

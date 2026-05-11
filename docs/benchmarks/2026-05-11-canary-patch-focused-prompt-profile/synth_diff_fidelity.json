@@ -1,0 +1,202 @@
+{
+  "all_preserved_or_cosmetic": false,
+  "any_rewritten": true,
+  "n_tasks": 5,
+  "per_task": [
+    {
+      "byte_identical": true,
+      "chars_delta": 0,
+      "events_path": "docs\\benchmarks\\2026-05-11-canary-patch-focused-prompt-profile\\run\\per_task\\instance_gravitational__teleport-6eaaf3a27e64f4ef4ef855bd35d7ec338cf17460-v626ec2a48416b10a88641359a169d99e935ff037.events.jsonl",
+      "files_added_pre_to_post": [],
+      "files_dropped_pre_to_post": [],
+      "final_predictions_patch": {
+        "chars": 1880,
+        "sha256": "56319c699063881d132cc11350065655f6fd127ac8b1f592ac7b5bf66368fcf5"
+      },
+      "first_substantive_node": {
+        "extracted_diff_chars": 1880,
+        "extracted_diff_sha256": "56319c699063881d132cc11350065655f6fd127ac8b1f592ac7b5bf66368fcf5",
+        "files": [
+          "lib/benchmark/linear.go"
+        ],
+        "hunks": 1,
+        "model_id": "deepseek-v4-pro",
+        "provider_id": "deepseek",
+        "raw_output_chars": 2433,
+        "role": "coder"
+      },
+      "instance_id": "instance_gravitational__teleport-6eaaf3a27e64f4ef4ef855bd35d7ec338cf17460-v626ec2a48416b10a88641359a169d99e935ff037",
+      "last_node": {
+        "extracted_diff_chars": 1880,
+        "extracted_diff_sha256": "56319c699063881d132cc11350065655f6fd127ac8b1f592ac7b5bf66368fcf5",
+        "files": [
+          "lib/benchmark/linear.go"
+        ],
+        "hunks": 1,
+        "model_id": "gemini-2.5-flash",
+        "raw_output_chars": 1891,
+        "role": "synthesizer"
+      },
+      "verdict": "preserved"
+    },
+    {
+      "byte_identical": true,
+      "chars_delta": 0,
+      "events_path": "docs\\benchmarks\\2026-05-11-canary-patch-focused-prompt-profile\\run\\per_task\\instance_NodeBB__NodeBB-76c6e30282906ac664f2c9278fc90999b27b1f48-vd59a5728dfc977f44533186ace531248c2917516.events.jsonl",
+      "files_added_pre_to_post": [],
+      "files_dropped_pre_to_post": [],
+      "final_predictions_patch": {
+        "chars": 1195,
+        "sha256": "423f321ade7ed92d63e404ed12bda323297a4ec5ae68159b7ac7530c3ca4dd9e"
+      },
+      "first_substantive_node": {
+        "extracted_diff_chars": 1195,
+        "extracted_diff_sha256": "423f321ade7ed92d63e404ed12bda323297a4ec5ae68159b7ac7530c3ca4dd9e",
+        "files": [
+          "src/plugins/index.js"
+        ],
+        "hunks": 2,
+        "model_id": "deepseek-v4-pro",
+        "provider_id": "deepseek",
+        "raw_output_chars": 1556,
+        "role": "coder"
+      },
+      "instance_id": "instance_NodeBB__NodeBB-76c6e30282906ac664f2c9278fc90999b27b1f48-vd59a5728dfc977f44533186ace531248c2917516",
+      "last_node": {
+        "extracted_diff_chars": 1195,
+        "extracted_diff_sha256": "423f321ade7ed92d63e404ed12bda323297a4ec5ae68159b7ac7530c3ca4dd9e",
+        "files": [
+          "src/plugins/index.js"
+        ],
+        "hunks": 2,
+        "model_id": "gemini-2.5-flash",
+        "raw_output_chars": 1206,
+        "role": "mixer"
+      },
+      "verdict": "preserved"
+    },
+    {
+      "byte_identical": false,
+      "chars_delta": -1965,
+      "events_path": "docs\\benchmarks\\2026-05-11-canary-patch-focused-prompt-profile\\run\\per_task\\instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858.events.jsonl",
+      "files_added_pre_to_post": [
+        "src/app/components/subscription/SubscriptionPromptModal.tsx"
+      ],
+      "files_dropped_pre_to_post": [
+        "packages/react-components/containers/payments/SubscriptionModal.tsx"
+      ],
+      "final_predictions_patch": {
+        "chars": 1145,
+        "sha256": "217790f35b3a6308fa81bc0845ce9e1b5b0c1242aa5bae63ec14435f43f4773d"
+      },
+      "first_substantive_node": {
+        "extracted_diff_chars": 3110,
+        "extracted_diff_sha256": "011f99a091385dc4779257a6d177d716cc171f5a8f4f45688fd1f946c969278d",
+        "files": [
+          "packages/react-components/containers/payments/SubscriptionModal.tsx"
+        ],
+        "hunks": 1,
+        "model_id": "deepseek-v4-pro",
+        "provider_id": "deepseek",
+        "raw_output_chars": 3405,
+        "role": "actor"
+      },
+      "instance_id": "instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858",
+      "last_node": {
+        "extracted_diff_chars": 1145,
+        "extracted_diff_sha256": "217790f35b3a6308fa81bc0845ce9e1b5b0c1242aa5bae63ec14435f43f4773d",
+        "files": [
+          "src/app/components/subscription/SubscriptionPromptModal.tsx"
+        ],
+        "hunks": 1,
+        "model_id": "gemini-2.5-flash",
+        "raw_output_chars": 1156,
+        "role": "judge"
+      },
+      "verdict": "rewritten"
+    },
+    {
+      "byte_identical": false,
+      "chars_delta": -43,
+      "events_path": "docs\\benchmarks\\2026-05-11-canary-patch-focused-prompt-profile\\run\\per_task\\instance_tutao__tutanota-219bc8f05d7b980e038bc1524cb021bf56397a1b-vee878bb72091875e912c52fc32bc60ec3760227b.events.jsonl",
+      "files_added_pre_to_post": [],
+      "files_dropped_pre_to_post": [],
+      "final_predictions_patch": {
+        "chars": 3006,
+        "sha256": "4a93645880c1d6e8972ce98bb012592cc6fc5e1e7ac34b4153195257341f41e2"
+      },
+      "first_substantive_node": {
+        "extracted_diff_chars": 3049,
+        "extracted_diff_sha256": "7afa299d390365cfec774712e7070934a24c1051aadebabb7a4a9da30afd8712",
+        "files": [
+          "src/api/worker/EventBusClient.ts"
+        ],
+        "hunks": 3,
+        "model_id": "deepseek-v4-pro",
+        "provider_id": "deepseek",
+        "raw_output_chars": 3382,
+        "role": "coder"
+      },
+      "instance_id": "instance_tutao__tutanota-219bc8f05d7b980e038bc1524cb021bf56397a1b-vee878bb72091875e912c52fc32bc60ec3760227b",
+      "last_node": {
+        "extracted_diff_chars": 3006,
+        "extracted_diff_sha256": "4a93645880c1d6e8972ce98bb012592cc6fc5e1e7ac34b4153195257341f41e2",
+        "files": [
+          "src/api/worker/EventBusClient.ts"
+        ],
+        "hunks": 3,
+        "model_id": "gemini-2.5-flash",
+        "raw_output_chars": 3017,
+        "role": "synthesizer"
+      },
+      "verdict": "cosmetic_drift"
+    },
+    {
+      "byte_identical": false,
+      "chars_delta": 429,
+      "events_path": "docs\\benchmarks\\2026-05-11-canary-patch-focused-prompt-profile\\run\\per_task\\instance_tutao__tutanota-db90ac26ab78addf72a8efaff3c7acc0fbd6d000-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf.events.jsonl",
+      "files_added_pre_to_post": [
+        "src/app/controllers/loginController.ts"
+      ],
+      "files_dropped_pre_to_post": [
+        "src/api/main/LoginController.ts"
+      ],
+      "final_predictions_patch": {
+        "chars": 1574,
+        "sha256": "8474e17b7cdb66dc2651b34fcba349a36cff30134316cce23842bdb6b17e8368"
+      },
+      "first_substantive_node": {
+        "extracted_diff_chars": 1145,
+        "extracted_diff_sha256": "5572b1cdcd380a1dc770b632ac9355937c92899ead25cdb2af375604e397ec49",
+        "files": [
+          "src/api/main/LoginController.ts"
+        ],
+        "hunks": 2,
+        "model_id": "deepseek-v4-pro",
+        "provider_id": "deepseek",
+        "raw_output_chars": 3611,
+        "role": "actor"
+      },
+      "instance_id": "instance_tutao__tutanota-db90ac26ab78addf72a8efaff3c7acc0fbd6d000-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf",
+      "last_node": {
+        "extracted_diff_chars": 1574,
+        "extracted_diff_sha256": "8474e17b7cdb66dc2651b34fcba349a36cff30134316cce23842bdb6b17e8368",
+        "files": [
+          "src/app/controllers/loginController.ts"
+        ],
+        "hunks": 4,
+        "model_id": "gemini-2.5-flash",
+        "raw_output_chars": 1585,
+        "role": "output"
+      },
+      "verdict": "rewritten"
+    }
+  ],
+  "run_dir": "docs\\benchmarks\\2026-05-11-canary-patch-focused-prompt-profile\\run",
+  "schema_version": "diff_fidelity_audit_v1",
+  "verdict_tally": {
+    "cosmetic_drift": 1,
+    "preserved": 2,
+    "rewritten": 2
+  }
+}
