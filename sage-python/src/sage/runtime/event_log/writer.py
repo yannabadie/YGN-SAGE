@@ -171,6 +171,13 @@ class RuntimeEventLog:
         self._cached_task_hash = ""
         self._path: Path | None = None
         self._last_event_ref: EventRef | None = None
+        # Slice 10D I-11 (cgpro DESIGN_LOCKED 2026-05-11): in-memory
+        # snapshot of the most recent provider_execution_witness's
+        # policy decision. Read by `enforce_provider_policy` to
+        # compute the declared-vs-verified comparison for the
+        # runtime_integrity_assertion event. None = no witness has
+        # been emitted in this run yet.
+        self._last_witness_state: dict[str, Any] | None = None
 
         if trace_dir is None:
             trace_dir_env = os.environ.get(_TRACE_DIR_ENV)
@@ -578,9 +585,76 @@ class RuntimeEventLog:
             "per_node_assignments": [dict(n) for n in per_node_assignments],
             "substitution_summary": dict(substitution_summary),
         }
-        return self._emit(
+        seq = self._emit(
             _RunFrameSummary,  # reuse event core; distinguished by event_type
             "provider_execution_witness",
+            "pipeline",
+            payload=payload,
+            parent_event_id=parent_event_id,
+            _force_payload=True,
+        )
+        # Slice 10D I-11 (cgpro DESIGN_LOCKED 2026-05-11): record the
+        # latest witness state for in-line invariant binding inside
+        # `enforce_provider_policy`. We store only the policy decision
+        # + phase + routing identity, not the whole payload — the
+        # invariant binds on `routing_candidate_decision` specifically.
+        if seq is not None:
+            pol = payload["policy"]
+            rt = payload["routing"]
+            self._last_witness_state = {
+                "phase": payload["assignment_phase"],
+                "active": bool(pol.get("active")),
+                "decision": str(pol.get("routing_candidate_decision") or ""),
+                "reason_code": str(
+                    pol.get("routing_candidate_reason_code") or ""
+                ) or None,
+                "routing_model_id": str(rt.get("routing_model_id") or ""),
+                "routing_provider_id": str(rt.get("routing_provider_id") or ""),
+                "witness_seq": seq,
+            }
+        return seq
+
+    def emit_runtime_integrity_assertion(
+        self,
+        *,
+        invariant_id: str,
+        verdict: str,
+        declared_decision: str,
+        verified_decision: str,
+        phase: str,
+        declared_reason_code: str | None = None,
+        verified_reason_code: str | None = None,
+        fail_closed: bool = False,
+        witness_seq: int | None = None,
+        parent_event_id: int | None = None,
+    ) -> int | None:
+        """Emit a ``runtime_integrity_assertion`` event (slice 10D I-11).
+
+        cgpro DESIGN_LOCKED 2026-05-11. Emitted inline by
+        ``enforce_provider_policy`` after comparing the declared
+        witness decision against the evaluated policy decision.
+
+        - ``verdict="pass"`` when ``declared_decision == verified_decision``
+          (with the matching reason code).
+        - ``verdict="fail"`` otherwise.
+        - ``fail_closed=True`` indicates the gate was active at
+          emission time; consumers may infer that a ``fail`` verdict
+          is about to raise ``EventLogInvariantViolation``.
+        """
+        payload = {
+            "invariant_id": invariant_id,
+            "verdict": verdict,
+            "declared_decision": declared_decision,
+            "verified_decision": verified_decision,
+            "phase": phase,
+            "declared_reason_code": declared_reason_code,
+            "verified_reason_code": verified_reason_code,
+            "fail_closed": bool(fail_closed),
+            "witness_seq": witness_seq,
+        }
+        return self._emit(
+            _RunFrameSummary,
+            "runtime_integrity_assertion",
             "pipeline",
             payload=payload,
             parent_event_id=parent_event_id,
@@ -632,6 +706,103 @@ class RuntimeEventLog:
                 pass
         self._fh = None
         self.disabled = True
+
+    def validate_invariants(self) -> list[dict[str, Any]]:
+        """Close-time audit for runtime-integrity-ledger invariants.
+
+        Slice 10D I-11 (cgpro DESIGN_LOCKED 2026-05-11): scans the
+        emitted JSONL trace and verifies that every policy-active
+        ``provider_execution_witness`` with
+        ``routing_candidate_decision == "blocked"`` has a matching
+        subsequent ``failure`` event with
+        ``error_type=provider_policy_violation``, emitted after the
+        witness and before any further provider execution.
+
+        Returns the list of detected violations (empty list if the
+        trace is invariant-coherent). Each violation is a dict with
+        ``invariant_id``, ``message``, ``witness_seq``, and
+        ``witness_phase``.
+
+        Under ``SAGE_TRACE_FAIL_CLOSED=1``, this method raises
+        ``EventLogInvariantViolation`` after detecting any violation
+        rather than returning. The inline binding in
+        ``enforce_provider_policy`` is the authoritative I-11 gate;
+        this audit is a backstop that validates the ledger evidence.
+        """
+        from sage.runtime.event_log.errors import (
+            EventLogInvariantViolation as _Inv,
+        )
+
+        if self._path is None or not self._path.exists():
+            return []
+
+        # The witness may have written the trace AND been closed
+        # before validation; read fresh from disk to be safe.
+        try:
+            raw = self._path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return []
+
+        violations: list[dict[str, Any]] = []
+        # Pair every "policy-active blocked" witness with the first
+        # subsequent provider_policy_violation failure event.
+        unmatched_witnesses: list[dict[str, Any]] = []
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            event_type = event.get("event_type")
+            if event_type == "provider_execution_witness":
+                payload = event.get("payload") or {}
+                if not isinstance(payload, dict):
+                    continue
+                pol = payload.get("policy") or {}
+                if not isinstance(pol, dict):
+                    continue
+                if not pol.get("active"):
+                    continue
+                if pol.get("routing_candidate_decision") != "blocked":
+                    continue
+                unmatched_witnesses.append(
+                    {
+                        "witness_seq": event.get("seq"),
+                        "witness_phase": payload.get("assignment_phase"),
+                    }
+                )
+            elif event_type == "failure":
+                # Match the OLDEST unmatched blocked witness with this
+                # provider-policy failure. Order in JSONL is monotonic
+                # by seq, so this is FIFO pairing.
+                if (
+                    event.get("error_type") == "provider_policy_violation"
+                    and unmatched_witnesses
+                ):
+                    unmatched_witnesses.pop(0)
+
+        for witness in unmatched_witnesses:
+            violations.append(
+                {
+                    "invariant_id": "I-11",
+                    "message": (
+                        "blocked witness without matching "
+                        "provider_policy_violation failure event"
+                    ),
+                    "witness_seq": witness["witness_seq"],
+                    "witness_phase": witness["witness_phase"],
+                }
+            )
+
+        if violations and self._fail_closed:
+            raise _Inv(
+                "I-11 close-time audit failed: "
+                f"{len(violations)} blocked witness(es) without matching "
+                f"provider_policy_violation failure event"
+            )
+        return violations
 
     @property
     def path(self) -> Path | None:

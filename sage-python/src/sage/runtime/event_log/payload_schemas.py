@@ -900,6 +900,73 @@ PAYLOAD_SCHEMAS: dict[str, dict[PayloadSchemaVersion, EventPayloadSchema]] = {
             current=True,
         ),
     },
+    # Slice 10D I-11 (cgpro DESIGN_LOCKED 2026-05-11): runtime
+    # invariant assertion event. Emitted inline by
+    # `enforce_provider_policy` comparing the declared witness
+    # decision against the evaluated policy decision. Fields:
+    # - invariant_id: stable ledger key, e.g. "I-11"
+    # - verdict: "pass" when declared == verified, "fail" otherwise
+    # - declared_decision / verified_decision: the two strings being
+    #   compared ("allowed" | "blocked" | "unresolved")
+    # - phase: matches witness's assignment_phase
+    # - declared_reason_code / verified_reason_code: the witness's
+    #   routing_candidate_reason_code and the live policy reason
+    # - fail_closed: bool — true iff SAGE_TRACE_FAIL_CLOSED=1 at
+    #   the moment of emission (drives runtime escalation behavior)
+    # - witness_seq: seq of the witness event being asserted against
+    "runtime_integrity_assertion": {
+        "v1": _schema(
+            event_type="runtime_integrity_assertion",
+            version="v1",
+            allowed_fields=(
+                "invariant_id",
+                "verdict",
+                "declared_decision",
+                "verified_decision",
+                "phase",
+                "declared_reason_code",
+                "verified_reason_code",
+                "fail_closed",
+                "witness_seq",
+            ),
+            required_fields=(
+                "invariant_id",
+                "verdict",
+                "declared_decision",
+                "verified_decision",
+                "phase",
+                "fail_closed",
+            ),
+            field_specs={
+                "invariant_id": _f(
+                    "str",
+                    max_utf8_bytes=16,
+                ),
+                "verdict": _f(
+                    "str",
+                    allowed_values=("pass", "fail"),
+                ),
+                "declared_decision": _f(
+                    "str",
+                    allowed_values=("allowed", "blocked", "unresolved"),
+                ),
+                "verified_decision": _f(
+                    "str",
+                    allowed_values=("allowed", "blocked", "unresolved"),
+                ),
+                "phase": _f(
+                    "str",
+                    allowed_values=("initial", "reroute", "upgrade"),
+                ),
+                "declared_reason_code": _string_or_null(80),
+                "verified_reason_code": _string_or_null(80),
+                "fail_closed": _bool(),
+                "witness_seq": _f(("int", "null")),
+            },
+            payload_kind="dict",
+            current=True,
+        ),
+    },
 }
 
 def _current_schema_for(event_type: str) -> EventPayloadSchema:

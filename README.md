@@ -38,7 +38,7 @@ nothing is silently fabricated.
 
 For full architectural framing see [`AI-ARCHITECTURE.md`](AI-ARCHITECTURE.md)
 and the contract docs at `docs/contracts/runtime-integrity-ledger.md`
-(10 invariants binding declared labels to verified content) and
+(11 invariants binding declared labels to verified content) and
 `docs/contracts/learning-side-effect-ledger.md` (audit-only sidecar for
 learning side-effect decisions).
 
@@ -263,7 +263,7 @@ proof of capability.
 | **Multi-provider runtime (7 providers + Codex)** | `delivered` | TTL'd circuit breaker + per-node provider resolution. |
 | **OracleStack trainable-evidence gate** | `default-on (cycle 7)` | Commit `128e1b89`. Kill-switch `SAGE_ORACLE=0\|false\|off\|no\|disable\|disabled`. |
 | **Learning side-effect ledger v0** | `delivered` | `runtime.learning_side_effect_ledger_v0` in `docs/CLAIMS.yaml`, anchored to `sage-python/tests/test_learning_side_effect_ledger_contract.py`. Audit-only sidecar; not a CLI v0 stdout event and not an authorization path. |
-| **Runtime integrity ledger (10 invariants)** | `delivered` | `docs/contracts/runtime-integrity-ledger.md`. Every label binds to verified content/schema/provenance/proof. Cycle-12 backported invariant 9 (CLI protocol versioning) per `f647c5ae`. |
+| **Runtime integrity ledger (11 invariants)** | `delivered` | `docs/contracts/runtime-integrity-ledger.md`. Every label binds to verified content/schema/provenance/proof. Cycle-12 backported invariant 9 (CLI protocol versioning) per `f647c5ae`. |
 | **A14 epoch guard + `topology_state_manifest.json`** | `delivered` | Cycle-8 step 2 (`6b2ebcbe + f9521616`). Fail-closed boot if epoch ≠ DB SHA-256. |
 | **Wasm sandbox (RustPython wasm32-wasip1)** | `default-on (cycle 8)` | ADR-013 §5 flip 2026-04-22. `validate_and_execute` deny-by-default. `execute_raw` gated by `SAGE_UNSAFE_RAW_EXEC=1`. |
 | **OpenTelemetry GenAI spans (Python + Rust bridge)** | `delivered` | B1 (2026-04-25) + B1.b. `SAGE_OTEL_EXPORTER={none,console,otlp_http,logfire}`. |

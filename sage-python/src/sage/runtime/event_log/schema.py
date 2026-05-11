@@ -25,6 +25,13 @@ EVENT_TYPES = (
     # explicit. v0 witness only — NOT an invariant yet. Cf.
     # docs/superpowers/plans/2026-05-10-handoff-recovery-plan.md.
     "provider_execution_witness",
+    # Slice 10D I-11 (cgpro DESIGN_LOCKED 2026-05-11): runtime
+    # invariant assertion event. Emitted by `enforce_provider_policy`
+    # inline when comparing the declared witness decision against
+    # the evaluated policy decision. Verdict=pass when they agree;
+    # verdict=fail otherwise. Under SAGE_TRACE_FAIL_CLOSED=1 a fail
+    # raises EventLogInvariantViolation BEFORE provider dispatch.
+    "runtime_integrity_assertion",
 )
 
 REDACTION_STATES = (

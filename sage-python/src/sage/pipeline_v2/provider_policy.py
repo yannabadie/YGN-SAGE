@@ -11,6 +11,8 @@ import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterable
 
+from sage.runtime.event_log.errors import EventLogInvariantViolation
+
 if TYPE_CHECKING:
     from sage.pipeline import CognitiveOrchestrationPipeline, PipelineContext
 
@@ -306,6 +308,15 @@ def enforce_provider_policy(
 ) -> None:
     decision = evaluate_provider_policy(pipeline, ctx)
     setattr(ctx, "_provider_policy_decision", decision.to_dict())
+
+    # Slice 10D I-11 (cgpro DESIGN_LOCKED 2026-05-11): inline runtime
+    # invariant binding. Compares the declared witness decision
+    # against an independent re-evaluation of the policy on the same
+    # routing candidate. Emits runtime_integrity_assertion. Under
+    # SAGE_TRACE_FAIL_CLOSED=1, a mismatch raises
+    # EventLogInvariantViolation BEFORE provider dispatch.
+    _maybe_emit_i11_assertion(pipeline, event_log)
+
     if not decision.violations:
         return
     message = _violation_message(decision)
@@ -316,6 +327,95 @@ def enforce_provider_policy(
             message=message,
         )
     raise ProviderPolicyViolation(message)
+
+
+def _maybe_emit_i11_assertion(
+    pipeline: "CognitiveOrchestrationPipeline",
+    event_log: Any,
+) -> None:
+    """Inline I-11 binding (cgpro DESIGN_LOCKED 2026-05-11).
+
+    Reads the most recent witness state from `event_log`, re-evaluates
+    the active policy against the witness's routing candidate provider,
+    and emits a `runtime_integrity_assertion` event with verdict
+    pass|fail.
+
+    No-ops if:
+    - event_log is None or lacks the witness-state slot (legacy writers)
+    - no witness has been emitted yet
+    - the witness was emitted under `policy.active=false` (I-11 only
+      applies to policy-active provider attempts per ledger row)
+
+    Under SAGE_TRACE_FAIL_CLOSED=1, a fail verdict raises
+    EventLogInvariantViolation. The existing ProviderPolicyViolation
+    path is independent — actual provider-policy denials always emit
+    their failure event and raise regardless of this gate.
+    """
+    if event_log is None:
+        return
+    state = getattr(event_log, "_last_witness_state", None)
+    if not state:
+        return
+    if not state.get("active"):
+        # I-11 only binds when the witness was emitted under an
+        # active provider policy (per ledger row scope).
+        return
+
+    declared = str(state.get("decision") or "")
+    declared_reason = state.get("reason_code")
+    phase = str(state.get("phase") or "")
+    routing_provider = str(state.get("routing_provider_id") or "")
+    witness_seq = state.get("witness_seq")
+
+    # Re-evaluate the active policy against the routing candidate's
+    # provider — independent computation, not the per-node violations.
+    policy = effective_provider_policy(pipeline)
+    if not policy.active:
+        # Witness said policy was active; live policy says no. That is
+        # itself a drift worth recording — emit "unresolved" so the
+        # declared vs verified comparison surfaces it.
+        verified = "unresolved"
+        verified_reason: str | None = None
+    elif not routing_provider:
+        verified = "unresolved"
+        verified_reason = "unknown_provider"
+    else:
+        internal_reason = policy.violation_reason(routing_provider)
+        if internal_reason is None:
+            verified = "allowed"
+            verified_reason = None
+        else:
+            verified = "blocked"
+            verified_reason = internal_reason
+
+    verdict = "pass" if declared == verified else "fail"
+    fail_closed = os.environ.get("SAGE_TRACE_FAIL_CLOSED") == "1"
+
+    seq = getattr(event_log, "emit_runtime_integrity_assertion", None)
+    if seq is None:
+        # Legacy writer without the I-11 emitter — skip silently.
+        return
+    event_log.emit_runtime_integrity_assertion(
+        invariant_id="I-11",
+        verdict=verdict,
+        declared_decision=declared,
+        verified_decision=verified,
+        phase=phase,
+        declared_reason_code=declared_reason,
+        verified_reason_code=verified_reason,
+        fail_closed=fail_closed,
+        witness_seq=witness_seq,
+    )
+
+    if verdict == "fail" and fail_closed:
+        # Fail-closed at the side-effect boundary, BEFORE the existing
+        # ProviderPolicyViolation path runs. The existing policy-denial
+        # path remains mandatory in the non-fail-closed case.
+        raise EventLogInvariantViolation(
+            f"I-11 invariant violated: declared={declared!r} "
+            f"verified={verified!r} phase={phase!r} "
+            f"routing_provider={routing_provider!r}"
+        )
 
 
 def enforce_provider_policy_preassignment(

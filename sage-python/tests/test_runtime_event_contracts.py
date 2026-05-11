@@ -308,6 +308,12 @@ def test_event_type_catalog_completeness() -> None:
         # invariant yet. See
         # docs/superpowers/plans/2026-05-10-handoff-recovery-plan.md.
         "provider_execution_witness",
+        # Slice 10D I-11 (cgpro DESIGN_LOCKED 2026-05-11): runtime
+        # integrity assertion event. Emitted inline by
+        # enforce_provider_policy comparing declared witness decision
+        # vs evaluated policy decision. Under SAGE_TRACE_FAIL_CLOSED=1
+        # a fail raises EventLogInvariantViolation.
+        "runtime_integrity_assertion",
     }
 
     assert set(EVENT_TYPES) == expected, (
