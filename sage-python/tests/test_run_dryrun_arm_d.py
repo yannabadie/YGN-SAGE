@@ -1986,6 +1986,281 @@ def test_run_one_task_continues_when_repo_setup_fails(monkeypatch, tmp_path) -> 
     assert rc["subprocess_cwd"] is None
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Block `canary-patch-focused-prompt-profile` slice 9 (cgpro DESIGN 2026-05-11):
+# canary-local SWE-bench prompt profile dispatcher.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_prompt_profile_enum_includes_canonical_and_patch_focused() -> None:
+    """Both profiles required by cgpro DESIGN must exist and the
+    default must be ``canonical`` so existing callers stay
+    byte-compatible.
+    """
+    assert arm_d._PROMPT_PROFILES == ("canonical", "patch_focused")
+    assert arm_d._DEFAULT_PROMPT_PROFILE == "canonical"
+
+
+def test_build_prompt_canonical_matches_render_swebench_prompt() -> None:
+    """The default profile MUST forward to
+    ``sage.input.swebench.render_swebench_prompt(normalize_swebench(...))``
+    byte-for-byte. If a future refactor diverges, this catches it.
+    """
+    from sage.input.swebench import normalize_swebench, render_swebench_prompt
+
+    instance = {
+        "instance_id": "x",
+        "repo": "owner/proj",
+        "base_commit": "abc123",
+        "problem_statement": "Bug in foo.",
+    }
+    text, meta = arm_d._build_prompt(instance, "canonical")
+    expected = render_swebench_prompt(normalize_swebench(instance))
+    assert text == expected
+    assert meta["prompt_profile"] == "canonical"
+    assert meta["topology_override_used"] is False
+    assert meta["system_hint_forced"] is False
+    # Hash present and matches SHA-256(text bytes)
+    import hashlib
+    assert meta["prompt_sha256"] == hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def test_build_prompt_patch_focused_drops_mandatory_workflow() -> None:
+    """The patch_focused profile MUST NOT carry the canonical
+    "MUST make at least THREE distinct tool calls" mandate.
+    """
+    instance = {
+        "instance_id": "y",
+        "repo": "owner/proj",
+        "base_commit": "abc123",
+        "problem_statement": "Bug in bar.",
+    }
+    text, meta = arm_d._build_prompt(instance, "patch_focused")
+    # The canonical template's mandate sentence is verbatim absent.
+    assert "MUST make at least THREE distinct tool calls" not in text
+    assert "Mandatory Workflow" not in text
+    # And the meta marks the profile + no-overrides contract.
+    assert meta["prompt_profile"] == "patch_focused"
+    assert meta["topology_override_used"] is False
+    assert meta["system_hint_forced"] is False
+
+
+def test_build_prompt_patch_focused_keeps_repo_grounding(monkeypatch) -> None:
+    """The patch_focused profile MUST tell the agent it has the repo
+    checked out at the working directory. Per cgpro DESIGN
+    NON_GOALS: 'Do not revert to a bare "produce a diff" prompt with
+    no repo-grounding.'
+    """
+    instance = {
+        "instance_id": "z",
+        "repo": "owner/proj",
+        "base_commit": "abc123",
+        "problem_statement": "Bug in baz.",
+    }
+    text, _ = arm_d._build_prompt(instance, "patch_focused")
+    # Must mention the repo + base commit + the working-directory
+    # statement that proves repo-grounding.
+    assert "owner/proj" in text
+    assert "abc123" in text
+    assert "repo is checked out" in text
+    # And the issue description.
+    assert "Bug in baz." in text
+
+
+def test_build_prompt_patch_focused_keeps_strict_diff_contract() -> None:
+    """Per cgpro DESIGN STOP_CONDITIONS: the new prompt MUST make
+    the final-answer contract STRICTER, not looser. ``diff --git``
+    headers, ``--- a/`` / ``+++ b/`` paths, and the fenced ```diff
+    block requirement must remain.
+    """
+    instance = {
+        "instance_id": "w",
+        "repo": "owner/proj",
+        "base_commit": "abc123",
+        "problem_statement": "Strict format test.",
+    }
+    text, _ = arm_d._build_prompt(instance, "patch_focused")
+    assert "diff --git a/" in text
+    assert "--- a/" in text
+    assert "+++ b/" in text
+    assert "```diff" in text
+    # No-output-after-the-block rule (the canary extractor strips
+    # everything after the fence anyway, but the prompt must say so).
+    assert "Reasoning text AFTER" in text or "Output ONLY" in text
+
+
+def test_build_prompt_unknown_profile_raises() -> None:
+    """Defense against typos / future regression: an unknown profile
+    name must raise ValueError, not silently fall back.
+    """
+    instance = {
+        "instance_id": "a",
+        "repo": "x/y",
+        "base_commit": "abc",
+        "problem_statement": "test",
+    }
+    try:
+        arm_d._build_prompt(instance, "made_up_profile")
+    except ValueError as exc:
+        assert "made_up_profile" in str(exc)
+    else:
+        raise AssertionError("expected ValueError for unknown profile")
+
+
+def test_run_one_task_propagates_prompt_metadata_to_summary(monkeypatch, tmp_path) -> None:
+    """When the canary runs in patch_focused mode, the per-task summary
+    must record ``prompt_metadata`` with the right profile + sha256 +
+    no-overrides flags so the gate / post-run analysis can verify the
+    acceptance criteria (topology_override_used=False everywhere).
+    """
+    instance = {
+        "instance_id": "test-meta",
+        "repo": "owner/proj",
+        "base_commit": "abc123",
+        "problem_statement": "Bug in foo.",
+    }
+
+    captured_prompts: list[str] = []
+
+    async def _capture_cli(prompt, *, budget_usd, output_events_path, tier,
+                          provider_allowlist=(), provider_denylist=(), cwd=None):
+        captured_prompts.append(prompt)
+        output_events_path.parent.mkdir(parents=True, exist_ok=True)
+        output_events_path.write_text("", encoding="utf-8")
+        return {
+            "exit_code": 0,
+            "latency_ms": 100,
+            "final_result_payload": {"result": "no diff"},
+            "cli_complete_payload": {
+                "outcome": "success",
+                "total_cost_usd": 0.0,
+                "trace_dir": str(tmp_path / "trace"),
+            },
+            "run_id": "RUN-M",
+            "model_id_final": "fake",
+            "provider_final": "fake",
+            "total_cost_usd": 0.0,
+        }
+
+    monkeypatch.setattr(arm_d, "_run_sage_cli", _capture_cli)
+    monkeypatch.setattr(
+        arm_d,
+        "_setup_repo_for_canary",
+        lambda inst: {
+            "repo_context_status": "ready",
+            "repo_dir": str(tmp_path / "fake_repo"),
+            "repo_url": f"https://github.com/{inst['repo']}.git",
+            "base_commit": inst["base_commit"],
+            "checkout_sha": inst["base_commit"],
+            "clone_elapsed_ms": 0,
+            "fetch_fallback_used": False,
+            "failure_reason": None,
+        },
+    )
+    monkeypatch.setattr(
+        arm_d, "_cleanup_repo_dir", lambda repo_dir, *, tmp_root=None: "removed"
+    )
+
+    result = asyncio.run(
+        arm_d._run_one_task(
+            instance,
+            tmp_path / "out",
+            mock=False,
+            budget_usd=5.0,
+            tier="budget",
+            provider_allowlist=("google",),
+            provider_denylist=("openai",),
+            prefix="test",
+            fmt_module=_FakeFormatModule(),
+            claim_default_pipeline_learning_evidence=False,
+            expect_default_pipeline_learn=False,
+            swebench_prompt_profile="patch_focused",
+        )
+    )
+
+    # The forwarded prompt must NOT contain the mandate clause.
+    assert len(captured_prompts) == 1
+    assert "MUST make at least THREE distinct tool calls" not in captured_prompts[0]
+
+    pm = result["summary"]["prompt_metadata"]
+    assert pm["prompt_profile"] == "patch_focused"
+    assert pm["topology_override_used"] is False
+    assert pm["system_hint_forced"] is False
+    assert len(pm["prompt_sha256"]) == 64  # SHA-256 hex
+
+
+def test_cli_swebench_prompt_profile_flag_plumbs(monkeypatch, tmp_path) -> None:
+    """CLI smoke: --swebench-prompt-profile patch_focused reaches
+    run() as the matching kwarg.
+    """
+    instances_json = tmp_path / "instances.json"
+    instances_json.write_text(
+        json.dumps([{"instance_id": "t", "problem_statement": "x"}]),
+        encoding="utf-8",
+    )
+    manifest = tmp_path / "m.md"
+    manifest.write_text("# canary", encoding="utf-8")
+
+    captured: dict[str, Any] = {}
+
+    async def _capture(*args, **kwargs):  # type: ignore[no-untyped-def]
+        captured["kwargs"] = kwargs
+        return 0
+
+    monkeypatch.setattr(arm_d, "run", _capture)
+
+    exit_code = arm_d.main(
+        [
+            "--instances-json",
+            str(instances_json),
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--mock",
+            "--swebench-prompt-profile",
+            "patch_focused",
+            "--manifest-path",
+            str(manifest),
+        ]
+    )
+    assert exit_code == 0
+    assert captured["kwargs"]["swebench_prompt_profile"] == "patch_focused"
+
+
+def test_cli_default_prompt_profile_is_canonical(monkeypatch, tmp_path) -> None:
+    """Without ``--swebench-prompt-profile``, the default is
+    ``canonical`` so existing callers stay byte-compatible.
+    """
+    instances_json = tmp_path / "instances.json"
+    instances_json.write_text(
+        json.dumps([{"instance_id": "t", "problem_statement": "x"}]),
+        encoding="utf-8",
+    )
+    manifest = tmp_path / "m.md"
+    manifest.write_text("# canary", encoding="utf-8")
+
+    captured: dict[str, Any] = {}
+
+    async def _capture(*args, **kwargs):  # type: ignore[no-untyped-def]
+        captured["kwargs"] = kwargs
+        return 0
+
+    monkeypatch.setattr(arm_d, "run", _capture)
+
+    exit_code = arm_d.main(
+        [
+            "--instances-json",
+            str(instances_json),
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--mock",
+            "--manifest-path",
+            str(manifest),
+        ]
+    )
+    assert exit_code == 0
+    assert captured["kwargs"]["swebench_prompt_profile"] == "canonical"
+
+
 def test_setup_repo_for_canary_real_git_fixture(tmp_path) -> None:
     """Real-git end-to-end smoke. Creates a local git repo with two
     commits + a clone-source bare repo, then asks

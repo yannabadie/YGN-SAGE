@@ -80,6 +80,150 @@ from sage.input.swebench import normalize_swebench, render_swebench_prompt
 
 log = logging.getLogger("sage.bench.run_dryrun_arm_d")
 
+# ── Slice 9 / `canary-patch-focused-prompt-profile` (cgpro DESIGN 2026-05-11) ──
+# After slice 8 (cwd=cloned_repo + dotenv + TRACE_RAW), the canary still
+# hits 0/5 patches because the canonical SWEBENCH_SYSTEM_TEMPLATE
+# mandates "≥3 distinct tool calls" before emission. With stochastic
+# topology selection (debate ~60% via bandit), debater roles can't
+# satisfy the tool-call quota and the agent exits with EMPTY_STEP_SENTINEL.
+#
+# This slice adds a canary-local SWE-bench prompt PROFILE selectable
+# via ``--swebench-prompt-profile {canonical,patch_focused}``:
+#
+# - ``canonical`` (default): pass-through to ``render_swebench_prompt``
+#   from ``sage.input.swebench`` — byte-identical to slice 7. Existing
+#   callers unaffected.
+#
+# - ``patch_focused``: canary-local template that
+#     * keeps the expert-software-engineer framing,
+#     * keeps the repo-grounding (says "the repo is checked out in
+#       your working directory"),
+#     * RECOMMENDS (not requires) typed tools,
+#     * REMOVES the "MUST make at least THREE distinct tool calls
+#       before emitting a patch" mandate,
+#     * keeps the Patch Format section STRICTER (unified diff in
+#       fenced ```diff block with diff --git / --- a/ / +++ b/ /
+#       matching context line headers).
+#
+# Per cgpro DESIGN NON_GOALS: no topology override, no system_hint
+# force, no edit to sage.input.swebench.
+_PROMPT_PROFILE_CANONICAL = "canonical"
+_PROMPT_PROFILE_PATCH_FOCUSED = "patch_focused"
+_PROMPT_PROFILES: tuple[str, ...] = (
+    _PROMPT_PROFILE_CANONICAL,
+    _PROMPT_PROFILE_PATCH_FOCUSED,
+)
+_DEFAULT_PROMPT_PROFILE = _PROMPT_PROFILE_CANONICAL
+
+
+# Inline template for patch_focused (defined here so this slice does
+# NOT edit sage/input/swebench.py per cgpro DESIGN). The `{...}`
+# placeholders are filled at render time from the instance dict.
+_PATCH_FOCUSED_TEMPLATE = """\
+You are an expert software engineer working inside a checked-out repository clone. Your job is to resolve a GitHub issue by producing a minimal, surgical unified diff patch.
+
+## Repository
+- **Repo:** {repo}
+- **Version:** {version}
+- **Base commit:** {base_commit}
+- **Working directory:** the repo is checked out in your current working directory. Use relative paths (no absolute paths, no /tmp/...).
+
+## Issue Description
+
+{problem_statement}
+
+{hints_section}\
+## Tools (recommended, NOT required)
+
+You have these tools available. They are useful for verifying line numbers and context lines BEFORE emitting your patch. There is NO minimum number of tool calls required:
+
+- **read_file(path, max_bytes)** — read a text file in the checked-out repo.
+- **search_repo(query, path, max_results, regex)** — search the repo for a pattern.
+- **list_files(path, pattern, max)** — glob files under a relative root.
+- **git_diff(path, staged, extra_args)** — show the current working-tree diff.
+- **apply_patch(diff, check_only)** — apply a unified diff via `git apply` (check_only=True for dry-run).
+
+If you are confident about the fix without consulting these tools, you may emit your patch directly. If you are uncertain about hunk line numbers, USE the tools — fabricated hunk numbers will be rejected by the grader.
+
+## Patch Format — STRICT
+
+Your final output MUST be a unified diff inside a fenced ```diff block. Without the fenced block, the harness will record an empty patch.
+
+```diff
+diff --git a/path/to/file.py b/path/to/file.py
+--- a/path/to/file.py
++++ b/path/to/file.py
+@@ -<start>,<count> +<start>,<count> @@ <optional context>
+ unchanged line
+-removed line
++added line
+ unchanged line
+```
+
+Hard requirements:
+- `diff --git` header MUST use forward slashes.
+- `--- a/` and `+++ b/` paths MUST use forward slashes and MUST match the `diff --git` paths.
+- Every context line and removed line MUST match the real source verbatim. If you guess, the patch will fail `git apply`.
+- Hunk headers (`@@ -s,c +s,c @@`) MUST be correct. If unsure, use `read_file` or `search_repo` to verify before emitting.
+- Keep the change minimal. Do not refactor unrelated code.
+- Output ONLY the fenced ```diff block as your final answer. Reasoning text BEFORE the block is allowed; reasoning text AFTER is not.
+"""
+
+
+def _render_patch_focused_prompt(task: dict[str, Any]) -> str:
+    """Render the patch_focused prompt profile from an instance dict.
+
+    Uses the same instance fields as ``sage.input.swebench.normalize_swebench``:
+    ``problem_statement`` (required), ``repo``, ``base_commit``,
+    ``version`` (defaults "unknown"), ``hints_text`` (optional).
+    """
+    repo = task.get("repo") or "<unknown>"
+    base_commit = task.get("base_commit") or "<unknown>"
+    version = task.get("version") or "unknown"
+    problem_statement = task.get("problem_statement") or ""
+    hints_text = (task.get("hints_text") or "").strip()
+    hints_section = (
+        f"## Hints (from the issue comments)\n\n{hints_text}\n\n"
+        if hints_text
+        else ""
+    )
+    return _PATCH_FOCUSED_TEMPLATE.format(
+        repo=repo,
+        version=version,
+        base_commit=base_commit,
+        problem_statement=problem_statement,
+        hints_section=hints_section,
+    )
+
+
+def _build_prompt(task: dict[str, Any], profile: str) -> tuple[str, dict[str, Any]]:
+    """Render the prompt for ``task`` under the given ``profile``.
+
+    Returns ``(prompt_text, metadata)`` where metadata always carries:
+    - ``prompt_profile``: the profile name actually used
+    - ``prompt_sha256``: SHA-256 of the rendered prompt bytes (so the
+      gate can attribute outcomes to specific prompt versions)
+    - ``topology_override_used``: always False in this slice (we never
+      force topology)
+    - ``system_hint_forced``: always False in this slice
+    """
+    if profile == _PROMPT_PROFILE_PATCH_FOCUSED:
+        text = _render_patch_focused_prompt(task)
+    elif profile == _PROMPT_PROFILE_CANONICAL:
+        text = render_swebench_prompt(normalize_swebench(task))
+    else:
+        raise ValueError(
+            f"Unknown prompt profile {profile!r}; expected one of {_PROMPT_PROFILES}"
+        )
+    prompt_sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    metadata = {
+        "prompt_profile": profile,
+        "prompt_sha256": prompt_sha256,
+        "topology_override_used": False,
+        "system_hint_forced": False,
+    }
+    return text, metadata
+
 # ── Slice 8 / `canary-real-repo-context` (cgpro DESIGN 2026-05-11) ──
 # After slice 7 still produced 0/5 patches, root cause shifted: the
 # SWEBENCH_SYSTEM_TEMPLATE mandates ≥3 tool calls against the working
@@ -1472,6 +1616,7 @@ async def _run_one_task(
     fmt_module: Any,
     claim_default_pipeline_learning_evidence: bool,
     expect_default_pipeline_learn: bool,
+    swebench_prompt_profile: str = _DEFAULT_PROMPT_PROFILE,
 ) -> dict[str, Any]:
     """Run one task end-to-end. Returns a per-task summary dict."""
     instance_id = task["instance_id"]
@@ -1536,12 +1681,12 @@ async def _run_one_task(
                 repo_context.get("repo_context_status"),
             )
 
-        # Build the SWE-bench prompt: the canonical
-        # ``SWEBENCH_SYSTEM_TEMPLATE`` (or the SEARCH/REPLACE variant
-        # if ``SAGE_EMISSION_FORMAT=search-replace``). This is what
-        # ``sage-python/src/sage/bench/swebench_bench.py`` ships for
-        # SWE-bench Lite generate-only runs.
-        prompt = render_swebench_prompt(normalize_swebench(task))
+        # Slice 9: prompt profile dispatch.
+        # - canonical: render_swebench_prompt(normalize_swebench(task))
+        #   from sage.input.swebench (byte-identical to slice 7+8)
+        # - patch_focused: canary-local template, drops the "≥3 tool
+        #   calls" mandate while keeping repo-grounding + strict diff
+        prompt, prompt_metadata = _build_prompt(task, swebench_prompt_profile)
         cleanup_status = "not_attempted"
         try:
             cli_result = await _run_sage_cli(
@@ -1653,6 +1798,7 @@ async def _run_one_task(
                 "repo_dir_cleanup_status": repo_context.get("repo_dir_cleanup_status"),
                 "failure_reason": repo_context["failure_reason"],
             },
+            "prompt_metadata": prompt_metadata,
         }
 
     record = fmt_module.format_patch(instance_id, patch, prefix=prefix)
@@ -1682,6 +1828,7 @@ async def run(
     provider_denylist: tuple[str, ...] = ("openai",),
     claim_default_pipeline_learning_evidence: bool = False,
     expect_default_pipeline_learn: bool = False,
+    swebench_prompt_profile: str = _DEFAULT_PROMPT_PROFILE,
 ) -> int:
     if mock and claim_default_pipeline_learning_evidence:
         log.error(
@@ -1759,6 +1906,7 @@ async def run(
                     fmt_module=fmt_module,
                     claim_default_pipeline_learning_evidence=claim_default_pipeline_learning_evidence,
                     expect_default_pipeline_learn=expect_default_pipeline_learn,
+                    swebench_prompt_profile=swebench_prompt_profile,
                 ),
                 timeout=task_timeout_s,
             )
@@ -1804,6 +1952,11 @@ async def run(
             "profile_timeout_default_s": _TIMEOUT_PROFILES.get(profile),
             "profile_timeout_override": profile_timeout_override,
             "stop_reasons": budget_stop_reasons,
+        },
+        "prompt": {
+            "swebench_prompt_profile": swebench_prompt_profile,
+            "topology_override_used": False,
+            "system_hint_forced": False,
         },
         "predictions_path": str(predictions_path.relative_to(output_dir)),
         "predictions_jsonl_path": str(predictions_jsonl_path.relative_to(output_dir)),
@@ -1952,6 +2105,22 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--swebench-prompt-profile",
+        choices=list(_PROMPT_PROFILES),
+        default=_DEFAULT_PROMPT_PROFILE,
+        help=(
+            "SWE-bench prompt profile. ``canonical`` (default) uses "
+            "sage.input.swebench.render_swebench_prompt (with the "
+            "mandatory tool-call workflow). ``patch_focused`` is a "
+            "canary-local template (cgpro DESIGN 2026-05-11 NEW_SLICE "
+            "canary-patch-focused-prompt-profile) that drops the "
+            "'≥3 tool calls before patch' mandate while keeping "
+            "repo-grounding and a STRICT unified-diff output contract. "
+            "Designed to coexist with adaptive topology selection — no "
+            "system_hint or topology override."
+        ),
+    )
+    parser.add_argument(
         "--manifest-path",
         type=Path,
         default=_DEFAULT_CANARY_MANIFEST_PATH,
@@ -2082,6 +2251,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.claim_default_pipeline_learning_evidence
             ),
             expect_default_pipeline_learn=args.expect_default_pipeline_learn,
+            swebench_prompt_profile=args.swebench_prompt_profile,
         )
     )
 
