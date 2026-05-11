@@ -248,18 +248,24 @@ factual = 0.36
 [[models]]
 # A9 (2026-04-24): gpt-5.5-pro addition. Same source set as
 # gpt-5.5 above. Pricing: $30/$180 per 1M (in/out) — the highest
-# cost in our mesh by a wide margin. Only the Rust assigner's
-# budget gate and the S3 affinity weighting prevent it from
-# running away on non-hard tasks. Bandit should learn this.
+# cost in our mesh by a wide margin.
 #
-# Affinity scores: bumped above gpt-5.4-pro on code/reasoning
-# reflecting "higher accuracy" positioning per the announcement,
-# but kept conservative — real performance delta will come via
-# ablation. S2 affinity explicitly lowered vs 5.5 base (0.60 vs
-# 0.90) so the assigner doesn't burn pro rates on mid-tier tasks.
+# RETIRED 2026-05-11 per Yann directive: "Retire ChatGPT 5.5 Pro, aucun
+# problème avec 5.5 mais pas l'édition Pro, il coûte trop cher." Cost
+# is the binding constraint: $30/$180 per 1M is 10-15× gpt-5.5 base
+# rates and the empirical SWE-bench Pro canary runs on 2026-05-11
+# (commits 6e0609ba → 6317d42a) showed no resolution-rate signal that
+# justifies the spread for the budget-tier canaries. Runtime selection
+# is disabled; the card stays in the catalogue for bandit/cost
+# history reproducibility. Affinity scores kept verbatim so historical
+# bandit posteriors still make sense.
 id = "gpt-5.5-pro"
 provider = "openai"
 family = "gpt-5.5"
+runtime_selectable = false
+runtime_replacement = "gpt-5.5"
+runtime_evidence = "docs/decisions/2026-05-11-gpt-55-pro-retire.md"
+runtime_replacement_settings = {}
 code_score = 0.91
 reasoning_score = 0.98
 tool_use_score = 0.94
