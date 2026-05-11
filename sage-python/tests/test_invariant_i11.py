@@ -535,6 +535,189 @@ def test_i11_close_time_audit_blocked_witness_without_failure_returns_violation(
     assert v["witness_phase"] == "initial"
 
 
+def test_i11_fail_closed_verified_blocked_emits_provider_policy_failure_before_event_log_invariant_violation(
+    tmp_trace_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """cgpro VERIFY 2026-05-11 EDIT_REQUIRED Blocker 1: fail-closed
+    ordering. When the per-node policy ALSO blocks AND the witness
+    mismatches verified (declared=allowed, verified=blocked), the
+    trace MUST contain BOTH the `provider_policy_violation` failure
+    event AND the I-11 EventLogInvariantViolation — failure event
+    landed FIRST in the trace, then exception raised.
+
+    Required event order:
+      provider_execution_witness
+      → runtime_integrity_assertion(verdict=fail)
+      → failure(error_type=provider_policy_violation)
+      → EventLogInvariantViolation
+    """
+    monkeypatch.setenv("SAGE_TRACE_FAIL_CLOSED", "1")
+    run_id = "01I11FCBLOCKEDORDER000001"
+    log = RuntimeEventLog(run_id=run_id, trace_dir=tmp_trace_dir)
+    log.set_task_text("t")
+    log.emit_task_started("t")
+    # Witness "lied" — declared=allowed but live policy denies.
+    # Per-node assignment ALSO violates → existing decision.violations
+    # path runs → emit_failure FIRST, then EventLogInvariantViolation.
+    _seed_witness_state(
+        log,
+        decision="allowed",
+        routing_provider_id="openai",
+        reason_code="passes_policy",
+    )
+    pipeline = _make_pipeline_with_policy(
+        allowlist=("deepseek",),
+        assigner_provider_map={"gpt-5.4-pro": "openai"},
+    )
+    ctx = _make_ctx(assignments={0: "gpt-5.4-pro"})
+
+    with pytest.raises(EventLogInvariantViolation):
+        enforce_provider_policy(pipeline, ctx, log)
+    log.close()
+
+    events = _read_events(tmp_trace_dir / f"{run_id}.jsonl")
+    types_in_order = [e["event_type"] for e in events]
+    assert "runtime_integrity_assertion" in types_in_order
+    failure_events = [
+        e for e in events
+        if e["event_type"] == "failure"
+        and e.get("error_type") == "provider_policy_violation"
+    ]
+    assert len(failure_events) == 1, (
+        "EXACTLY ONE provider_policy_violation failure event must be "
+        "in the trace — audit evidence preserved per cgpro Blocker 1"
+    )
+    assertion_seq = next(
+        e["seq"] for e in events
+        if e["event_type"] == "runtime_integrity_assertion"
+    )
+    failure_seq = failure_events[0]["seq"]
+    assert assertion_seq < failure_seq, (
+        "assertion event MUST precede failure event"
+    )
+
+
+def test_i11_close_time_audit_rejects_unrelated_provider_policy_failure(
+    tmp_trace_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """cgpro Blocker 2: a provider_policy_violation failure that
+    arrives AFTER a `node_started` (provider dispatch already
+    happened) MUST NOT pair with an earlier blocked witness.
+    """
+    monkeypatch.delenv("SAGE_TRACE_FAIL_CLOSED", raising=False)
+    run_id = "01I11AUDITUNRELATED000001"
+    log = RuntimeEventLog(run_id=run_id, trace_dir=tmp_trace_dir)
+    log.set_task_text("t")
+    log.emit_task_started("t")
+    log.emit_provider_execution_witness(
+        witness_schema_version="v0", assignment_phase="initial",
+        routing={"routing_model_id": "gpt-5.4-pro", "routing_provider_id": "openai"},
+        policy={
+            "active": True, "source": "cli",
+            "allowlist": ["deepseek"], "denylist": ["openai"],
+            "routing_candidate_decision": "blocked",
+            "routing_candidate_reason_code": "provider_in_denylist",
+        },
+        per_node_assignments=[
+            {
+                "node_id": "0", "node_role": "coder",
+                "assigned_model_id": "deepseek-v4-pro",
+                "assigned_provider_id": "deepseek",
+                "required_capabilities": [],
+                "assignment_policy_decision": "allowed",
+                "assignment_policy_reason_code": "passes_policy",
+            }
+        ],
+        substitution_summary={
+            "routing_model_distinct_from_assignments": True,
+            "routing_candidate_blocked_by_policy": True,
+            "executed_models_distinct_from_routing": True,
+            "assignment_count": 1, "allowed_assignment_count": 1,
+            "blocked_assignment_count": 0,
+            "rust_filter_details_observed": False,
+        },
+    )
+    log.emit_node_started(
+        topology_id="t1", node_id="n0", node_role="actor",
+        attempt=1, model_id="deepseek-v4-pro", provider_id="deepseek",
+        predecessor_ids=(), edge_ids=(),
+        predecessors_by_channel=None,
+    )
+    log.emit_failure(
+        kind="provider_policy",
+        error_type="provider_policy_violation",
+        message="unrelated late failure",
+    )
+    log.emit_final_result(status="success", output="ok", total_cost_usd=0, total_latency_ms=1.0, node_count=1)
+
+    violations = log.validate_invariants()
+    log.close()
+    assert len(violations) == 1
+    assert "provider dispatch" in violations[0]["message"]
+
+
+def test_i11_close_time_audit_lifo_pairing_for_multiple_witnesses(
+    tmp_trace_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """cgpro Blocker 2 LIFO contract: when multiple blocked witnesses
+    each have their own subsequent provider_policy_violation failure,
+    each pair matches in proper order — not FIFO.
+
+    Trace shape:
+      witness A (blocked, phase=initial)
+      failure A — pairs with A
+      witness B (blocked, phase=reroute) — A is matched, B is open
+      failure B — pairs with B
+    """
+    monkeypatch.delenv("SAGE_TRACE_FAIL_CLOSED", raising=False)
+    run_id = "01I11AUDITLIFOPAIR0000001"
+    log = RuntimeEventLog(run_id=run_id, trace_dir=tmp_trace_dir)
+    log.set_task_text("t")
+    log.emit_task_started("t")
+    for phase in ("initial", "reroute"):
+        log.emit_provider_execution_witness(
+            witness_schema_version="v0", assignment_phase=phase,
+            routing={"routing_model_id": "gpt-5.4-pro", "routing_provider_id": "openai"},
+            policy={
+                "active": True, "source": "cli",
+                "allowlist": [], "denylist": ["openai"],
+                "routing_candidate_decision": "blocked",
+                "routing_candidate_reason_code": "provider_in_denylist",
+            },
+            per_node_assignments=[
+                {
+                    "node_id": "0", "node_role": "actor",
+                    "assigned_model_id": "gpt-5.4-pro",
+                    "assigned_provider_id": "openai",
+                    "required_capabilities": [],
+                    "assignment_policy_decision": "blocked",
+                    "assignment_policy_reason_code": "provider_in_denylist",
+                }
+            ],
+            substitution_summary={
+                "routing_model_distinct_from_assignments": False,
+                "routing_candidate_blocked_by_policy": True,
+                "executed_models_distinct_from_routing": False,
+                "assignment_count": 1, "allowed_assignment_count": 0,
+                "blocked_assignment_count": 1,
+                "rust_filter_details_observed": False,
+            },
+        )
+        log.emit_failure(
+            kind="provider_policy",
+            error_type="provider_policy_violation",
+            message=f"openai denied ({phase})",
+        )
+    log.emit_final_result(status="failure", output="", total_cost_usd=0, total_latency_ms=1.0, node_count=0)
+
+    violations = log.validate_invariants()
+    log.close()
+    assert violations == []
+
+
 def test_i11_close_time_audit_raises_under_fail_closed(
     tmp_trace_dir: Path,
     monkeypatch: pytest.MonkeyPatch,

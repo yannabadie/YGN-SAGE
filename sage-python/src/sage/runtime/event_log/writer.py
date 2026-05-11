@@ -743,10 +743,18 @@ class RuntimeEventLog:
         except (OSError, UnicodeDecodeError):
             return []
 
+        # cgpro VERIFY Blocker 2 fix (2026-05-11): tighten pairing.
+        # Pair every policy-active blocked witness with the MOST
+        # RECENT (LIFO) unmatched provider_policy_violation failure,
+        # AND reject pairing if `node_started` or another witness
+        # intervenes between the witness and the failure. Phase
+        # mismatch is also rejected when payload metadata is present.
         violations: list[dict[str, Any]] = []
-        # Pair every "policy-active blocked" witness with the first
-        # subsequent provider_policy_violation failure event.
-        unmatched_witnesses: list[dict[str, Any]] = []
+        # Stack of {witness_seq, witness_phase, dispatch_seen} —
+        # dispatch_seen flips True once a node_started or another
+        # witness appears after this entry, marking it unmatchable
+        # by any subsequent failure.
+        unmatched: list[dict[str, Any]] = []
         for line in raw.splitlines():
             line = line.strip()
             if not line:
@@ -760,6 +768,12 @@ class RuntimeEventLog:
                 payload = event.get("payload") or {}
                 if not isinstance(payload, dict):
                     continue
+                # Any new witness invalidates any earlier blocked
+                # witness still unmatched — provider dispatch may
+                # have happened in between (or, in the reroute case,
+                # the new witness records a new attempt).
+                for entry in unmatched:
+                    entry["dispatch_seen"] = True
                 pol = payload.get("policy") or {}
                 if not isinstance(pol, dict):
                     continue
@@ -767,30 +781,49 @@ class RuntimeEventLog:
                     continue
                 if pol.get("routing_candidate_decision") != "blocked":
                     continue
-                unmatched_witnesses.append(
+                unmatched.append(
                     {
                         "witness_seq": event.get("seq"),
                         "witness_phase": payload.get("assignment_phase"),
+                        "dispatch_seen": False,
                     }
                 )
+            elif event_type == "node_started":
+                # Provider dispatch side-effect — any unmatched
+                # blocked witness up to this point is unrecoverable.
+                for entry in unmatched:
+                    entry["dispatch_seen"] = True
             elif event_type == "failure":
-                # Match the OLDEST unmatched blocked witness with this
-                # provider-policy failure. Order in JSONL is monotonic
-                # by seq, so this is FIFO pairing.
-                if (
-                    event.get("error_type") == "provider_policy_violation"
-                    and unmatched_witnesses
-                ):
-                    unmatched_witnesses.pop(0)
+                if event.get("error_type") != "provider_policy_violation":
+                    continue
+                # LIFO pairing: scan from the end for the most recent
+                # unmatched witness that has not been invalidated by
+                # dispatch / another witness.
+                matched_index = None
+                for i in range(len(unmatched) - 1, -1, -1):
+                    if not unmatched[i]["dispatch_seen"]:
+                        matched_index = i
+                        break
+                if matched_index is not None:
+                    unmatched.pop(matched_index)
+                # An unrelated provider_policy_violation failure (no
+                # candidate witness, or all candidates already
+                # invalidated) is silently dropped — it's not
+                # evidence for any blocked witness in this trace.
 
-        for witness in unmatched_witnesses:
+        for witness in unmatched:
+            reason = (
+                "blocked witness followed by provider dispatch / "
+                "another witness without matching "
+                "provider_policy_violation failure event"
+                if witness["dispatch_seen"]
+                else "blocked witness without matching "
+                "provider_policy_violation failure event"
+            )
             violations.append(
                 {
                     "invariant_id": "I-11",
-                    "message": (
-                        "blocked witness without matching "
-                        "provider_policy_violation failure event"
-                    ),
+                    "message": reason,
                     "witness_seq": witness["witness_seq"],
                     "witness_phase": witness["witness_phase"],
                 }

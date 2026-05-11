@@ -1153,11 +1153,11 @@ def test_cli_protocol_version_appears_in_runtime_integrity_ledger() -> None:
         f"expected ≥2."
     )
 
-    # The header announces 10 invariants (post cycle-13 K Phase 1.5
-    # — ToolPolicy capability declaration & grant enforcement).
-    assert "## The 10 invariants" in ledger_text, (
-        "runtime-integrity-ledger.md header must announce '10 invariants' "
-        "(updated from 9 in cycle-13 K Phase 1.5 commit 6497c427). "
-        "If a future cycle adds an 11th invariant, update both the "
+    # The header announces 11 invariants (post slice 10D I-11 —
+    # routing-candidate decision enforcement-bound, 2026-05-11).
+    assert "## The 11 invariants" in ledger_text, (
+        "runtime-integrity-ledger.md header must announce '11 invariants' "
+        "(updated from 10 in slice 10D I-11 promotion 2026-05-11). "
+        "If a future cycle adds a 12th invariant, update both the "
         "header and this test."
     )

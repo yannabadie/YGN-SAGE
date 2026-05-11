@@ -309,57 +309,87 @@ def enforce_provider_policy(
     decision = evaluate_provider_policy(pipeline, ctx)
     setattr(ctx, "_provider_policy_decision", decision.to_dict())
 
-    # Slice 10D I-11 (cgpro DESIGN_LOCKED 2026-05-11): inline runtime
-    # invariant binding. Compares the declared witness decision
-    # against an independent re-evaluation of the policy on the same
-    # routing candidate. Emits runtime_integrity_assertion. Under
-    # SAGE_TRACE_FAIL_CLOSED=1, a mismatch raises
-    # EventLogInvariantViolation BEFORE provider dispatch.
-    _maybe_emit_i11_assertion(pipeline, event_log)
+    # Slice 10D I-11 (cgpro DESIGN_LOCKED 2026-05-11; EDIT_REQUIRED
+    # 2026-05-11 fail-closed ordering fix): emit the assertion event
+    # first and capture whether a fail-closed escalation is queued.
+    # We do NOT raise here — the existing ProviderPolicyViolation
+    # path may need to emit its provider_policy_violation failure
+    # event FIRST so the audit evidence exists in the trace before
+    # the I-11 abort takes over.
+    i11_should_raise_after_failure = _maybe_emit_i11_assertion(
+        pipeline, event_log,
+    )
 
-    if not decision.violations:
-        return
-    message = _violation_message(decision)
-    if event_log is not None:
-        event_log.emit_failure(
-            kind="provider_policy",
-            error_type="provider_policy_violation",
-            message=message,
+    if decision.violations:
+        message = _violation_message(decision)
+        if event_log is not None:
+            event_log.emit_failure(
+                kind="provider_policy",
+                error_type="provider_policy_violation",
+                message=message,
+            )
+        # Mandatory evidence has been written. If the I-11 escalation
+        # was queued, raise it now so the abort happens AFTER the
+        # failure event — preserves the witness → assertion → failure
+        # → EventLogInvariantViolation ordering required by the
+        # ledger row.
+        if i11_should_raise_after_failure:
+            raise EventLogInvariantViolation(
+                "I-11 invariant violated (verified-blocked path): "
+                "provider_policy_violation evidence emitted, "
+                "raising EventLogInvariantViolation per FAIL_CLOSED"
+            )
+        raise ProviderPolicyViolation(message)
+
+    # No per-node violations — only safe to raise the I-11 escalation
+    # here, AFTER the assertion event but BEFORE any provider dispatch.
+    if i11_should_raise_after_failure:
+        raise EventLogInvariantViolation(
+            "I-11 invariant violated (allowed path): "
+            "declared witness decision diverges from evaluated policy"
         )
-    raise ProviderPolicyViolation(message)
 
 
 def _maybe_emit_i11_assertion(
     pipeline: "CognitiveOrchestrationPipeline",
     event_log: Any,
-) -> None:
-    """Inline I-11 binding (cgpro DESIGN_LOCKED 2026-05-11).
+) -> bool:
+    """Inline I-11 binding (cgpro DESIGN_LOCKED 2026-05-11; ordering
+    fix cgpro VERIFY 2026-05-11 Blocker 1).
 
     Reads the most recent witness state from `event_log`, re-evaluates
     the active policy against the witness's routing candidate provider,
     and emits a `runtime_integrity_assertion` event with verdict
     pass|fail.
 
-    No-ops if:
+    Returns ``True`` iff the caller MUST raise
+    `EventLogInvariantViolation` AFTER any subsequent
+    `provider_policy_violation` failure event is written. The caller
+    is responsible for orchestrating ordering so the audit evidence
+    exists in the trace before the abort.
+
+    No-ops (returns False) if:
     - event_log is None or lacks the witness-state slot (legacy writers)
     - no witness has been emitted yet
     - the witness was emitted under `policy.active=false` (I-11 only
       applies to policy-active provider attempts per ledger row)
+    - the writer lacks `emit_runtime_integrity_assertion` (legacy)
 
-    Under SAGE_TRACE_FAIL_CLOSED=1, a fail verdict raises
-    EventLogInvariantViolation. The existing ProviderPolicyViolation
-    path is independent — actual provider-policy denials always emit
-    their failure event and raise regardless of this gate.
+    Verdict semantics:
+    - declared == verified → verdict=pass, returns False
+    - declared != verified → verdict=fail, returns
+      (fail_closed AND True) — i.e. only escalates under
+      `SAGE_TRACE_FAIL_CLOSED=1`
     """
     if event_log is None:
-        return
+        return False
     state = getattr(event_log, "_last_witness_state", None)
     if not state:
-        return
+        return False
     if not state.get("active"):
         # I-11 only binds when the witness was emitted under an
         # active provider policy (per ledger row scope).
-        return
+        return False
 
     declared = str(state.get("decision") or "")
     declared_reason = state.get("reason_code")
@@ -391,10 +421,9 @@ def _maybe_emit_i11_assertion(
     verdict = "pass" if declared == verified else "fail"
     fail_closed = os.environ.get("SAGE_TRACE_FAIL_CLOSED") == "1"
 
-    seq = getattr(event_log, "emit_runtime_integrity_assertion", None)
-    if seq is None:
+    if not hasattr(event_log, "emit_runtime_integrity_assertion"):
         # Legacy writer without the I-11 emitter — skip silently.
-        return
+        return False
     event_log.emit_runtime_integrity_assertion(
         invariant_id="I-11",
         verdict=verdict,
@@ -408,14 +437,11 @@ def _maybe_emit_i11_assertion(
     )
 
     if verdict == "fail" and fail_closed:
-        # Fail-closed at the side-effect boundary, BEFORE the existing
-        # ProviderPolicyViolation path runs. The existing policy-denial
-        # path remains mandatory in the non-fail-closed case.
-        raise EventLogInvariantViolation(
-            f"I-11 invariant violated: declared={declared!r} "
-            f"verified={verified!r} phase={phase!r} "
-            f"routing_provider={routing_provider!r}"
-        )
+        # Defer the raise — caller orchestrates ordering so the
+        # provider_policy_violation failure event (if any) can land
+        # in the trace first. Per cgpro VERIFY Blocker 1.
+        return True
+    return False
 
 
 def enforce_provider_policy_preassignment(
