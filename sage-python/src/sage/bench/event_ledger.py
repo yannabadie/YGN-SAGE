@@ -58,8 +58,11 @@ except ImportError:  # pragma: no cover - ulid is a project dep, but defensive
 
 __all__ = [
     "BenchEventLedger",
+    "EMPTY_PATCH_REASON_CODES",
+    "TIMEOUT_REASON_CODES",
     "build_run_meta",
     "categorize_timeout",
+    "classify_non_timeout_empty_patch",
 ]
 
 
@@ -73,6 +76,64 @@ _DEFAULT_HEARTBEAT_MAX_GAP_MS = 30_000
 # reasoner generating thinking tokens (decompose: planner LLM call;
 # execute: per-node provider call).
 _REASONER_STAGES = frozenset({"decompose", "execute"})
+
+
+# Block `canary-stage-timing-budget` (cgpro DESIGN 2026-05-11, same conv).
+# Reason codes produced by ``categorize_timeout`` — timeout-derived only.
+TIMEOUT_REASON_CODES: frozenset[str] = frozenset(
+    {
+        "scoring_boot_impossible",
+        "provider_call_timeout",
+        "reasoner_thinking_overflow",
+        "stage_deadlock",
+    }
+)
+
+# Full enum of allowed empty-patch reasons for the pre-grader gate
+# (``canary_pre_grader_gate.py``). A canary task that produced ``patch=""``
+# must carry one of these codes; absence is a gate failure.
+#
+# Union of timeout-derived codes (above) plus non-timeout codes:
+#
+# - ``no_patch_extracted`` — task completed within budget but the canary
+#   could not extract a unified diff from the agent output.
+# - ``task_budget_exhausted`` — task hit the per-task or global budget
+#   cap before producing a patch.
+# - ``no_patch_to_verify`` — emitted by the diff verifier when the patch
+#   is empty so the verifier has nothing to check (follow-up not yet
+#   shipped at the writer side; the gate accepts it once wired).
+EMPTY_PATCH_REASON_CODES: frozenset[str] = TIMEOUT_REASON_CODES | frozenset(
+    {
+        "no_patch_extracted",
+        "task_budget_exhausted",
+        "no_patch_to_verify",
+    }
+)
+
+
+def classify_non_timeout_empty_patch(
+    *,
+    budget_exhausted: bool,
+    diff_verifier_outcome: str | None = None,
+) -> str:
+    """Classify an empty-patch outcome for a task that did NOT time out.
+
+    Used by the canary runner when a task completed within ``--task-timeout-s``
+    but produced ``extracted_patch_present=False``. Returns one of:
+
+    - ``"task_budget_exhausted"`` — caller signaled budget cap hit.
+    - ``"no_patch_to_verify"`` — diff verifier output already says so.
+    - ``"no_patch_extracted"`` — fallback for any other empty-patch case.
+
+    Timeout-derived reason codes are produced by ``categorize_timeout``
+    and are NOT returned here. All returned values are members of
+    ``EMPTY_PATCH_REASON_CODES``.
+    """
+    if budget_exhausted:
+        return "task_budget_exhausted"
+    if diff_verifier_outcome == "no_patch_to_verify":
+        return "no_patch_to_verify"
+    return "no_patch_extracted"
 
 
 def categorize_timeout(

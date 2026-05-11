@@ -18,9 +18,12 @@ from pathlib import Path
 import pytest
 
 from sage.bench.event_ledger import (
+    EMPTY_PATCH_REASON_CODES,
+    TIMEOUT_REASON_CODES,
     BenchEventLedger,
     build_run_meta,
     categorize_timeout,
+    classify_non_timeout_empty_patch,
 )
 
 
@@ -407,3 +410,109 @@ def test_categorize_timeout_non_reasoner_stage_is_stage_deadlock() -> None:
     )
     assert result["reason_code"] == "stage_deadlock"
     assert result["last_stage"] == "select_topology"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Block `canary-stage-timing-budget` (cgpro DESIGN 2026-05-11): empty-patch
+# reason-code enum + classifier for non-timeout cases. Together with
+# ``categorize_timeout`` outputs, these feed the pre-grader gate
+# (``canary_pre_grader_gate.py``).
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_timeout_reason_codes_match_categorize_timeout_outputs() -> None:
+    """The exported ``TIMEOUT_REASON_CODES`` enum must equal the set of
+    ``reason_code`` values that ``categorize_timeout`` can actually
+    return. Drift here means the pre-grader gate would either accept
+    invalid codes or reject valid ones.
+    """
+    expected = {
+        "scoring_boot_impossible",
+        "provider_call_timeout",
+        "reasoner_thinking_overflow",
+        "stage_deadlock",
+    }
+    assert TIMEOUT_REASON_CODES == expected
+    assert isinstance(TIMEOUT_REASON_CODES, frozenset)
+
+
+def test_empty_patch_reason_codes_superset_of_timeout_codes() -> None:
+    """``EMPTY_PATCH_REASON_CODES`` must be a strict superset of
+    ``TIMEOUT_REASON_CODES`` and add the three non-timeout codes
+    documented in cgpro DESIGN 2026-05-11.
+    """
+    assert TIMEOUT_REASON_CODES.issubset(EMPTY_PATCH_REASON_CODES)
+    extras = EMPTY_PATCH_REASON_CODES - TIMEOUT_REASON_CODES
+    assert extras == {
+        "no_patch_extracted",
+        "task_budget_exhausted",
+        "no_patch_to_verify",
+    }
+    assert isinstance(EMPTY_PATCH_REASON_CODES, frozenset)
+
+
+def test_classify_non_timeout_empty_patch_budget_exhausted_wins() -> None:
+    """Budget-exhausted dominates other signals."""
+    assert (
+        classify_non_timeout_empty_patch(
+            budget_exhausted=True,
+            diff_verifier_outcome="no_patch_to_verify",
+        )
+        == "task_budget_exhausted"
+    )
+    assert (
+        classify_non_timeout_empty_patch(
+            budget_exhausted=True,
+            diff_verifier_outcome=None,
+        )
+        == "task_budget_exhausted"
+    )
+
+
+def test_classify_non_timeout_empty_patch_verifier_signal() -> None:
+    """Diff verifier explicit signal wins over the fallback."""
+    assert (
+        classify_non_timeout_empty_patch(
+            budget_exhausted=False,
+            diff_verifier_outcome="no_patch_to_verify",
+        )
+        == "no_patch_to_verify"
+    )
+
+
+def test_classify_non_timeout_empty_patch_fallback_no_patch_extracted() -> None:
+    """Default case when neither budget nor verifier explains it."""
+    assert (
+        classify_non_timeout_empty_patch(
+            budget_exhausted=False,
+            diff_verifier_outcome=None,
+        )
+        == "no_patch_extracted"
+    )
+    # Unknown verifier outcome strings do NOT short-circuit; they fall
+    # through to the no_patch_extracted fallback so the gate has
+    # something canonical to match against.
+    assert (
+        classify_non_timeout_empty_patch(
+            budget_exhausted=False,
+            diff_verifier_outcome="match_ok",
+        )
+        == "no_patch_extracted"
+    )
+
+
+def test_classify_non_timeout_empty_patch_returns_only_allowed_codes() -> None:
+    """Sanity: every reachable return value is a member of
+    ``EMPTY_PATCH_REASON_CODES``.
+    """
+    cases = [
+        {"budget_exhausted": True, "diff_verifier_outcome": None},
+        {"budget_exhausted": False, "diff_verifier_outcome": "no_patch_to_verify"},
+        {"budget_exhausted": False, "diff_verifier_outcome": None},
+        {"budget_exhausted": False, "diff_verifier_outcome": "anything_else"},
+    ]
+    for case in cases:
+        assert (
+            classify_non_timeout_empty_patch(**case)  # type: ignore[arg-type]
+            in EMPTY_PATCH_REASON_CODES
+        )
