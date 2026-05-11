@@ -303,6 +303,11 @@ def test_event_type_catalog_completeness() -> None:
         "oracle_verdict",
         "run_frame_summary",
         "prompt_injection_detected",
+        # Slice 10D (cgpro DESIGN_LOCK 2026-05-11 Route A, v0):
+        # provider_execution_witness — informational witness; not an
+        # invariant yet. See
+        # docs/superpowers/plans/2026-05-10-handoff-recovery-plan.md.
+        "provider_execution_witness",
     }
 
     assert set(EVENT_TYPES) == expected, (

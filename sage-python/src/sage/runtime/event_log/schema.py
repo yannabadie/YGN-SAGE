@@ -19,6 +19,12 @@ EVENT_TYPES = (
     "oracle_verdict",
     "run_frame_summary",
     "prompt_injection_detected",
+    # Slice 10D (cgpro DESIGN_LOCK 2026-05-11 Route A, v0):
+    # `provider_execution_witness` makes the chain
+    # routing_chosen_model → policy_decision → per-node assignments
+    # explicit. v0 witness only — NOT an invariant yet. Cf.
+    # docs/superpowers/plans/2026-05-10-handoff-recovery-plan.md.
+    "provider_execution_witness",
 )
 
 REDACTION_STATES = (

@@ -548,6 +548,45 @@ class RuntimeEventLog:
         )
     
 
+    def emit_provider_execution_witness(
+        self,
+        *,
+        witness_schema_version: str = "v0",
+        assignment_phase: str = "initial",
+        routing: dict[str, Any],
+        policy: dict[str, Any],
+        per_node_assignments: list[dict[str, Any]],
+        substitution_summary: dict[str, Any],
+        parent_event_id: int | None = None,
+    ) -> int | None:
+        """Emit a `provider_execution_witness` event (slice 10D Route A v0).
+
+        cgpro DESIGN_LOCK 2026-05-11: makes the chain
+        ``routing_chosen_model → policy_decision → per_node_assignments``
+        explicit in the event log. NOT an invariant yet — v0 witness only.
+
+        ``_force_payload=True`` so the structured payload is visible
+        regardless of ``SAGE_TRACE_RAW``. The payload contains no
+        credential-shaped strings; only model IDs, provider IDs,
+        capability lists, and small reason-code enums.
+        """
+        payload = {
+            "witness_schema_version": witness_schema_version,
+            "assignment_phase": assignment_phase,
+            "routing": dict(routing),
+            "policy": dict(policy),
+            "per_node_assignments": [dict(n) for n in per_node_assignments],
+            "substitution_summary": dict(substitution_summary),
+        }
+        return self._emit(
+            _RunFrameSummary,  # reuse event core; distinguished by event_type
+            "provider_execution_witness",
+            "pipeline",
+            payload=payload,
+            parent_event_id=parent_event_id,
+            _force_payload=True,
+        )
+
     def emit_run_frame_summary(
         self,
         *,

@@ -297,6 +297,21 @@ async def run_internal(
             _set_cli_progress_stage(pipeline, "assign_models")
             ctx = assign_models(pipeline, ctx)
             runtime_events_mod.runtime_emit_model_assigned(pipeline, ctx, event_log, run_frame_builder)
+            # Slice 10D (cgpro DESIGN_LOCK 2026-05-11 Route A, v0):
+            # provider execution witness — emitted AFTER model_assigned
+            # (so the chain order is routing_decision → topology_selected
+            # → model_assigned* → provider_execution_witness →
+            # node_started*) and BEFORE enforce_provider_policy (which
+            # may raise A4 fail-closed). The witness is informational;
+            # it does NOT add blocking semantics on top of the existing
+            # provider policy gate.
+            runtime_events_mod.runtime_emit_provider_execution_witness(
+                pipeline,
+                ctx,
+                event_log,
+                routing_model_id=routing_model_id,
+                assignment_phase="initial",
+            )
             provider_policy_mod.enforce_provider_policy(pipeline, ctx, event_log)
             pipeline._emit(
                 "ASSIGN_MODELS", {"assignments": ctx.assignments, "domain": ctx.domain}

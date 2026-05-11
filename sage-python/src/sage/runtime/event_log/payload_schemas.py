@@ -817,6 +817,47 @@ PAYLOAD_SCHEMAS: dict[str, dict[PayloadSchemaVersion, EventPayloadSchema]] = {
             current=True,
         )
     },
+    # Slice 10D (cgpro DESIGN_LOCK 2026-05-11 Route A, v0):
+    # Provider execution witness — makes
+    # routing_chosen_model → policy_decision → per_node_assignments
+    # explicit in the event log. Nested-dict payload kept simple via
+    # `_dict_or_null` / `_list` on the four top-level groups. The
+    # reason_code enum is documented in
+    # docs/superpowers/plans/2026-05-10-handoff-recovery-plan.md.
+    "provider_execution_witness": {
+        "v1": _schema(
+            event_type="provider_execution_witness",
+            version="v1",
+            allowed_fields=(
+                "witness_schema_version",
+                "assignment_phase",
+                "routing",
+                "policy",
+                "per_node_assignments",
+                "substitution_summary",
+            ),
+            required_fields=(
+                "witness_schema_version",
+                "routing",
+                "policy",
+                "per_node_assignments",
+                "substitution_summary",
+            ),
+            field_specs={
+                "witness_schema_version": _string(16),
+                "assignment_phase": _string(32),
+                "routing": _dict_or_null(8192),
+                "policy": _dict_or_null(8192),
+                "per_node_assignments": _list(
+                    max_json_utf8_bytes=16384,
+                    item_type="dict",
+                ),
+                "substitution_summary": _dict_or_null(4096),
+            },
+            payload_kind="dict",
+            current=True,
+        )
+    },
 }
 
 def _current_schema_for(event_type: str) -> EventPayloadSchema:

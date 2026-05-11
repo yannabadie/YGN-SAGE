@@ -335,6 +335,209 @@ def runtime_emit_model_assigned(
             )
 
 
+# Slice 10D (cgpro DESIGN_LOCK 2026-05-11 Route A, v0):
+# `provider_execution_witness` reason-code enum. Compact strings so the
+# event payload doesn't carry long free-form text. Keep in sync with
+# the doc in docs/superpowers/plans/2026-05-10-handoff-recovery-plan.md.
+_WITNESS_REASON_PASSES_POLICY = "passes_policy"
+_WITNESS_REASON_NO_POLICY_ACTIVE = "no_policy_active"
+_WITNESS_REASON_PROVIDER_IN_DENYLIST = "provider_in_denylist"
+_WITNESS_REASON_PROVIDER_OUTSIDE_ALLOWLIST = "provider_outside_allowlist"
+_WITNESS_REASON_UNKNOWN_PROVIDER = "unknown_provider"
+_WITNESS_REASON_ROUTING_PROVIDER_UNRESOLVED = "routing_provider_unresolved"
+_WITNESS_REASON_ASSIGNMENT_PROVIDER_UNRESOLVED = "assignment_provider_unresolved"
+
+_WITNESS_REASON_CODES = (
+    _WITNESS_REASON_PASSES_POLICY,
+    _WITNESS_REASON_NO_POLICY_ACTIVE,
+    _WITNESS_REASON_PROVIDER_IN_DENYLIST,
+    _WITNESS_REASON_PROVIDER_OUTSIDE_ALLOWLIST,
+    _WITNESS_REASON_UNKNOWN_PROVIDER,
+    _WITNESS_REASON_ROUTING_PROVIDER_UNRESOLVED,
+    _WITNESS_REASON_ASSIGNMENT_PROVIDER_UNRESOLVED,
+)
+
+
+def _classify_provider_against_policy(
+    provider_id: str,
+    *,
+    allowlist: tuple[str, ...],
+    denylist: tuple[str, ...],
+    policy_active: bool,
+) -> tuple[str, str]:
+    """Decide whether ``provider_id`` is allowed by the current policy.
+
+    Returns ``(decision, reason_code)`` where ``decision`` is
+    ``"allowed" | "blocked" | "unresolved"``.
+
+    Pure function: no side effects, no event emission, no I/O.
+    """
+    if not provider_id:
+        return "unresolved", (
+            _WITNESS_REASON_ROUTING_PROVIDER_UNRESOLVED
+            if not policy_active
+            else _WITNESS_REASON_ROUTING_PROVIDER_UNRESOLVED
+        )
+    if not policy_active:
+        return "allowed", _WITNESS_REASON_NO_POLICY_ACTIVE
+    if denylist and provider_id in denylist:
+        return "blocked", _WITNESS_REASON_PROVIDER_IN_DENYLIST
+    if allowlist and provider_id not in allowlist:
+        return "blocked", _WITNESS_REASON_PROVIDER_OUTSIDE_ALLOWLIST
+    return "allowed", _WITNESS_REASON_PASSES_POLICY
+
+
+def runtime_emit_provider_execution_witness(
+    pipeline: "CognitiveOrchestrationPipeline",
+    ctx: "PipelineContext",
+    event_log: Any,
+    *,
+    routing_model_id: str = "",
+    assignment_phase: str = "initial",
+) -> int | None:
+    """Emit a ``provider_execution_witness`` event (slice 10D Route A v0).
+
+    cgpro DESIGN_LOCK 2026-05-11: this event sits between the per-node
+    ``model_assigned`` events and the first ``node_started`` to make the
+    chain ``routing_chosen_model → policy_decision → per_node_assignments``
+    visible in the runtime event log.
+
+    Inputs:
+    - ``routing_model_id`` — the model id the router originally chose
+      (from the ``routing_decision`` event payload). The caller is
+      responsible for plumbing this through; we don't re-read events.
+    - ``ctx`` — must have ``assignments`` (idx → model_id) and
+      ``topology`` set. ``ctx.provider_allowlist``/``ctx.provider_denylist``
+      are read if present.
+    - ``assignment_phase`` — ``"initial"`` (default) or ``"reroute"``.
+
+    Returns the event sequence number or ``None`` if no event_log was
+    provided.
+    """
+    if event_log is None:
+        return None
+
+    # Resolve allowlist / denylist from ctx if present. The CLI
+    # adapter populates these as tuples; tests may pass lists.
+    allowlist_raw = getattr(ctx, "provider_allowlist", None) or ()
+    denylist_raw = getattr(ctx, "provider_denylist", None) or ()
+    allowlist = tuple(str(p) for p in allowlist_raw if p)
+    denylist = tuple(str(p) for p in denylist_raw if p)
+    policy_active = bool(allowlist or denylist)
+
+    # Resolve routing provider
+    routing_provider_id = ""
+    if routing_model_id:
+        routing_provider_id = runtime_provider_id_for_model(
+            pipeline, routing_model_id, ctx
+        )
+    routing_decision, routing_reason = _classify_provider_against_policy(
+        routing_provider_id,
+        allowlist=allowlist,
+        denylist=denylist,
+        policy_active=policy_active,
+    )
+
+    # Per-node assignments
+    per_node: list[dict[str, Any]] = []
+    if ctx.topology is not None:
+        for idx in range(runtime_node_count(ctx.topology)):
+            try:
+                node = ctx.topology.get_node(idx)
+            except (AttributeError, RuntimeError, TypeError):
+                continue
+            model_id = ctx.assignments.get(idx, getattr(node, "model_id", "") or "")
+            node_role = getattr(node, "role", "") or f"node-{idx}"
+            capabilities = list(runtime_node_capabilities(node))
+            assigned_provider_id = ""
+            if model_id:
+                assigned_provider_id = runtime_provider_id_for_model(
+                    pipeline, model_id, ctx
+                )
+            decision, reason = _classify_provider_against_policy(
+                assigned_provider_id,
+                allowlist=allowlist,
+                denylist=denylist,
+                policy_active=policy_active,
+            )
+            if not assigned_provider_id:
+                reason = _WITNESS_REASON_ASSIGNMENT_PROVIDER_UNRESOLVED
+            per_node.append(
+                {
+                    "node_id": str(idx),
+                    "node_role": node_role,
+                    "assigned_model_id": str(model_id or ""),
+                    "assigned_provider_id": str(assigned_provider_id or ""),
+                    "required_capabilities": capabilities,
+                    "assignment_policy_decision": decision,
+                    "assignment_policy_reason_code": reason,
+                }
+            )
+
+    # Substitution summary — high-signal booleans + counts
+    routing_model_distinct = bool(
+        routing_model_id
+        and any(
+            assignment.get("assigned_model_id") != routing_model_id
+            for assignment in per_node
+        )
+    )
+    blocked_count = sum(
+        1 for a in per_node if a.get("assignment_policy_decision") == "blocked"
+    )
+    allowed_count = sum(
+        1 for a in per_node if a.get("assignment_policy_decision") == "allowed"
+    )
+    substitution_summary = {
+        "routing_model_distinct_from_assignments": routing_model_distinct,
+        "routing_candidate_blocked_by_policy": routing_decision == "blocked",
+        "executed_models_distinct_from_routing": routing_model_distinct,
+        "assignment_count": len(per_node),
+        "allowed_assignment_count": allowed_count,
+        "blocked_assignment_count": blocked_count,
+        # We intentionally do NOT claim visibility into Rust's
+        # internal candidate filter (cgpro DESIGN_LOCK case-1-only).
+        "rust_filter_details_observed": False,
+    }
+
+    routing_payload = {
+        "routing_source": str(getattr(ctx, "routing_source", "") or ""),
+        "routing_model_id": str(routing_model_id or ""),
+        "routing_provider_id": str(routing_provider_id or ""),
+        "system": int(getattr(ctx, "system", 0) or 0),
+        "domain": str(getattr(ctx, "domain", "") or ""),
+        "confidence": getattr(ctx, "confidence", None),
+    }
+
+    policy_payload = {
+        "active": policy_active,
+        "source": ("cli" if policy_active else "none"),
+        "allowlist": list(allowlist),
+        "denylist": list(denylist),
+        "routing_candidate_decision": routing_decision,
+        "routing_candidate_reason_code": routing_reason,
+    }
+
+    seq = event_log.emit_provider_execution_witness(
+        witness_schema_version="v0",
+        assignment_phase=assignment_phase,
+        routing=routing_payload,
+        policy=policy_payload,
+        per_node_assignments=per_node,
+        substitution_summary=substitution_summary,
+    )
+
+    # Audit-sidecar ref (best-effort)
+    try:
+        from sage.pipeline_v2 import learning_side_effects as lse_mod
+
+        lse_mod.store_event_ref(ctx, "provider_execution_witness", event_log)
+    except Exception:  # noqa: BLE001 - audit sidecar refs are best-effort
+        pass
+
+    return seq
+
+
 def runtime_final_status(
     pipeline: "CognitiveOrchestrationPipeline",  # noqa: ARG001 - signature symmetry
     ctx: "PipelineContext | None",
@@ -366,6 +569,7 @@ __all__ = [
     "runtime_edge_summary",
     "runtime_edge_type",
     "runtime_emit_model_assigned",
+    "runtime_emit_provider_execution_witness",
     "runtime_emit_topology_selected",
     "runtime_final_node_count",
     "runtime_final_status",

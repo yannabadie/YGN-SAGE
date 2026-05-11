@@ -1,0 +1,151 @@
+# Slice 10D — provider-execution-witness-chain
+
+**cgpro DESIGN_LOCK 2026-05-11** on conv `cgpro_ygn_sage_global_analysis_20260510`: Route A v0. Python-only structured witness emitted into RuntimeEventLog after `runtime_emit_model_assigned` and before `enforce_provider_policy`. NOT a runtime ledger invariant (I-11) yet — this is the observable evidence layer that future invariant work can bind to.
+
+## Why this slice
+
+The slice 9 forensic (`docs/benchmarks/2026-05-11-canary-patch-focused-prompt-profile/forensic-analysis.md`) revealed an opaque substitution chain inside ModelAssigner. The CLI passed `--provider-allowlist deepseek,google --provider-denylist openai`, the kNN router still nominated `gpt-5.4-pro` (openai) as the routing candidate, and `ModelAssigner.assign` silently substituted `deepseek-v4-pro` / `gemini-3-flash-preview` for the per-node assignments. There was no structured event recording the chain — the only trace was a free-form log line.
+
+This slice closes that opacity gap. After every successful `ModelAssigner.assign`, a single `provider_execution_witness` event is emitted into the JSONL trace with:
+
+- **routing**: which model the router (kNN / SystemRouter) chose + its inferred provider + routing source + S1/S2/S3 system + domain + confidence.
+- **policy**: whether a provider policy was active at all + allowlist + denylist + decision applied to the routing candidate.
+- **per_node_assignments**: one entry per topology node with the assigned model + provider + the policy decision against the assigned model.
+- **substitution_summary**: aggregate flags — was the routing candidate blocked? did substitution happen? how many assignments allowed vs blocked?
+
+The decision label MUST bind to a verified reason code from a fixed enum (runtime integrity directive #9 "declared ≠ verified"). The 7 reason codes are: `passes_policy`, `no_policy_active`, `provider_in_denylist`, `provider_outside_allowlist`, `unknown_provider`, `routing_provider_unresolved`, `assignment_provider_unresolved`.
+
+## Inputs
+
+- `sage-python/src/sage/runtime/event_log/schema.py` — `provider_execution_witness` added to `EVENT_TYPES`.
+- `sage-python/src/sage/runtime/event_log/payload_schemas.py` — v1 schema (6 allowed fields, 5 required).
+- `sage-python/src/sage/runtime/event_log/writer.py` — `emit_provider_execution_witness` (uses `_RunFrameSummary` event core, `_force_payload=True` so the chain is visible without `SAGE_TRACE_RAW=1`).
+- `sage-python/src/sage/pipeline_v2/runtime_events.py` — `_classify_provider_against_policy` (pure function, 7 reason codes) + `runtime_emit_provider_execution_witness` (builds the payload).
+- `sage-python/src/sage/pipeline_v2/orchestrator.py` — wired after `runtime_emit_model_assigned` and before `enforce_provider_policy`.
+
+## Outputs in this directory
+
+- `events.jsonl` — canonical worked example: a 3-event JSONL trace with the slice 9 scenario witness (3 events total: `task_started`, `provider_execution_witness`, `final_result`).
+- `reproduce.py` — script that regenerates `events.jsonl` via the live `RuntimeEventLog` writer. No API calls, no LLM cost.
+
+## Headline
+
+The chain `routing_chosen_model → policy_decision → per_node_assignments` is now an explicit structured event. Anyone reading a JSONL trace can answer:
+
+1. **What model did the router nominate?** → `payload.routing.routing_model_id` + `routing_provider_id`.
+2. **Did the provider policy block that model?** → `payload.policy.routing_candidate_decision` ∈ {allowed, blocked, unresolved} + `routing_candidate_reason_code`.
+3. **What was actually assigned per node?** → `payload.per_node_assignments[i].assigned_model_id` + `assigned_provider_id` + `assignment_policy_decision`.
+4. **Did silent substitution happen?** → `payload.substitution_summary.routing_candidate_blocked_by_policy` + `routing_model_distinct_from_assignments`.
+
+## Worked example — slice 9 scenario
+
+The canonical slice 9 chain (CLI flags `--provider-allowlist deepseek,google --provider-denylist openai`, router nominated `gpt-5.4-pro`):
+
+```json
+{
+  "event_type": "provider_execution_witness",
+  "schema_version": "v1",
+  "payload_schema_version": "v1",
+  "seq": 1,
+  "payload": {
+    "witness_schema_version": "v0",
+    "assignment_phase": "initial",
+    "routing": {
+      "routing_model_id": "gpt-5.4-pro",
+      "routing_provider_id": "openai",
+      "routing_source": "rust_system_router",
+      "system": 3,
+      "domain": "code",
+      "confidence": 0.8788
+    },
+    "policy": {
+      "active": true,
+      "allowlist": ["deepseek", "google"],
+      "denylist": ["openai"],
+      "routing_candidate_decision": "blocked",
+      "routing_candidate_reason_code": "provider_in_denylist"
+    },
+    "per_node_assignments": [
+      {
+        "node_index": 0,
+        "node_role": "coder",
+        "required_capabilities": ["code_generation", "reasoning", "tools"],
+        "assigned_model_id": "deepseek-v4-pro",
+        "assigned_provider_id": "deepseek",
+        "assignment_policy_decision": "allowed",
+        "assignment_policy_reason_code": "passes_policy"
+      },
+      {
+        "node_index": 1,
+        "node_role": "synthesizer",
+        "required_capabilities": ["text_processing"],
+        "assigned_model_id": "gemini-3-flash-preview",
+        "assigned_provider_id": "google",
+        "assignment_policy_decision": "allowed",
+        "assignment_policy_reason_code": "passes_policy"
+      }
+    ],
+    "substitution_summary": {
+      "routing_model_distinct_from_assignments": true,
+      "routing_candidate_blocked_by_policy": true,
+      "assignment_count": 2,
+      "allowed_assignment_count": 2,
+      "blocked_assignment_count": 0,
+      "rust_filter_details_observed": false
+    }
+  }
+}
+```
+
+The substitution that was previously a silent log line is now: `routing_candidate_blocked_by_policy=true` + `routing_model_distinct_from_assignments=true`, with the exact substitution recorded in `per_node_assignments[*]`.
+
+## Witness vs enforcement — non-masking contract
+
+The witness is an OBSERVATION, not an enforcement step. If the subsequent `enforce_provider_policy` decides to abort because the routing candidate's provider is in the denylist, the JSONL still contains BOTH events:
+
+1. `provider_execution_witness` (observation of the chain)
+2. `failure` with `error_type=provider_policy_violation` (enforcement decision)
+
+The witness MUST precede the failure in event order. This is the slice 9 chain made explicit at the runtime event log level. The test `test_provider_execution_witness_does_not_mask_provider_policy_violation` enforces this ordering.
+
+## What this slice does NOT claim
+
+- **Not a runtime ledger invariant.** Route A v0 is the observable evidence layer. Promoting to invariant I-11 (binding the policy decision to the side effect of `enforce_provider_policy`) requires a separate cycle with cgpro DESIGN_LOCK on the I-11 contract.
+- **Not a Rust-side filter trace.** `rust_filter_details_observed=false` is the current state. When ModelAssigner records its filter rejections explicitly into `_filter_details`, the witness will surface them in a future v0.x bump.
+- **Not a reroute-phase guarantee.** The wiring covers `assignment_phase="initial"`. If `execute.py` later emits a fresh `model_assigned` event during reroute (TopologyController path 1 / 2), a follow-up should wire the same witness with `assignment_phase="reroute"`. The helper already accepts that label; the orchestration call site does not yet exist.
+- **Not a real-canary smoke.** The events.jsonl in this directory was generated by `reproduce.py` calling the live `RuntimeEventLog` writer with the slice 9 input shape. The witness will appear in every canary going forward; the next paid canary will provide the first real-API trace.
+
+## Acceptance gates
+
+| Gate | Status |
+|---|---|
+| `provider_execution_witness` registered in `EVENT_TYPES` | ✅ |
+| v1 payload schema with 5 required + 6 allowed fields | ✅ |
+| `emit_provider_execution_witness` uses `_force_payload=True` | ✅ (payload visible without `SAGE_TRACE_RAW=1`) |
+| Witness emitted after `runtime_emit_model_assigned`, before `enforce_provider_policy` | ✅ |
+| 7 cgpro-required tests | ✅ (17/17 total in `tests/test_provider_execution_witness.py`) |
+| `test_event_type_catalog_completeness` updated | ✅ |
+| Pipeline integration regression (67/67) | ✅ |
+| Runtime event contracts regression (67/67) | ✅ |
+| ruff clean on touched files | ✅ |
+| mypy 0 errors on touched files | ✅ |
+| `claims_audit --strict` GREEN | ✅ |
+| `narrative_guard_phase22.py` PASS | ✅ |
+
+## Reproducing
+
+```bash
+# Regenerate events.jsonl with the live writer
+python docs/benchmarks/2026-05-11-provider-execution-witness-chain/reproduce.py
+
+# Run the contract tests
+cd sage-python
+python -m pytest tests/test_provider_execution_witness.py -v
+```
+
+## Follow-ups
+
+- **Real-canary smoke** (`assignment_phase="initial"`) — capture the witness from a paid SWE-bench Pro N=1 budget tier canary, attach to this directory as `events.real-canary.jsonl`.
+- **Reroute wire** — if `execute.py`'s reroute path re-runs ModelAssigner, wire the same helper with `assignment_phase="reroute"`.
+- **Rust filter details** — when ModelAssigner exposes the structured rejection list, bump witness payload to v0.1 (`rust_filter_details_observed=true` + a small list of `{model_id, reason}` tuples).
+- **Invariant I-11** — separate cgpro DESIGN_LOCK to promote the observation to a runtime ledger invariant binding the policy decision to enforcement side effects.
