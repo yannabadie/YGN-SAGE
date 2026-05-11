@@ -75,6 +75,24 @@ log = logging.getLogger("sage.bench.run_dryrun_arm_d")
 # default for cost — overridable via env or --tier.
 _DEFAULT_TIER = "budget"
 
+# Block `canary-stage-timing-budget` (cgpro DESIGN 2026-05-11, conv
+# `cgpro_ygn_sage_global_analysis_20260510`) slice 3.
+#
+# Named timeout profiles. The B2 step 4 N=1 canary timed out at 300s on
+# a substantial Vuls Trivy upgrade task without extracting a patch.
+# cgpro recommended a 600-1200s envelope for the graded-patch-generation
+# profile; 900s is the midpoint and gives the agent room without
+# inviting unbounded reasoner_thinking_overflow.
+#
+# `default` preserves the historical 120s — the existing per-task budget
+# for non-graded smokes (mock runs, plumbing checks, A5 timing triage
+# unit work) — so unflagged callers are byte-equivalent to pre-slice-3.
+_TIMEOUT_PROFILES: dict[str, float] = {
+    "default": 120.0,
+    "graded_patch_generation": 900.0,
+}
+_DEFAULT_PROFILE = "default"
+
 # Path to the Pro patch format helper (loaded as module).
 _FORMAT_PATCH_PATH = (
     Path(__file__).parent / "swebench_pro_format_patch.py"
@@ -775,6 +793,8 @@ def _write_launch_manifest(
     budget_usd: float,
     global_budget_usd: float,
     task_timeout_s: float,
+    profile: str = _DEFAULT_PROFILE,
+    profile_timeout_override: bool = False,
     provider_allowlist: tuple[str, ...],
     provider_denylist: tuple[str, ...],
     grader_preflight_path: Path | None,
@@ -824,6 +844,9 @@ def _write_launch_manifest(
             "budget_usd_per_task": budget_usd,
             "global_budget_usd": global_budget_usd,
             "task_timeout_s": task_timeout_s,
+            "effective_profile": profile,
+            "profile_timeout_default_s": _TIMEOUT_PROFILES.get(profile),
+            "profile_timeout_override": profile_timeout_override,
         },
         "providers": {
             "allowlist": list(provider_allowlist),
@@ -1252,6 +1275,8 @@ async def run(
     prefix: str,
     global_budget_usd: float = 25.0,
     task_timeout_s: float = 120.0,
+    profile: str = _DEFAULT_PROFILE,
+    profile_timeout_override: bool = False,
     manifest_path: Path | None = None,
     grader_preflight_path: Path | None = None,
     ci_green_artifact: Path | None = None,
@@ -1283,6 +1308,8 @@ async def run(
         budget_usd=budget_usd,
         global_budget_usd=global_budget_usd,
         task_timeout_s=task_timeout_s,
+        profile=profile,
+        profile_timeout_override=profile_timeout_override,
         provider_allowlist=provider_allowlist,
         provider_denylist=provider_denylist,
         grader_preflight_path=grader_preflight_path,
@@ -1362,7 +1389,7 @@ async def run(
     _write_aggregate_events(summaries, output_dir=output_dir, output_path=events_path)
 
     # Write summary
-    summary_doc = {
+    summary_doc: dict[str, Any] = {
         "run_started_at_utc": started_at.isoformat(),
         "run_ended_at_utc": datetime.now(timezone.utc).isoformat(),
         "mode": "mock" if mock else "real",
@@ -1375,6 +1402,9 @@ async def run(
             "budget_usd_per_task": budget_usd,
             "global_budget_usd": global_budget_usd,
             "task_timeout_s": task_timeout_s,
+            "effective_profile": profile,
+            "profile_timeout_default_s": _TIMEOUT_PROFILES.get(profile),
+            "profile_timeout_override": profile_timeout_override,
             "stop_reasons": budget_stop_reasons,
         },
         "predictions_path": str(predictions_path.relative_to(output_dir)),
@@ -1505,8 +1535,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--task-timeout-s",
         type=float,
-        default=120.0,
-        help="per-task wall-clock timeout in seconds (default 120.0)",
+        default=None,
+        help=(
+            "per-task wall-clock timeout in seconds. Sentinel ``None`` "
+            "means: resolve from --profile. Explicit value overrides the "
+            "profile-driven default and is reported as a profile_override."
+        ),
+    )
+    parser.add_argument(
+        "--profile",
+        choices=sorted(_TIMEOUT_PROFILES),
+        default=_DEFAULT_PROFILE,
+        help=(
+            "Named timeout profile. ``default`` keeps 120s for plumbing "
+            "smokes; ``graded_patch_generation`` gives the agent 900s for "
+            "real-LLM SWE-bench Pro canaries (cgpro DESIGN 2026-05-11 "
+            "envelope 600-1200s)."
+        ),
     )
     parser.add_argument(
         "--manifest-path",
@@ -1599,6 +1644,20 @@ def main(argv: list[str] | None = None) -> int:
             "remove --mock"
         )
 
+    profile_timeout = _TIMEOUT_PROFILES[args.profile]
+    if args.task_timeout_s is None:
+        effective_task_timeout_s = profile_timeout
+        timeout_override = False
+    else:
+        effective_task_timeout_s = float(args.task_timeout_s)
+        timeout_override = True
+        log.info(
+            "Explicit --task-timeout-s=%.1f overrides profile %r default %.1f",
+            effective_task_timeout_s,
+            args.profile,
+            profile_timeout,
+        )
+
     return asyncio.run(
         run(
             args.instances_json,
@@ -1607,7 +1666,9 @@ def main(argv: list[str] | None = None) -> int:
             limit=args.limit,
             budget_usd=args.budget_usd,
             global_budget_usd=args.global_budget_usd,
-            task_timeout_s=args.task_timeout_s,
+            task_timeout_s=effective_task_timeout_s,
+            profile=args.profile,
+            profile_timeout_override=timeout_override,
             manifest_path=args.manifest_path,
             grader_preflight_path=args.grader_preflight_path,
             ci_green_artifact=args.ci_green_artifact,

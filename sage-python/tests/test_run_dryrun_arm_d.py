@@ -1001,3 +1001,218 @@ def test_event_audit_extracts_top_level_runtime_fields_and_cost(tmp_path) -> Non
     assert audit["_execution_providers"] == ["deepseek"]
     assert audit["_provider_policy_failure_seen"] is False
     assert audit["_observed_event_cost_usd"] == 0.02672
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Block `canary-stage-timing-budget` slice 3 (cgpro DESIGN 2026-05-11):
+# named timeout profiles + explicit-override reporting in launch_manifest
+# and summary.json.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_timeout_profiles_enum_includes_default_and_graded_patch_generation() -> None:
+    """Both profiles required by cgpro DESIGN must exist with the
+    documented timeout values. ``default`` preserves the historical
+    120s for plumbing smokes; ``graded_patch_generation`` is the
+    900s mid-point of cgpro's 600-1200s envelope.
+    """
+    assert arm_d._TIMEOUT_PROFILES == {
+        "default": 120.0,
+        "graded_patch_generation": 900.0,
+    }
+    assert arm_d._DEFAULT_PROFILE == "default"
+
+
+def test_run_records_default_profile_metadata_when_unflagged(tmp_path) -> None:
+    instances_json = tmp_path / "instances.json"
+    instances_json.write_text(
+        json.dumps([{"instance_id": "task-1", "problem_statement": "x"}]),
+        encoding="utf-8",
+    )
+    exit_code = asyncio.run(
+        arm_d.run(
+            instances_json,
+            tmp_path / "out",
+            mock=True,
+            limit=1,
+            budget_usd=5.0,
+            global_budget_usd=25.0,
+            task_timeout_s=120.0,
+            tier="budget",
+            prefix="test",
+            provider_allowlist=("google", "deepseek"),
+            provider_denylist=("openai",),
+        )
+    )
+    assert exit_code == 0
+    launch = json.loads((tmp_path / "out" / "launch_manifest.json").read_text())
+    summary = json.loads((tmp_path / "out" / "summary.json").read_text())
+    assert launch["budget"]["effective_profile"] == "default"
+    assert launch["budget"]["profile_timeout_default_s"] == 120.0
+    assert launch["budget"]["profile_timeout_override"] is False
+    assert launch["budget"]["task_timeout_s"] == 120.0
+    assert summary["budget"]["effective_profile"] == "default"
+    assert summary["budget"]["profile_timeout_default_s"] == 120.0
+    assert summary["budget"]["profile_timeout_override"] is False
+
+
+def test_run_records_graded_patch_generation_profile(tmp_path) -> None:
+    """Caller passes ``profile="graded_patch_generation"`` + the matching
+    timeout (the resolver in main() does this for the CLI; here we mimic
+    the resolved state). The launch_manifest + summary must reflect that
+    the timeout came from the profile, not an explicit override.
+    """
+    instances_json = tmp_path / "instances.json"
+    instances_json.write_text(
+        json.dumps([{"instance_id": "task-1", "problem_statement": "x"}]),
+        encoding="utf-8",
+    )
+    exit_code = asyncio.run(
+        arm_d.run(
+            instances_json,
+            tmp_path / "out",
+            mock=True,
+            limit=1,
+            budget_usd=5.0,
+            global_budget_usd=25.0,
+            task_timeout_s=900.0,
+            profile="graded_patch_generation",
+            profile_timeout_override=False,
+            tier="budget",
+            prefix="test",
+            provider_allowlist=("google", "deepseek"),
+            provider_denylist=("openai",),
+        )
+    )
+    assert exit_code == 0
+    launch = json.loads((tmp_path / "out" / "launch_manifest.json").read_text())
+    summary = json.loads((tmp_path / "out" / "summary.json").read_text())
+    assert launch["budget"]["effective_profile"] == "graded_patch_generation"
+    assert launch["budget"]["profile_timeout_default_s"] == 900.0
+    assert launch["budget"]["profile_timeout_override"] is False
+    assert launch["budget"]["task_timeout_s"] == 900.0
+    assert summary["budget"]["effective_profile"] == "graded_patch_generation"
+    assert summary["budget"]["task_timeout_s"] == 900.0
+
+
+def test_run_records_profile_override_when_explicit_timeout_given(tmp_path) -> None:
+    """When the CLI resolver sets ``profile_timeout_override=True`` because
+    ``--task-timeout-s`` was explicitly given, the manifest must surface
+    that fact + still record the *profile* the user named so post-hoc
+    analysis can spot the divergence between profile and actual run.
+    """
+    instances_json = tmp_path / "instances.json"
+    instances_json.write_text(
+        json.dumps([{"instance_id": "task-1", "problem_statement": "x"}]),
+        encoding="utf-8",
+    )
+    exit_code = asyncio.run(
+        arm_d.run(
+            instances_json,
+            tmp_path / "out",
+            mock=True,
+            limit=1,
+            budget_usd=5.0,
+            global_budget_usd=25.0,
+            task_timeout_s=600.0,  # explicit, NOT a profile default
+            profile="graded_patch_generation",
+            profile_timeout_override=True,
+            tier="budget",
+            prefix="test",
+            provider_allowlist=("google", "deepseek"),
+            provider_denylist=("openai",),
+        )
+    )
+    assert exit_code == 0
+    launch = json.loads((tmp_path / "out" / "launch_manifest.json").read_text())
+    summary = json.loads((tmp_path / "out" / "summary.json").read_text())
+    assert launch["budget"]["task_timeout_s"] == 600.0
+    assert launch["budget"]["profile_timeout_default_s"] == 900.0  # profile's notional default
+    assert launch["budget"]["profile_timeout_override"] is True
+    assert summary["budget"]["task_timeout_s"] == 600.0
+    assert summary["budget"]["profile_timeout_override"] is True
+
+
+def test_cli_parses_profile_flag_and_resolves_timeout(monkeypatch, tmp_path) -> None:
+    """Smoke the argparse + resolver path: invoking main() with --profile
+    graded_patch_generation and no --task-timeout-s must call run() with
+    task_timeout_s=900 + profile_timeout_override=False. We monkeypatch
+    arm_d.run with an async stub that captures kwargs and lets asyncio.run
+    await it normally.
+    """
+    instances_json = tmp_path / "instances.json"
+    instances_json.write_text(
+        json.dumps([{"instance_id": "task-1", "problem_statement": "x"}]),
+        encoding="utf-8",
+    )
+    manifest = tmp_path / "manifest.md"
+    manifest.write_text("# canary", encoding="utf-8")
+
+    captured: dict[str, Any] = {}
+
+    async def _capture_run(*args, **kwargs):  # type: ignore[no-untyped-def]
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return 0
+
+    monkeypatch.setattr(arm_d, "run", _capture_run)
+
+    exit_code = arm_d.main(
+        [
+            "--instances-json",
+            str(instances_json),
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--mock",
+            "--profile",
+            "graded_patch_generation",
+            "--manifest-path",
+            str(manifest),
+        ]
+    )
+    assert exit_code == 0
+    assert captured["kwargs"]["task_timeout_s"] == 900.0
+    assert captured["kwargs"]["profile"] == "graded_patch_generation"
+    assert captured["kwargs"]["profile_timeout_override"] is False
+
+
+def test_cli_explicit_task_timeout_marks_profile_override(monkeypatch, tmp_path) -> None:
+    """When --task-timeout-s is passed alongside --profile, the explicit
+    value wins and profile_timeout_override flips True. Both pieces of
+    metadata reach run().
+    """
+    instances_json = tmp_path / "instances.json"
+    instances_json.write_text(
+        json.dumps([{"instance_id": "task-1", "problem_statement": "x"}]),
+        encoding="utf-8",
+    )
+    manifest = tmp_path / "manifest.md"
+    manifest.write_text("# canary", encoding="utf-8")
+
+    captured: dict[str, Any] = {}
+
+    async def _capture_run(*args, **kwargs):  # type: ignore[no-untyped-def]
+        captured["kwargs"] = kwargs
+        return 0
+
+    monkeypatch.setattr(arm_d, "run", _capture_run)
+
+    exit_code = arm_d.main(
+        [
+            "--instances-json",
+            str(instances_json),
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--mock",
+            "--profile",
+            "graded_patch_generation",
+            "--task-timeout-s",
+            "600",
+            "--manifest-path",
+            str(manifest),
+        ]
+    )
+    assert exit_code == 0
+    assert captured["kwargs"]["task_timeout_s"] == 600.0
+    assert captured["kwargs"]["profile"] == "graded_patch_generation"
+    assert captured["kwargs"]["profile_timeout_override"] is True
