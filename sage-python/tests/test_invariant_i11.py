@@ -763,3 +763,79 @@ def test_i11_close_time_audit_raises_under_fail_closed(
 
     with pytest.raises(EventLogInvariantViolation, match="I-11"):
         log.validate_invariants()
+
+
+def test_i11_close_time_audit_intervening_witness_invalidates_prior_unmatched_blocked_witness(
+    tmp_trace_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """cgpro VERIFY 2026-05-11 non-blocking hardening: explicit
+    intervening-witness invalidation.
+
+    Trace:
+      W_initial (blocked)
+      W_reroute (blocked) — intervening witness flips
+        dispatch_seen=True on W_initial
+      F (provider_policy_violation)
+
+    Expected:
+      W_reroute pairs with F (most recent unmatched).
+      W_initial remains unmatched and yields an I-11 audit violation
+      with the "dispatch / another witness" reason in the message.
+
+    This is the LIFO+dispatch-sentinel contract made explicit at the
+    multi-witness boundary. cgpro flagged this as "make the window
+    semantics explicit" — not a blocker for slice 10D closure.
+    """
+    monkeypatch.delenv("SAGE_TRACE_FAIL_CLOSED", raising=False)
+    run_id = "01I11AUDITINTERVENWITNES1"
+    log = RuntimeEventLog(run_id=run_id, trace_dir=tmp_trace_dir)
+    log.set_task_text("t")
+    log.emit_task_started("t")
+    for phase in ("initial", "reroute"):
+        log.emit_provider_execution_witness(
+            witness_schema_version="v0", assignment_phase=phase,
+            routing={"routing_model_id": "gpt-5.4-pro", "routing_provider_id": "openai"},
+            policy={
+                "active": True, "source": "cli",
+                "allowlist": [], "denylist": ["openai"],
+                "routing_candidate_decision": "blocked",
+                "routing_candidate_reason_code": "provider_in_denylist",
+            },
+            per_node_assignments=[
+                {
+                    "node_id": "0", "node_role": "actor",
+                    "assigned_model_id": "gpt-5.4-pro",
+                    "assigned_provider_id": "openai",
+                    "required_capabilities": [],
+                    "assignment_policy_decision": "blocked",
+                    "assignment_policy_reason_code": "provider_in_denylist",
+                }
+            ],
+            substitution_summary={
+                "routing_model_distinct_from_assignments": False,
+                "routing_candidate_blocked_by_policy": True,
+                "executed_models_distinct_from_routing": False,
+                "assignment_count": 1, "allowed_assignment_count": 0,
+                "blocked_assignment_count": 1,
+                "rust_filter_details_observed": False,
+            },
+        )
+    # Single failure event — must pair with the MORE RECENT witness
+    # (reroute), leaving the initial witness unmatched + invalidated.
+    log.emit_failure(
+        kind="provider_policy",
+        error_type="provider_policy_violation",
+        message="openai denied (reroute)",
+    )
+    log.emit_final_result(status="failure", output="", total_cost_usd=0, total_latency_ms=1.0, node_count=0)
+
+    violations = log.validate_invariants()
+    log.close()
+    assert len(violations) == 1, (
+        "exactly one violation expected — W_initial invalidated by "
+        "intervening W_reroute, no failure available to pair it"
+    )
+    v = violations[0]
+    assert v["witness_phase"] == "initial"
+    assert "dispatch / another witness" in v["message"]
