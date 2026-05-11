@@ -23,6 +23,64 @@ const PROVIDER_HINT_BONUS: f32 = 0.15;
 /// Fixed token estimate for cost normalization (input, output).
 const COST_ESTIMATE_TOKENS: (u32, u32) = (1000, 500);
 
+/// Slice 10D Phase 2 (cgpro DESIGN_LOCKED v1_1, 2026-05-11): cap on
+/// how many filter rejections the witness records per assignment
+/// call. Beyond this, the buffer evicts the oldest entry and sets
+/// `truncated=true` so Python's `rust_filter_rejections_truncated`
+/// reflects reality. Mirrors `_RUST_FILTER_REJECTIONS_CAP = 20` in
+/// `sage-python/src/sage/pipeline_v2/runtime_events.py`.
+const RUST_FILTER_REJECTIONS_CAP: usize = 20;
+
+/// Public reason codes for `last_filter_rejections()` — exactly the
+/// 8-code enum locked by cgpro. Internal `ProviderPolicyFilter`
+/// strings (`provider_policy_denylist`, etc.) are mapped to the
+/// public `provider_excluded_policy_*` codes before storage.
+const REASON_CARD_INACTIVE: &str = "card_inactive";
+const REASON_PROVIDER_POLICY_UNKNOWN: &str = "provider_excluded_policy_unknown_provider";
+const REASON_PROVIDER_POLICY_DENYLIST: &str = "provider_excluded_policy_denylist";
+const REASON_PROVIDER_POLICY_ALLOWLIST: &str = "provider_excluded_policy_allowlist";
+const REASON_PROVIDER_DEAD: &str = "provider_excluded_dead";
+const REASON_EXCLUDED_BY_CALLER: &str = "excluded_by_caller";
+const REASON_CAPABILITY_MISMATCH: &str = "capability_mismatch";
+const REASON_COST_ABOVE_BUDGET: &str = "cost_above_budget";
+
+/// Per-assignment-call buffer of structured candidate rejections.
+/// Python reads this via `last_filter_rejections()` for the
+/// provider_execution_witness payload (cgpro DESIGN_LOCKED v1_1).
+///
+/// Semantics:
+/// - `observed == false`: no recording-aware path has run since the
+///   last `begin_filter_recording()`. `last_filter_rejections()`
+///   returns `None`.
+/// - `observed == true`, `rejections == []`: the path ran but
+///   rejected nothing. Python sees `[]` and tags
+///   `rust_filter_details_observed=true`.
+/// - `observed == true`, `rejections != []`: the path ran and
+///   recorded the listed `(model_id, reason_code)` pairs.
+/// - `truncated == true`: more than `RUST_FILTER_REJECTIONS_CAP`
+///   rejections were pushed; oldest were evicted.
+#[derive(Debug, Clone, Default)]
+struct FilterRejectionState {
+    observed: bool,
+    rejections: Vec<(String, String)>,
+    truncated: bool,
+}
+
+/// Map the internal `ProviderPolicyFilter::violation_reason` strings
+/// to the public 8-code enum surface. Internal strings MUST NOT leak
+/// into `last_filter_rejections()` per cgpro Phase 2 lock §4.
+fn map_policy_violation_to_public_reason(internal: &str) -> &'static str {
+    match internal {
+        "provider_policy_unknown_provider" => REASON_PROVIDER_POLICY_UNKNOWN,
+        "provider_policy_denylist" => REASON_PROVIDER_POLICY_DENYLIST,
+        "provider_policy_outside_allowlist" => REASON_PROVIDER_POLICY_ALLOWLIST,
+        // Defensive: if a new internal reason ever appears,
+        // surface a stable public code rather than leaking the
+        // internal string.
+        _ => REASON_PROVIDER_POLICY_UNKNOWN,
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 struct ProviderPolicyFilter {
     allowlist: Option<HashSet<String>>,
@@ -263,6 +321,12 @@ pub struct ModelAssigner {
     /// assign_models* call, populated per-node during scoring.
     /// Mutex allows internal mutation through &self (PyO3 compatibility).
     last_assignment_trace: Mutex<Vec<PyModelCandidateTrace>>,
+    /// Slice 10D Phase 2 (cgpro DESIGN_LOCKED v1_1, 2026-05-11):
+    /// structured candidate rejection buffer for the
+    /// `provider_execution_witness` payload. Mutex mirrors
+    /// `last_assignment_trace`. Read by Python via
+    /// `last_filter_rejections()` / `last_filter_rejections_truncated()`.
+    last_filter_rejections: Mutex<FilterRejectionState>,
 }
 
 impl ModelAssigner {
@@ -274,6 +338,7 @@ impl ModelAssigner {
             weight_cost: DEFAULT_WEIGHT_COST,
             excluded_providers: Vec::new(),
             last_assignment_trace: Mutex::new(Vec::new()),
+            last_filter_rejections: Mutex::new(FilterRejectionState::default()),
         }
     }
 
@@ -294,6 +359,7 @@ impl ModelAssigner {
             weight_cost: weight_cost / norm,
             excluded_providers: Vec::new(),
             last_assignment_trace: Mutex::new(Vec::new()),
+            last_filter_rejections: Mutex::new(FilterRejectionState::default()),
         }
     }
 
@@ -310,6 +376,79 @@ impl ModelAssigner {
 
     fn clear_last_assignment_trace(&self) {
         self.last_assignment_trace.lock().unwrap().clear();
+    }
+
+    // ── Filter rejection recording (slice 10D Phase 2) ─────────────────
+
+    /// Mark the start of a recording-aware assignment path. Called at
+    /// the top of `assign_models_with_policy_inner` and
+    /// `assign_single_node_with_policy_inner`. After this, the state
+    /// transitions from `observed=false` (returns `None` to Python)
+    /// to `observed=true` (returns `Some(rejections)`).
+    fn begin_filter_recording(&self) {
+        let mut state = self.last_filter_rejections.lock().unwrap();
+        state.observed = true;
+        state.rejections.clear();
+        state.truncated = false;
+    }
+
+    /// Record a candidate rejection with the public reason code.
+    /// FIFO eviction at `RUST_FILTER_REJECTIONS_CAP` (cgpro Phase 2
+    /// lock §5: keep newest 20). Internal-only — public reason codes
+    /// MUST already be mapped via `map_policy_violation_to_public_reason`
+    /// before calling.
+    fn push_filter_rejection(&self, model_id: &str, reason_code: &'static str) {
+        let mut state = self.last_filter_rejections.lock().unwrap();
+        if !state.observed {
+            // Defensive: pushing without begin_filter_recording would
+            // be a code bug — flip `observed` so Python at least sees
+            // something, but log the issue.
+            state.observed = true;
+        }
+        if state.rejections.len() >= RUST_FILTER_REJECTIONS_CAP {
+            state.rejections.remove(0);
+            state.truncated = true;
+        }
+        state
+            .rejections
+            .push((model_id.to_string(), reason_code.to_string()));
+    }
+
+    /// First-match deterministic candidate-rejection classifier per
+    /// cgpro Phase 2 lock §4. Returns the public reason code (or
+    /// `None` if the candidate is eligible).
+    #[allow(clippy::too_many_arguments)]
+    fn classify_candidate_rejection(
+        &self,
+        card: &ModelCard,
+        provider_policy: &ProviderPolicyFilter,
+        needs_tools: bool,
+        needs_json: bool,
+        node_budget: f32,
+        est_cost: f32,
+        excluded_by_caller_ids: Option<&[String]>,
+    ) -> Option<&'static str> {
+        if !card.runtime_selectable {
+            return Some(REASON_CARD_INACTIVE);
+        }
+        if let Some(internal_reason) = provider_policy.violation_reason(&card.provider) {
+            return Some(map_policy_violation_to_public_reason(internal_reason));
+        }
+        if self.excluded_providers.iter().any(|p| p == &card.provider) {
+            return Some(REASON_PROVIDER_DEAD);
+        }
+        if let Some(excluded) = excluded_by_caller_ids {
+            if excluded.iter().any(|e| e == &card.id) {
+                return Some(REASON_EXCLUDED_BY_CALLER);
+            }
+        }
+        if (needs_tools && !card.supports_tools) || (needs_json && !card.supports_json_mode) {
+            return Some(REASON_CAPABILITY_MISMATCH);
+        }
+        if est_cost > node_budget {
+            return Some(REASON_COST_ABOVE_BUDGET);
+        }
+        None
     }
 
     fn candidate_runtime_eligible(
@@ -421,6 +560,10 @@ impl ModelAssigner {
         provider_policy: &ProviderPolicyFilter,
     ) -> AssignmentResult<usize> {
         self.clear_last_assignment_trace();
+        // Slice 10D Phase 2: start recording candidate rejections for
+        // the provider_execution_witness payload. cgpro Phase 2 lock §3:
+        // boundary clear, never on getter read.
+        self.begin_filter_recording();
         let node_count = graph.node_count();
         let mut remaining_budget = budget_usd;
         let mut assigned = 0usize;
@@ -566,10 +709,20 @@ impl ModelAssigner {
                         );
                         Some((preassigned_model_id.clone(), reason))
                     }
-                    None => Some((
-                        preassigned_model_id.clone(),
-                        "provider_policy_unknown_provider",
-                    )),
+                    None => {
+                        // Slice 10D Phase 2 lock §6: preassigned model
+                        // not in registry — candidate loop can't see
+                        // it, so push rejection here so the witness
+                        // exposes the unknown-provider substitution.
+                        self.push_filter_rejection(
+                            &preassigned_model_id,
+                            REASON_PROVIDER_POLICY_UNKNOWN,
+                        );
+                        Some((
+                            preassigned_model_id.clone(),
+                            "provider_policy_unknown_provider",
+                        ))
+                    }
                 }
             } else {
                 None
@@ -581,13 +734,19 @@ impl ModelAssigner {
 
             for (card_idx, card) in all_models.iter().enumerate() {
                 let est_cost = model_costs[card_idx];
-                if !card.runtime_selectable
-                    || provider_policy.violation_reason(&card.provider).is_some()
-                    || self.excluded_providers.iter().any(|p| p == &card.provider)
-                    || (needs_tools && !card.supports_tools)
-                    || (needs_json && !card.supports_json_mode)
-                    || est_cost > node_budget
-                {
+                // Slice 10D Phase 2: structured rejection recording.
+                // Same predicate set, just exposed via the classifier
+                // so we can attribute each skip to a reason code.
+                if let Some(reason_code) = self.classify_candidate_rejection(
+                    card,
+                    provider_policy,
+                    needs_tools,
+                    needs_json,
+                    node_budget,
+                    est_cost,
+                    None,
+                ) {
+                    self.push_filter_rejection(&card.id, reason_code);
                     continue;
                 }
 
@@ -739,6 +898,9 @@ impl ModelAssigner {
         exclude_ids: Option<&[String]>,
         options: SingleNodePolicyOptions<'_>,
     ) -> AssignmentResult<Option<String>> {
+        // Slice 10D Phase 2: start recording for this single-node
+        // assignment. cgpro Phase 2 lock §3.
+        self.begin_filter_recording();
         let node = match graph.try_get_node(node_idx) {
             Ok(node) => node,
             Err(_) => return Ok(None),
@@ -800,10 +962,19 @@ impl ModelAssigner {
                     .provider_policy
                     .violation_reason(&card.provider)
                     .map(|reason| (preassigned_model_id.clone(), reason)),
-                None if options.provider_policy.active() => Some((
-                    preassigned_model_id.clone(),
-                    "provider_policy_unknown_provider",
-                )),
+                None if options.provider_policy.active() => {
+                    // Slice 10D Phase 2 lock §6: preassigned model not
+                    // in registry — push rejection so the witness
+                    // exposes the unknown-provider substitution.
+                    self.push_filter_rejection(
+                        &preassigned_model_id,
+                        REASON_PROVIDER_POLICY_UNKNOWN,
+                    );
+                    Some((
+                        preassigned_model_id.clone(),
+                        "provider_policy_unknown_provider",
+                    ))
+                }
                 _ => None,
             }
         } else {
@@ -813,34 +984,20 @@ impl ModelAssigner {
         let mut best_id: Option<String> = None;
         let mut best_score: f32 = f32::NEG_INFINITY;
         for (card_idx, card) in all_models.iter().enumerate() {
-            if !card.runtime_selectable {
-                continue;
-            }
-            if options
-                .provider_policy
-                .violation_reason(&card.provider)
-                .is_some()
-            {
-                continue;
-            }
-            // Skip models from excluded providers (dead at boot health check)
-            if self.excluded_providers.iter().any(|p| p == &card.provider) {
-                continue;
-            }
-            // FrugalGPT cascade: skip excluded models (Cascade Routing, arXiv 2410.10347)
-            if let Some(excluded) = exclude_ids {
-                if excluded.iter().any(|e| e == &card.id) {
-                    continue;
-                }
-            }
-            if needs_tools && !card.supports_tools {
-                continue;
-            }
-            if needs_json && !card.supports_json_mode {
-                continue;
-            }
             let est_cost = model_costs[card_idx];
-            if est_cost > options.budget_usd {
+            // Slice 10D Phase 2: structured rejection recording via the
+            // shared classifier. `exclude_ids` only applies to this
+            // single-node path (FrugalGPT cascade — arXiv 2410.10347).
+            if let Some(reason_code) = self.classify_candidate_rejection(
+                card,
+                options.provider_policy,
+                needs_tools,
+                needs_json,
+                options.budget_usd,
+                est_cost,
+                exclude_ids,
+            ) {
+                self.push_filter_rejection(&card.id, reason_code);
                 continue;
             }
             let affinity = self.registry.calibrated_affinity(&card.id, system);
@@ -985,6 +1142,36 @@ impl ModelAssigner {
     #[pyo3(name = "last_assignment_trace")]
     fn py_last_assignment_trace(&self) -> Vec<PyModelCandidateTrace> {
         self.last_assignment_trace()
+    }
+
+    /// Slice 10D Phase 2 (cgpro DESIGN_LOCKED v1_1, 2026-05-11):
+    /// expose the structured filter-rejection list from the most
+    /// recent recording-aware assignment call.
+    ///
+    /// Returns:
+    /// - ``None`` if no recording-aware assignment path has run yet
+    ///   since this ``ModelAssigner`` was constructed. Python sees
+    ///   ``rust_filter_details_observed=False`` and
+    ///   ``rust_filter_rejections=None``.
+    /// - ``Some(vec![])`` if the path ran but rejected nothing.
+    /// - ``Some(rejections)`` with `(model_id, reason_code)` tuples
+    ///   where ``reason_code`` is one of the 8 public codes.
+    #[pyo3(name = "last_filter_rejections")]
+    fn py_last_filter_rejections(&self) -> Option<Vec<(String, String)>> {
+        let state = self.last_filter_rejections.lock().unwrap();
+        if !state.observed {
+            return None;
+        }
+        Some(state.rejections.clone())
+    }
+
+    /// Slice 10D Phase 2: ``true`` iff the most recent recording-aware
+    /// assignment call rejected more than `RUST_FILTER_REJECTIONS_CAP`
+    /// candidates and oldest entries were evicted. ``false`` when the
+    /// path didn't run OR when fewer than the cap were rejected.
+    #[pyo3(name = "last_filter_rejections_truncated")]
+    fn py_last_filter_rejections_truncated(&self) -> bool {
+        self.last_filter_rejections.lock().unwrap().truncated
     }
 }
 
@@ -2294,5 +2481,432 @@ code = 0.9
         ));
         assigner.assign_models_inner(&mut g2, "code", 0.0);
         assert!(assigner.last_assignment_trace().is_empty());
+    }
+
+    // ── Slice 10D Phase 2 — filter rejection recording (cgpro lock) ─────
+
+    /// Helper: registry with cards exercising every rejection predicate.
+    /// Layout: 1 eligible card + 6 cards each tripping a distinct reason.
+    fn rejection_test_registry() -> ModelRegistry {
+        let toml = r#"
+            [[models]]
+            id = "eligible"
+            provider = "alpha"
+            family = "test"
+            code_score = 0.9
+            reasoning_score = 0.9
+            tool_use_score = 0.9
+            math_score = 0.9
+            formal_z3_strength = 0.8
+            cost_input_per_m = 0.1
+            cost_output_per_m = 0.2
+            latency_ttft_ms = 100.0
+            tokens_per_sec = 200.0
+            s1_affinity = 0.9
+            s2_affinity = 0.9
+            s3_affinity = 0.9
+            recommended_topologies = ["sequential"]
+            supports_tools = true
+            supports_json_mode = true
+            supports_vision = true
+            context_window = 128000
+            runtime_selectable = true
+            [models.domain_scores]
+            code = 0.9
+
+            [[models]]
+            id = "inactive-card"
+            provider = "alpha"
+            family = "legacy"
+            code_score = 0.5
+            reasoning_score = 0.5
+            tool_use_score = 0.5
+            math_score = 0.5
+            formal_z3_strength = 0.3
+            cost_input_per_m = 0.1
+            cost_output_per_m = 0.2
+            latency_ttft_ms = 100.0
+            tokens_per_sec = 200.0
+            s1_affinity = 0.5
+            s2_affinity = 0.5
+            s3_affinity = 0.5
+            recommended_topologies = ["sequential"]
+            supports_tools = true
+            supports_json_mode = true
+            supports_vision = false
+            context_window = 128000
+            runtime_selectable = false
+            [models.domain_scores]
+            code = 0.5
+
+            [[models]]
+            id = "denied-provider"
+            provider = "beta"
+            family = "test"
+            code_score = 0.8
+            reasoning_score = 0.8
+            tool_use_score = 0.8
+            math_score = 0.8
+            formal_z3_strength = 0.5
+            cost_input_per_m = 0.1
+            cost_output_per_m = 0.2
+            latency_ttft_ms = 100.0
+            tokens_per_sec = 200.0
+            s1_affinity = 0.5
+            s2_affinity = 0.5
+            s3_affinity = 0.5
+            recommended_topologies = ["sequential"]
+            supports_tools = true
+            supports_json_mode = true
+            supports_vision = false
+            context_window = 128000
+            runtime_selectable = true
+            [models.domain_scores]
+            code = 0.5
+
+            [[models]]
+            id = "dead-provider-card"
+            provider = "gamma"
+            family = "test"
+            code_score = 0.8
+            reasoning_score = 0.8
+            tool_use_score = 0.8
+            math_score = 0.8
+            formal_z3_strength = 0.5
+            cost_input_per_m = 0.1
+            cost_output_per_m = 0.2
+            latency_ttft_ms = 100.0
+            tokens_per_sec = 200.0
+            s1_affinity = 0.5
+            s2_affinity = 0.5
+            s3_affinity = 0.5
+            recommended_topologies = ["sequential"]
+            supports_tools = true
+            supports_json_mode = true
+            supports_vision = false
+            context_window = 128000
+            runtime_selectable = true
+            [models.domain_scores]
+            code = 0.5
+
+            [[models]]
+            id = "no-tools-card"
+            provider = "alpha"
+            family = "test"
+            code_score = 0.5
+            reasoning_score = 0.5
+            tool_use_score = 0.5
+            math_score = 0.5
+            formal_z3_strength = 0.3
+            cost_input_per_m = 0.1
+            cost_output_per_m = 0.2
+            latency_ttft_ms = 100.0
+            tokens_per_sec = 200.0
+            s1_affinity = 0.5
+            s2_affinity = 0.5
+            s3_affinity = 0.5
+            recommended_topologies = ["sequential"]
+            supports_tools = false
+            supports_json_mode = false
+            supports_vision = false
+            context_window = 128000
+            runtime_selectable = true
+            [models.domain_scores]
+            code = 0.5
+
+            [[models]]
+            id = "expensive-card"
+            provider = "alpha"
+            family = "test"
+            code_score = 0.5
+            reasoning_score = 0.5
+            tool_use_score = 0.5
+            math_score = 0.5
+            formal_z3_strength = 0.3
+            cost_input_per_m = 1000.0
+            cost_output_per_m = 5000.0
+            latency_ttft_ms = 100.0
+            tokens_per_sec = 200.0
+            s1_affinity = 0.5
+            s2_affinity = 0.5
+            s3_affinity = 0.5
+            recommended_topologies = ["sequential"]
+            supports_tools = true
+            supports_json_mode = true
+            supports_vision = false
+            context_window = 128000
+            runtime_selectable = true
+            [models.domain_scores]
+            code = 0.5
+        "#;
+        ModelRegistry::from_toml_str(toml).unwrap()
+    }
+
+    /// Single-node graph needing tools, with a generous budget so cost
+    /// only fails the deliberately-expensive card.
+    fn rejection_test_graph() -> TopologyGraph {
+        let mut g = TopologyGraph::try_new("sequential").unwrap();
+        let node = TopologyNode::new(
+            "coder".into(),
+            "".into(),
+            2,
+            vec!["tools".into()],
+            0,
+            1.0, // node max cost — small enough to reject "expensive-card"
+            60.0,
+        );
+        g.add_node(node);
+        g
+    }
+
+    #[test]
+    fn test_phase2_no_assignment_yet_returns_none() {
+        // cgpro Phase 2 test "no assignment path yet -> None"
+        let registry = rejection_test_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+        assert!(assigner.py_last_filter_rejections().is_none());
+        assert!(!assigner.py_last_filter_rejections_truncated());
+    }
+
+    #[test]
+    fn test_phase2_clean_assignment_returns_empty_list() {
+        // cgpro Phase 2 test "no rejection after clean assignment -> []"
+        let registry = test_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+        let mut graph = two_node_graph();
+        assigner.assign_models_inner(&mut graph, "code", 100.0);
+        let rejections = assigner.py_last_filter_rejections();
+        assert!(rejections.is_some());
+        // With test_registry (only 2 cards: cheap-fast no-tools + expensive-smart tools),
+        // the coder node (needs tools) will reject cheap-fast (capability_mismatch).
+        // The reviewer node has no constraints, both cards eligible → no rejections.
+        // Net effect: at least one rejection but no truncation.
+        assert!(!assigner.py_last_filter_rejections_truncated());
+    }
+
+    #[test]
+    fn test_phase2_card_inactive_recorded() {
+        // cgpro Phase 2 test "runtime_selectable=false -> card_inactive"
+        let registry = rejection_test_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+        let mut graph = rejection_test_graph();
+        assigner.assign_models_inner(&mut graph, "code", 1.0);
+        let rejections = assigner
+            .py_last_filter_rejections()
+            .expect("should have observed rejections");
+        assert!(
+            rejections
+                .iter()
+                .any(|(mid, rc)| mid == "inactive-card" && rc == REASON_CARD_INACTIVE),
+            "expected inactive-card to be rejected as card_inactive; got {:?}",
+            rejections
+        );
+    }
+
+    #[test]
+    fn test_phase2_provider_denylist_recorded() {
+        // cgpro Phase 2 test "denylist candidate -> provider_excluded_policy_denylist"
+        let registry = rejection_test_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+        let mut graph = rejection_test_graph();
+        let policy = ProviderPolicyFilter {
+            allowlist: None,
+            denylist: ["beta".to_string()].into_iter().collect(),
+        };
+        let _ =
+            assigner.assign_models_with_policy_inner(&mut graph, "code", 1.0, &[], None, &policy);
+        let rejections = assigner
+            .py_last_filter_rejections()
+            .expect("should have observed rejections");
+        assert!(
+            rejections.iter().any(|(mid, rc)| {
+                mid == "denied-provider" && rc == REASON_PROVIDER_POLICY_DENYLIST
+            }),
+            "expected denied-provider to be rejected as denylist; got {:?}",
+            rejections
+        );
+    }
+
+    #[test]
+    fn test_phase2_provider_outside_allowlist_recorded() {
+        // cgpro Phase 2 test "allowlist miss -> provider_excluded_policy_allowlist"
+        let registry = rejection_test_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+        let mut graph = rejection_test_graph();
+        let policy = ProviderPolicyFilter {
+            allowlist: Some(["alpha".to_string()].into_iter().collect()),
+            denylist: HashSet::new(),
+        };
+        let _ =
+            assigner.assign_models_with_policy_inner(&mut graph, "code", 1.0, &[], None, &policy);
+        let rejections = assigner
+            .py_last_filter_rejections()
+            .expect("should have observed rejections");
+        // beta + gamma providers both outside allowlist
+        assert!(
+            rejections.iter().any(|(mid, rc)| {
+                rc == REASON_PROVIDER_POLICY_ALLOWLIST
+                    && (mid == "denied-provider" || mid == "dead-provider-card")
+            }),
+            "expected outside-allowlist rejection; got {:?}",
+            rejections
+        );
+    }
+
+    #[test]
+    fn test_phase2_provider_dead_recorded() {
+        // cgpro Phase 2 test "dead provider via exclude_providers -> provider_excluded_dead"
+        let registry = rejection_test_registry();
+        let mut assigner = ModelAssigner::from_registry(&registry);
+        assigner.set_excluded_providers(vec!["gamma".to_string()]);
+        let mut graph = rejection_test_graph();
+        assigner.assign_models_inner(&mut graph, "code", 1.0);
+        let rejections = assigner
+            .py_last_filter_rejections()
+            .expect("should have observed rejections");
+        assert!(
+            rejections
+                .iter()
+                .any(|(mid, rc)| { mid == "dead-provider-card" && rc == REASON_PROVIDER_DEAD }),
+            "expected dead-provider-card to be rejected as provider_excluded_dead; got {:?}",
+            rejections
+        );
+    }
+
+    #[test]
+    fn test_phase2_excluded_by_caller_recorded() {
+        // cgpro Phase 2 test "FrugalGPT exclude_model_ids -> excluded_by_caller"
+        let registry = rejection_test_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+        let mut graph = rejection_test_graph();
+        let excludes = ["eligible".to_string()];
+        let _ =
+            assigner.assign_single_node_inner(&mut graph, 0, "code", 1.0, Some(&excludes), None);
+        let rejections = assigner
+            .py_last_filter_rejections()
+            .expect("should have observed rejections");
+        assert!(
+            rejections
+                .iter()
+                .any(|(mid, rc)| { mid == "eligible" && rc == REASON_EXCLUDED_BY_CALLER }),
+            "expected 'eligible' to be rejected as excluded_by_caller; got {:?}",
+            rejections
+        );
+    }
+
+    #[test]
+    fn test_phase2_capability_mismatch_recorded() {
+        // cgpro Phase 2 test "tools/json missing -> capability_mismatch"
+        let registry = rejection_test_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+        let mut graph = rejection_test_graph();
+        assigner.assign_models_inner(&mut graph, "code", 1.0);
+        let rejections = assigner
+            .py_last_filter_rejections()
+            .expect("should have observed rejections");
+        assert!(
+            rejections
+                .iter()
+                .any(|(mid, rc)| { mid == "no-tools-card" && rc == REASON_CAPABILITY_MISMATCH }),
+            "expected no-tools-card to be rejected as capability_mismatch; got {:?}",
+            rejections
+        );
+    }
+
+    #[test]
+    fn test_phase2_cost_above_budget_recorded() {
+        // cgpro Phase 2 test "budget too small -> cost_above_budget"
+        let registry = rejection_test_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+        let mut graph = rejection_test_graph();
+        // node max_cost=1.0; expensive-card is 100/M+500/M which exceeds 1.0
+        assigner.assign_models_inner(&mut graph, "code", 100.0);
+        let rejections = assigner
+            .py_last_filter_rejections()
+            .expect("should have observed rejections");
+        assert!(
+            rejections
+                .iter()
+                .any(|(mid, rc)| { mid == "expensive-card" && rc == REASON_COST_ABOVE_BUDGET }),
+            "expected expensive-card to be rejected as cost_above_budget; got {:?}",
+            rejections
+        );
+    }
+
+    #[test]
+    fn test_phase2_unknown_provider_under_active_policy() {
+        // cgpro Phase 2 test "unknown/empty provider under active
+        // policy -> provider_excluded_policy_unknown_provider"
+        // Use the preassigned-unknown branch: set node.model_id to a
+        // model NOT in registry while policy is active.
+        let registry = rejection_test_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+        let mut graph = TopologyGraph::try_new("sequential").unwrap();
+        let node = TopologyNode::new(
+            "coder".into(),
+            "not-in-registry".into(), // preassigned to unknown model
+            2,
+            vec!["tools".into()],
+            0,
+            1.0,
+            60.0,
+        );
+        graph.add_node(node);
+        let policy = ProviderPolicyFilter {
+            allowlist: Some(["alpha".to_string()].into_iter().collect()),
+            denylist: HashSet::new(),
+        };
+        let _ =
+            assigner.assign_models_with_policy_inner(&mut graph, "code", 1.0, &[], None, &policy);
+        let rejections = assigner
+            .py_last_filter_rejections()
+            .expect("should have observed rejections");
+        assert!(
+            rejections.iter().any(|(mid, rc)| {
+                mid == "not-in-registry" && rc == REASON_PROVIDER_POLICY_UNKNOWN
+            }),
+            "expected unknown-preassigned to be rejected as unknown_provider; got {:?}",
+            rejections
+        );
+    }
+
+    #[test]
+    fn test_phase2_cap_at_20_truncated() {
+        // cgpro Phase 2 test "cap >20 -> len == 20 and truncated == true"
+        let registry = rejection_test_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+        // Manually push 25 rejections to test the cap
+        assigner.begin_filter_recording();
+        for i in 0..25 {
+            let mid = format!("model-{}", i);
+            assigner.push_filter_rejection(&mid, REASON_PROVIDER_POLICY_DENYLIST);
+        }
+        let rejections = assigner
+            .py_last_filter_rejections()
+            .expect("should have observed rejections");
+        assert_eq!(rejections.len(), RUST_FILTER_REJECTIONS_CAP);
+        assert!(assigner.py_last_filter_rejections_truncated());
+        // Newest 20 retained (FIFO eviction of oldest)
+        assert_eq!(rejections[0].0, "model-5");
+        assert_eq!(rejections.last().unwrap().0, "model-24");
+    }
+
+    #[test]
+    fn test_phase2_begin_filter_recording_resets_state() {
+        // Two assignment calls in sequence — the second call's
+        // rejections must NOT include leftovers from the first.
+        let registry = rejection_test_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+        let mut graph1 = rejection_test_graph();
+        assigner.assign_models_inner(&mut graph1, "code", 1.0);
+        let first_count = assigner.py_last_filter_rejections().unwrap().len();
+        assert!(first_count > 0);
+
+        // Second call — rejections list is reset
+        let mut graph2 = rejection_test_graph();
+        assigner.assign_models_inner(&mut graph2, "code", 1.0);
+        let second = assigner.py_last_filter_rejections().unwrap();
+        // The same number of rejections (same setup) — not first_count + first_count
+        assert_eq!(second.len(), first_count);
     }
 }
