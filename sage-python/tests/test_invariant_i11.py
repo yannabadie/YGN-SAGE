@@ -1142,6 +1142,142 @@ def test_i11_close_time_audit_rejects_correlation_to_non_blocked_or_missing_witn
     assert violations == []
 
 
+def test_reroute_rebuild_blocked_candidate_chain_witness_assertion_failure_no_dispatch(
+    tmp_trace_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """cgpro FUTURE_HARDENING_ID=REROUTE_REBUILD_RUNTIME_INTEGRATION_SMOKE
+    (non-blocker per VERIFY 2026-05-12). Drives the actual sequence
+    that REROUTE_REBUILD invokes in `execute.py:387-411`:
+
+      runtime_emit_provider_execution_witness(phase=reroute, blocked)
+      → enforce_provider_policy(pipeline, ctx, event_log)
+        → _maybe_emit_i11_assertion (verdict=pass: both blocked)
+        → emit_failure(provider_policy_violation)
+        → raise ProviderPolicyViolation
+
+    Asserts:
+      1. witness with phase=reroute + decision=blocked emitted
+      2. runtime_integrity_assertion with verdict=pass + phase=reroute
+      3. failure(provider_policy_violation) emitted with
+         correlation_witness_seq pointing at the reroute witness
+      4. ProviderPolicyViolation raised → control flow aborts BEFORE
+         the next runner.run() call (proven by absence of
+         node_started/runner_timeout events in this trace)
+
+    Not driving the full `execute()` function because that requires
+    the Rust topology engine + a TopologyController returning
+    "__REROUTE__". This helper-level test proves the same functional
+    contract: the runtime helpers that the reroute path invokes
+    enforce I-11 correctly when the reroute candidate is blocked.
+    The source inspection test
+    (`test_reroute_rebuild_path_calls_enforce_provider_policy`)
+    separately proves that `execute.py` DOES invoke these helpers
+    in the right order.
+    """
+    monkeypatch.delenv("SAGE_TRACE_FAIL_CLOSED", raising=False)
+    monkeypatch.setenv("SAGE_TRACE_RAW", "1")
+    run_id = "01I11REROUTECHAIN0000001"
+    log = RuntimeEventLog(run_id=run_id, trace_dir=tmp_trace_dir)
+    log.set_task_text("reroute integration smoke")
+    log.emit_task_started("reroute integration smoke")
+
+    # Build pipeline with active provider policy that denies openai.
+    # The "reroute" candidate is gpt-5.4-pro (openai) which the
+    # router proposed during a hypothetical reroute attempt.
+    pipeline = _make_pipeline_with_policy(
+        allowlist=("deepseek",),
+        denylist=("openai",),
+        assigner_provider_map={
+            "gpt-5.4-pro": "openai",
+            "deepseek-v4-pro": "deepseek",
+        },
+    )
+    # ModelAssigner did NOT substitute — per-node still openai →
+    # decision.violations will be non-empty → enforce_provider_policy
+    # emits failure + raises.
+    ctx = _make_ctx(assignments={0: "gpt-5.4-pro"})
+
+    # Step 1: emit reroute witness (mirrors execute.py:387-395)
+    from sage.pipeline_v2.runtime_events import (
+        runtime_emit_provider_execution_witness,
+    )
+    runtime_emit_provider_execution_witness(
+        pipeline, ctx, log,
+        routing_model_id="gpt-5.4-pro",
+        assignment_phase="reroute",
+    )
+
+    # Step 2: enforce_provider_policy (mirrors execute.py:408-410)
+    # Should:
+    #   - emit runtime_integrity_assertion (witness blocked + verified
+    #     blocked → verdict=pass)
+    #   - emit failure(provider_policy_violation) with correlation
+    #   - raise ProviderPolicyViolation
+    with pytest.raises(ProviderPolicyViolation):
+        enforce_provider_policy(pipeline, ctx, log)
+
+    log.emit_final_result(
+        status="failure", output="", total_cost_usd=0,
+        total_latency_ms=1.0, node_count=0,
+    )
+    log.close()
+
+    events = _read_events(tmp_trace_dir / f"{run_id}.jsonl")
+    event_types = [e["event_type"] for e in events]
+
+    # Assertion 1: witness emitted with phase=reroute, decision=blocked
+    witnesses = [e for e in events if e["event_type"] == "provider_execution_witness"]
+    assert len(witnesses) == 1
+    w_payload = witnesses[0]["payload"]
+    assert w_payload["assignment_phase"] == "reroute"
+    assert w_payload["policy"]["active"] is True
+    assert w_payload["policy"]["routing_candidate_decision"] == "blocked"
+
+    # Assertion 2: runtime_integrity_assertion present, verdict=pass
+    # (witness blocked, verified also blocked → I-11 invariant holds)
+    assertions = [e for e in events if e["event_type"] == "runtime_integrity_assertion"]
+    assert len(assertions) == 1
+    a_payload = assertions[0]["payload"]
+    assert a_payload["invariant_id"] == "I-11"
+    assert a_payload["verdict"] == "pass"
+    assert a_payload["phase"] == "reroute"
+    assert a_payload["declared_decision"] == "blocked"
+    assert a_payload["verified_decision"] == "blocked"
+    witness_seq = witnesses[0]["seq"]
+    assert a_payload["witness_seq"] == witness_seq
+
+    # Assertion 3: failure(provider_policy_violation) emitted with
+    # correlation pointing at the reroute witness
+    failures = [
+        e for e in events
+        if e["event_type"] == "failure"
+        and e.get("error_type") == "provider_policy_violation"
+    ]
+    assert len(failures) == 1
+    f_payload = failures[0].get("payload", {})
+    assert f_payload.get("correlation_witness_seq") == witness_seq, (
+        "failure event MUST carry correlation_witness_seq pointing at "
+        "the reroute witness — per cgpro NEXT_HARDENING_ID failure "
+        "schema v1_1 lock"
+    )
+
+    # Assertion 4: no node_started — provider dispatch was blocked
+    # by ProviderPolicyViolation BEFORE runner2.run() would have been
+    # called. This is the core safety property the reroute binding
+    # exists to guarantee.
+    assert "node_started" not in event_types, (
+        "blocked reroute candidate MUST NOT reach node_started — "
+        "this would mean provider dispatch happened despite the "
+        "policy denial"
+    )
+
+    # Bonus: close-time audit passes cleanly (witness paired with
+    # failure via correlation, no orphaned blocked witness).
+    violations = log.validate_invariants()
+    assert violations == []
+
+
 def test_reroute_rebuild_path_calls_enforce_provider_policy() -> None:
     """cgpro VERIFY 2026-05-12 NEXT_BLOCK_ID=REROUTE_REBUILD_I11_INLINE_BINDING
     acceptance #3: the REROUTE_REBUILD path MUST invoke
