@@ -393,6 +393,21 @@ async def execute(
                     ) or "",
                     assignment_phase="reroute",
                 )
+                # cgpro VERIFY 2026-05-12 NEXT_BLOCK_ID=
+                # REROUTE_REBUILD_I11_INLINE_BINDING: the witness
+                # advertises a reroute phase, but the runtime MUST
+                # also enforce provider policy here — otherwise the
+                # I-11 inline binding never fires for the reroute
+                # attempt and a blocked reroute candidate could
+                # reach node_started/provider dispatch. cgpro lock:
+                # "bind the path, not weaken the ledger". This call
+                # raises ProviderPolicyViolation (and/or
+                # EventLogInvariantViolation under FAIL_CLOSED) if
+                # the reroute candidate violates the policy. The
+                # outer caller (system.run) propagates the exception.
+                provider_policy_mod.enforce_provider_policy(
+                    self, ctx, event_log,
+                )
                 ctx.executed_model_ids = [
                     model_id for _, model_id in sorted(ctx.assignments.items())
                 ]

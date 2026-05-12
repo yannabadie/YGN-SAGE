@@ -1142,6 +1142,50 @@ def test_i11_close_time_audit_rejects_correlation_to_non_blocked_or_missing_witn
     assert violations == []
 
 
+def test_reroute_rebuild_path_calls_enforce_provider_policy() -> None:
+    """cgpro VERIFY 2026-05-12 NEXT_BLOCK_ID=REROUTE_REBUILD_I11_INLINE_BINDING
+    acceptance #3: the REROUTE_REBUILD path MUST invoke
+    `enforce_provider_policy` between the reroute witness emit and
+    the runner2.run() dispatch. Without this, a blocked reroute
+    candidate could reach node_started without I-11 inline binding
+    firing.
+
+    Source-inspection test: drives a real pipeline reroute end-to-end
+    would require the Rust topology engine + a controller decision;
+    the source guard catches refactor drift without that
+    infrastructure. The existing
+    `test_execute_py_reroute_path_emits_witness_with_reroute_phase`
+    proves the witness emit is there; this test proves the
+    enforcement call is right after it on the same path.
+    """
+    import inspect
+    from sage.pipeline_v2 import execute as execute_mod
+
+    src = inspect.getsource(execute_mod)
+    # Locate the REROUTE_REBUILD witness emit position
+    reroute_witness_marker = 'assignment_phase="reroute"'
+    assert reroute_witness_marker in src
+    after_reroute_emit = src.split(reroute_witness_marker, 1)[1]
+    # Within the next ~50 lines on the same path, enforce_provider_policy
+    # MUST be called. The runner2 dispatch happens after that.
+    enforce_call = "provider_policy_mod.enforce_provider_policy"
+    runner2_dispatch = "runner2 = TopologyRunner"
+    enforce_pos = after_reroute_emit.find(enforce_call)
+    runner2_pos = after_reroute_emit.find(runner2_dispatch)
+    assert enforce_pos != -1, (
+        "REROUTE_REBUILD path MUST call provider_policy_mod."
+        "enforce_provider_policy after the reroute witness emit "
+        "(cgpro 2026-05-12 NEXT_BLOCK_ID=REROUTE_REBUILD_I11_INLINE_BINDING)"
+    )
+    assert runner2_pos != -1, "expected runner2 dispatch on reroute path"
+    assert enforce_pos < runner2_pos, (
+        "enforce_provider_policy MUST precede runner2 dispatch on "
+        "the REROUTE_REBUILD path — provider policy denial must "
+        "block dispatch (cgpro 2026-05-12 acceptance criterion #5: "
+        "blocked reroute MUST NOT reach node_started)"
+    )
+
+
 def test_witness_reads_policy_from_pipeline_underscore_attrs() -> None:
     """Production-drift regression (2026-05-12 paid canary discovery
     at HEAD `381445fd`): the witness helper MUST read the policy via
