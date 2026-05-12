@@ -41,7 +41,19 @@ dependencies = [
     # 2026-04-18-pydantic-ai-migration.md). Pydantic AI ships native
     # providers for openai / google / xai / moonshotai / openrouter and
     # a clean custom-base_url pattern for deepseek / minimax.
-    "pydantic-ai>=1.84",
+    #
+    # 2026-05-12 dep fix (B2 preflight): switched from umbrella
+    # `pydantic-ai` to `pydantic-ai-slim[needed]` because the umbrella
+    # pulls `[mistral]` which depends on `mistralai>=2.0.0` — and
+    # `mistralai` is currently QUARANTINED on PyPI
+    # (https://pypi.org/simple/mistralai/ → 0 files,
+    # pypi:project-status=quarantined). The codebase only imports
+    # `pydantic_ai.{models,providers,profiles}.{openai,google,xai,moonshotai}`
+    # (see providers/pydantic_ai_provider.py), so dropping the
+    # umbrella's mistral/anthropic/groq/cohere/bedrock/vertexai/etc.
+    # extras is safe. Re-add specific extras here only when concrete
+    # `from pydantic_ai.providers.<name>` imports appear in code.
+    "pydantic-ai-slim[openai,google,xai,moonshotai]>=1.84",
     # A27-followup transitive cap. `typer` arrives as a
     # transitive of `huggingface-hub` (via pydantic-ai-slim, transformers
     # in [embeddings], etc.). sage-discover pulls `docling` which pins

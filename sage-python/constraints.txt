@@ -314,8 +314,14 @@ mcp==1.27.0
     #   ygn-sage
 mdurl==0.1.2
     # via markdown-it-py
-mistralai==2.4.2
-    # via pydantic-ai-slim
+# mistralai removed 2026-05-12: package is QUARANTINED on PyPI
+# (https://pypi.org/simple/mistralai/ returns 0 files,
+# pypi:project-status=quarantined). The pin previously caused
+# ResolutionImpossible in CI. The mistral extra of pydantic-ai-slim
+# is no longer requested in sage-python/pyproject.toml — we switched
+# to pydantic-ai-slim[openai,google,xai,moonshotai] explicitly.
+# Re-add this pin only after mistralai is un-quarantined AND code
+# adds `from pydantic_ai.providers.mistral import ...`.
 more-itertools==11.0.2
     # via
     #   jaraco-classes
