@@ -592,6 +592,24 @@ async def execute(
             if not ctx.cost:
                 from sage.pipeline_v2 import costing as _costing
                 ctx.cost = _costing.estimate_topology_cost(self, ctx)
+        except (
+            provider_policy_mod.ProviderPolicyViolation,
+            provider_policy_mod.EventLogInvariantViolation,
+        ):
+            # cgpro DESIGN_LOCKED 2026-05-12 GO_FIX (deterministic
+            # fixture finding): the outer multi-agent fallback MUST
+            # NOT swallow I-11 invariant exceptions. Without this
+            # filter, the outer `except (RuntimeError, ...)` at the
+            # next line catches `ProviderPolicyViolation` (a
+            # `RuntimeError` subclass) and falls back to single-agent,
+            # silently bypassing the policy denial. The nested
+            # handlers at 574 + 651 already mirror this re-raise
+            # discipline — the outer was asymmetric. Re-raising both
+            # PPV and EventLogInvariantViolation here restores the
+            # I-11 ledger contract: "evaluated denials still emit
+            # failure(error_type=provider_policy_violation) AND raise
+            # ProviderPolicyViolation regardless of FAIL_CLOSED gate."
+            raise
         except (ImportError, RuntimeError, TimeoutError) as exc:
             log.error("Stage 4 multi-agent execution failed: %s — falling back to single-agent", exc)
             # Fallback: run task directly on a healthy provider.
