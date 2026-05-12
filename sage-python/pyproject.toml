@@ -109,7 +109,18 @@ dev = [
     "pytest-asyncio>=0.25",
     "pytest-cov>=6",
     "ruff>=0.11",
-    "mypy>=1.15",
+    # 2026-05-12 cap mypy<2: mypy 2.x is a behavior break (stricter
+    # narrowing on isinstance(...) yielding union types) that fails
+    # `monitoring/extended_drift.py:229` where `embeddings` is typed
+    # as `list[tuple[Any, ...] | list[Any]]` after the
+    # `isinstance(emb, (list, tuple))` guard but `_cosine_similarity`
+    # expects `list[float]`. Without this cap, dropping the
+    # pydantic-ai umbrella (which transitively pulled
+    # `mypy-boto3-stubs`-class metadata) lets pip-tools resolve to
+    # mypy 2.1.0 and CI Python SDK (Linux) breaks on the type check
+    # step. Upgrading to mypy 2.x is a separate cleanup ticket — for
+    # now keep the existing 1.x discipline so B2 N=5 can ship.
+    "mypy>=1.15,<2",
     "ulid-py>=1.1",
     "pyarrow>=18",
     "hypothesis>=6.0",
