@@ -1393,10 +1393,22 @@ def _load_grader_gate(grader_preflight_path: Path | None) -> dict[str, Any]:
             "detail": f"{type(exc).__name__}: {exc}",
         }
     decision = data.get("decision")
-    ready = bool(data.get("local_grading_ready")) or decision in {
-        "READY_LOCAL_DOCKER",
-        "READY_REMOTE_MODAL",
-    }
+    # The preflight script (`scripts/swebench_pro_grader_preflight.py`)
+    # emits decision string `READY_MODAL` for the remote-Modal grading
+    # path (introduced 2026-05-10 in commit a7474306), but this gate was
+    # added earlier in commit ec0b775e with the speculatively-typed
+    # string `READY_REMOTE_MODAL`. Result: every Modal preflight ever
+    # produced (e.g. `docs/benchmarks/2026-05-12-b2-n5-graded/
+    # grader_preflight.json`) was rejected by the gate as
+    # `grader_preflight_not_ready`. Accept both forms going forward,
+    # and also accept the explicit boolean fields the preflight always
+    # emits — that is the source of truth, the decision string is just
+    # a human-readable summary.
+    ready = (
+        bool(data.get("local_grading_ready"))
+        or bool(data.get("modal_grading_ready"))
+        or decision in {"READY_LOCAL_DOCKER", "READY_MODAL", "READY_REMOTE_MODAL"}
+    )
     return {
         "status": "PASS" if ready else "BLOCKED",
         "reason": None if ready else "grader_preflight_not_ready",

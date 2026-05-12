@@ -2577,3 +2577,86 @@ def test_cli_explicit_task_timeout_marks_profile_override(monkeypatch, tmp_path)
     assert captured["kwargs"]["task_timeout_s"] == 600.0
     assert captured["kwargs"]["profile"] == "graded_patch_generation"
     assert captured["kwargs"]["profile_timeout_override"] is True
+
+
+def test_load_grader_gate_accepts_ready_modal_decision(tmp_path: Path) -> None:
+    """Latent integration bug regression: the preflight script emits
+    decision string ``READY_MODAL`` for the remote-Modal grading path
+    (added 2026-05-10 commit a7474306), but the gate in
+    `_load_grader_gate` was added earlier (ec0b775e) with the
+    speculatively-typed string ``READY_REMOTE_MODAL``. Result: every
+    Modal preflight ever produced was BLOCKED with
+    `grader_preflight_not_ready`, which silently blocked B2 N=5
+    graded launches on Modal hosts. The gate now accepts both the
+    boolean ``modal_grading_ready`` field and the actual decision
+    string emitted by the live preflight tool.
+    """
+    preflight = tmp_path / "grader_preflight.json"
+    preflight.write_text(
+        json.dumps(
+            {
+                "schema_version": "swebench_pro_grader_preflight_v1",
+                "decision": "READY_MODAL",
+                "local_grading_ready": False,
+                "modal_grading_ready": True,
+                "blockers": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    gate = arm_d._load_grader_gate(preflight)
+
+    assert gate["status"] == "PASS"
+    assert gate["reason"] is None
+    assert gate["decision"] == "READY_MODAL"
+
+
+def test_load_grader_gate_accepts_local_docker_decision(tmp_path: Path) -> None:
+    """Local-docker grading path still passes — backward compatibility
+    proof for the multi-string decision allowlist.
+    """
+    preflight = tmp_path / "grader_preflight.json"
+    preflight.write_text(
+        json.dumps(
+            {
+                "schema_version": "swebench_pro_grader_preflight_v1",
+                "decision": "READY_LOCAL_DOCKER",
+                "local_grading_ready": True,
+                "modal_grading_ready": False,
+                "blockers": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    gate = arm_d._load_grader_gate(preflight)
+
+    assert gate["status"] == "PASS"
+    assert gate["decision"] == "READY_LOCAL_DOCKER"
+
+
+def test_load_grader_gate_blocks_no_go_decisions(tmp_path: Path) -> None:
+    """NO_GO_* decisions remain BLOCKED — the broader allowlist
+    must not accidentally accept failure decisions.
+    """
+    preflight = tmp_path / "grader_preflight.json"
+    preflight.write_text(
+        json.dumps(
+            {
+                "schema_version": "swebench_pro_grader_preflight_v1",
+                "decision": "NO_GO_GRADER_REPO_DIRTY",
+                "local_grading_ready": False,
+                "modal_grading_ready": False,
+                "blockers": ["grader_repo_dirty"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    gate = arm_d._load_grader_gate(preflight)
+
+    assert gate["status"] == "BLOCKED"
+    assert gate["reason"] == "grader_preflight_not_ready"
+    assert gate["decision"] == "NO_GO_GRADER_REPO_DIRTY"
+    assert "grader_repo_dirty" in gate["blockers"]

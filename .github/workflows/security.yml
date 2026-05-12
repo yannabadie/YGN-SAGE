@@ -95,14 +95,28 @@ jobs:
               ("sage-discover/constraints.txt", "audit-sage-discover.txt"),
           ]
 
+          # Local-only packages: not on PyPI until B4 wheels publish.
+          # Windows-only packages: pip-tools resolved on Windows when the
+          # constraints were regenerated, so transitive Windows-only deps
+          # (e.g. `pywin32` pulled by `mcp` on Windows) end up pinned in
+          # constraints.txt without an environment marker. pip-audit runs
+          # on the Linux runner; these wheels are not published for Linux
+          # and would crash the audit on `No matching distribution found`.
+          # Filter them out — they are not installed in the actual CI/runtime
+          # environment that this audit is verifying.
+          SKIP_PREFIXES = (
+              "sage-core==",
+              "ygn-sage==",
+              "pywin32==",
+          )
+
           for src, dst in pairs:
               out = []
               for raw in Path(src).read_text(encoding="utf-8").splitlines():
                   line = raw.strip()
                   if not line or line.startswith("#") or line.startswith("--"):
                       continue
-                  if line.lower().startswith("sage-core==") or line.lower().startswith("ygn-sage=="):
-                      # local-only packages, not on PyPI until B4
+                  if any(line.lower().startswith(p) for p in SKIP_PREFIXES):
                       continue
                   out.append(line)
               Path(dst).write_text("\n".join(out) + "\n", encoding="utf-8")
