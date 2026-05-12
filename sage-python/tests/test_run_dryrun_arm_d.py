@@ -382,6 +382,179 @@ def test_run_blocks_task_that_would_exceed_global_budget(
     ]
 
 
+def test_timeout_task_result_recovers_cost_from_node_completed_events(tmp_path: Path) -> None:
+    """cgpro NEXT_BLOCK_ID=COST_TRACKING_ZERO_COST_RUNNER_TIMEOUT_FIX
+    regression: when the runner times out but a `node_completed`
+    event has already recorded a real `cost_usd > 0`, the timeout
+    summary MUST surface that cost (via
+    `_observed_event_cost_usd` from the event audit) instead of
+    hardcoding $0.00. The real-canary at HEAD `7d631f76` exposed
+    this bug: trace had cost_usd=$0.136 from node_completed, summary
+    reported $0.00.
+    """
+    instance_id = "task-cost-recovery"
+    per_task_events = tmp_path / "per_task" / f"{instance_id}.events.jsonl"
+    per_task_events.parent.mkdir(parents=True, exist_ok=True)
+    # Seed events with model_assigned + node_started + node_completed
+    # carrying cost_usd at the top level (mirrors RuntimeEventLog
+    # _Node event shape).
+    seed_events = [
+        {
+            "event_type": "task_started",
+            "seq": 0,
+            "parent_event_id": 0,
+        },
+        {
+            "event_type": "model_assigned",
+            "seq": 1,
+            "parent_event_id": 0,
+            "node_id": "0",
+            "node_role": "actor",
+            "model_id": "deepseek-v4-pro",
+            "provider_id": "deepseek",
+            "model_assigned": True,
+        },
+        {
+            "event_type": "node_started",
+            "seq": 2,
+            "parent_event_id": 1,
+            "node_id": "0",
+            "node_role": "actor",
+            "model_id": "deepseek-v4-pro",
+            "provider_id": "deepseek",
+        },
+        {
+            "event_type": "node_completed",
+            "seq": 3,
+            "parent_event_id": 2,
+            "node_id": "0",
+            "node_role": "actor",
+            "model_id": "deepseek-v4-pro",
+            "provider_id": "deepseek",
+            "cost_usd": 0.13637598,
+            "latency_ms": 200700.0,
+            "payload": "model output text...",
+        },
+    ]
+    with per_task_events.open("w", encoding="utf-8", newline="\n") as handle:
+        for e in seed_events:
+            handle.write(json.dumps(e, ensure_ascii=False, sort_keys=True) + "\n")
+
+    result = arm_d._timeout_task_result(
+        task={"instance_id": instance_id},
+        output_dir=tmp_path,
+        prefix="test",
+        fmt_module=_FakeFormatModule(),
+        task_timeout_s=300.0,
+        expect_default_pipeline_learn=False,
+    )
+    summary = result["summary"]
+    assert summary["timeout"] is True
+    assert summary["total_cost_usd"] == pytest.approx(0.13637598, rel=1e-6), (
+        "timeout summary MUST recover cost from node_completed event "
+        "instead of hardcoding $0.00 — cgpro 2026-05-12 fix"
+    )
+    assert summary["_total_cost_usd_source"] == "event_audit_observed_event_cost_usd"
+    # LLM execution evidence + non-zero cost → no integrity warning
+    assert summary["cost_integrity_warning"] is None
+
+
+def test_timeout_task_result_emits_cost_integrity_warning_when_evidence_but_zero_cost(tmp_path: Path) -> None:
+    """cgpro acceptance criterion #5: when LLM execution evidence
+    exists (node_started / model_assigned events with a model_id)
+    but no cost_usd > 0 was recorded, the timeout summary MUST
+    surface a `cost_integrity_warning` so downstream budget audits
+    don't treat this as a clean $0.00 spend.
+    """
+    instance_id = "task-zero-cost-warning"
+    per_task_events = tmp_path / "per_task" / f"{instance_id}.events.jsonl"
+    per_task_events.parent.mkdir(parents=True, exist_ok=True)
+    # node_started but NO node_completed (i.e. agent ran but timed
+    # out before any node completed). LLM execution evidence
+    # present (model_id observed) but no cost_usd.
+    seed_events = [
+        {
+            "event_type": "task_started",
+            "seq": 0,
+            "parent_event_id": 0,
+        },
+        {
+            "event_type": "model_assigned",
+            "seq": 1,
+            "parent_event_id": 0,
+            "node_id": "0",
+            "model_id": "deepseek-v4-pro",
+            "provider_id": "deepseek",
+            "model_assigned": True,
+        },
+        {
+            "event_type": "node_started",
+            "seq": 2,
+            "parent_event_id": 1,
+            "node_id": "0",
+            "model_id": "deepseek-v4-pro",
+            "provider_id": "deepseek",
+        },
+        # No node_completed — agent timed out mid-call
+    ]
+    with per_task_events.open("w", encoding="utf-8", newline="\n") as handle:
+        for e in seed_events:
+            handle.write(json.dumps(e, ensure_ascii=False, sort_keys=True) + "\n")
+
+    result = arm_d._timeout_task_result(
+        task={"instance_id": instance_id},
+        output_dir=tmp_path,
+        prefix="test",
+        fmt_module=_FakeFormatModule(),
+        task_timeout_s=300.0,
+        expect_default_pipeline_learn=False,
+    )
+    summary = result["summary"]
+    assert summary["total_cost_usd"] == 0.0
+    assert summary["_total_cost_usd_source"] == "no_cost_evidence"
+    warning = summary["cost_integrity_warning"]
+    assert warning is not None, (
+        "cost_integrity_warning MUST fire when LLM execution evidence "
+        "exists but recorded cost is zero — cgpro DESIGN_LOCK 2026-05-12 acceptance #5"
+    )
+    assert warning["reason_code"] == "llm_execution_observed_zero_cost"
+
+
+def test_timeout_task_result_no_warning_when_no_llm_evidence(tmp_path: Path) -> None:
+    """Defensive: if the trace has NO LLM execution evidence (no
+    model_assigned, no node_started, no node_completed), the
+    integrity warning should NOT fire — $0.00 cost is legitimately
+    correct, not a missing-attribution case.
+    """
+    instance_id = "task-no-llm-evidence"
+    per_task_events = tmp_path / "per_task" / f"{instance_id}.events.jsonl"
+    per_task_events.parent.mkdir(parents=True, exist_ok=True)
+    seed_events = [
+        {
+            "event_type": "task_started",
+            "seq": 0,
+            "parent_event_id": 0,
+        },
+        # No model_assigned, no node events — agent never got past
+        # classification before timeout.
+    ]
+    with per_task_events.open("w", encoding="utf-8", newline="\n") as handle:
+        for e in seed_events:
+            handle.write(json.dumps(e, ensure_ascii=False, sort_keys=True) + "\n")
+
+    result = arm_d._timeout_task_result(
+        task={"instance_id": instance_id},
+        output_dir=tmp_path,
+        prefix="test",
+        fmt_module=_FakeFormatModule(),
+        task_timeout_s=300.0,
+        expect_default_pipeline_learn=False,
+    )
+    summary = result["summary"]
+    assert summary["total_cost_usd"] == 0.0
+    assert summary["cost_integrity_warning"] is None
+
+
 def test_run_timeout_writes_fail_closed_task_artifacts(monkeypatch, tmp_path) -> None:
     instances_json = tmp_path / "instances.json"
     instances_json.write_text(

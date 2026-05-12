@@ -1721,11 +1721,48 @@ def _timeout_task_result(
         per_task_events,
         task_timeout_s=task_timeout_s,
     )
+    # cgpro NEXT_BLOCK_ID=COST_TRACKING_ZERO_COST_RUNNER_TIMEOUT_FIX
+    # (DESIGN_LOCKED 2026-05-12 real-canary VERIFY): on the runner-
+    # timeout path, the subprocess was killed before `cli_complete`
+    # could report `total_cost_usd`. But the JSONL trace DOES
+    # contain `node_completed.cost_usd` for any LLM calls that
+    # finished before the timeout. Use the event-derived sum
+    # (`_observed_event_cost_usd`) as the authoritative
+    # `total_cost_usd` on the timeout path, otherwise the summary
+    # reports a false $0.00 spend while real API budget was
+    # consumed. cgpro acceptance criterion #5: emit an explicit
+    # cost_integrity_warning when LLM execution evidence exists
+    # but cost would have been reported as zero.
+    timeout_observed_cost = float(
+        event_audit.get("_observed_event_cost_usd", 0.0) or 0.0
+    )
+    timeout_had_llm_execution = bool(
+        event_audit.get("_execution_model_ids")
+        or event_audit.get("_observed_model_ids")
+    )
+    timeout_cost_integrity_warning: dict[str, Any] | None = None
+    if timeout_had_llm_execution and timeout_observed_cost <= 0.0:
+        timeout_cost_integrity_warning = {
+            "reason_code": "llm_execution_observed_zero_cost",
+            "detail": (
+                "node_completed / model_assigned events observed in "
+                "trace but no cost_usd > 0 was recorded — provider "
+                "cost accounting may have been lost on timeout. "
+                "Do NOT report this as a clean $0.00 spend in any "
+                "downstream budget audit."
+            ),
+        }
     summary = {
         "instance_id": instance_id,
         "exit_code": None,
         "latency_ms": int(task_timeout_s * 1000),
-        "total_cost_usd": 0.0,
+        "total_cost_usd": timeout_observed_cost,
+        "_total_cost_usd_source": (
+            "event_audit_observed_event_cost_usd"
+            if timeout_observed_cost > 0.0
+            else "no_cost_evidence"
+        ),
+        "cost_integrity_warning": timeout_cost_integrity_warning,
         "extracted_patch_present": False,
         "extracted_patch_chars": 0,
         "mock": False,
