@@ -1,0 +1,27 @@
+[
+  {
+    "instance_id": "instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858",
+    "patch": "diff --git a/src/components/SubscriptionModal.tsx b/src/components/SubscriptionModal.tsx\n--- a/src/components/SubscriptionModal.tsx\n+++ b/src/components/SubscriptionModal.tsx\n@@ -1,15 +1,24 @@\n import React from 'react';\n import { Prompt } from './Prompt';\n-import { getSubscriptionMessage } from '../helpers/subscription';\n+import { getSubscriptionMessage, SubscriptionPlatform, SubscriptionManager } from '../helpers/subscription';\n \n-interface Props {\n-    subscriptionManager: any;\n-    platform: string;\n+interface SubscriptionModalProps {\n+    subscriptionManager: SubscriptionManager;\n+    platform: SubscriptionPlatform;\n     onClose: () => void;\n }\n \n-export const SubscriptionModal = ({ subscriptionManager, platform, onClose }: Props) => {\n-    const message = getSubscriptionMessage(subscriptionManager, platform);\n+export const SubscriptionModal = ({ subscriptionManager, platform, onClose }: SubscriptionModalProps) => {\n+    const { title, body, footer } = getSubscriptionMessage(subscriptionManager, platform);\n \n-    return <Prompt title=\"Subscription Warning\" message={message} onClose={onClose} />;\n+    return (\n+        <Prompt \n+            title={title} \n+            onClose={onClose}\n+        >\n+            <div className=\"subscription-modal-body\">\n+                {body}\n+            </div>\n+            {footer && <div className=\"subscription-modal-footer\">{footer}</div>}\n+        </Prompt>\n+    );\n };\ndiff --git a/src/helpers/subscription.ts b/src/helpers/subscription.ts\n--- a/src/helpers/subscription.ts\n+++ b/src/helpers/subscription.ts\n@@ -1,11 +1,33 @@\n-export const getSubscriptionMessage = (subscriptionManager: any, platform: string) => {\n-    if (platform === 'ios') {\n-        return 'Your subscription is managed by Apple. Please go to the App Store to manage your subscription: ' + subscriptionManager.getAppleUrl();\n-    }\n-    if (platform === 'android') {\n-        return 'Your subscription is managed by Google. Please go to the Play Store to manage your subscription: ' + subscriptionManager.getGoogleUrl();\n-    }\n-    return 'Your subscription is managed by Proton. Please go to the dashboard to manage your subscription.';\n+import { ReactNode } from 'react';\n+\n+export enum SubscriptionPlatform {\n+    IOS = 'ios',\n+    ANDROID = 'android',\n+    WEB = 'web'\n+}\n+\n+export interface SubscriptionManager {\n+    getAppleUrl: () => string;\n+    getGoogleUrl: () => string;\n+}\n+\n+export interface SubscriptionMessage {\n+    title: string;\n+    body: ReactNode;\n+    footer?: ReactNode;\n+}\n+\n+export const getSubscriptionMessage = (subscriptionManager: SubscriptionManager, platform: SubscriptionPlatform): SubscriptionMessage => {\n+    const messages: Record<SubscriptionPlatform, SubscriptionMessage> = {\n+        [SubscriptionPlatform.IOS]: {\n+            title: 'Manage iOS Subscription',\n+            body: 'Your subscription is managed by Apple. Please use the App Store to manage your billing and plan.',\n+            footer: subscriptionManager.getAppleUrl()\n+        },\n+        [SubscriptionPlatform.ANDROID]: {\n+            title: 'Manage Android Subscription',\n+            body: 'Your subscription is managed by Google. Please use the Play Store to manage your billing and plan.',\n+            footer: subscriptionManager.getGoogleUrl()\n+        },\n+        [SubscriptionPlatform.WEB]: {\n+            title: 'Manage Subscription',\n+            body: 'Your subscription is managed by Proton. You can manage your plan directly from your account settings.'\n+        }\n+    };\n+\n+    return messages[platform] || messages[SubscriptionPlatform.WEB];\n };\n",
+    "prefix": "ygn-sage-arm-d-smoke"
+  },
+  {
+    "instance_id": "instance_gravitational__teleport-6eaaf3a27e64f4ef4ef855bd35d7ec338cf17460-v626ec2a48416b10a88641359a169d99e935ff037",
+    "patch": "",
+    "prefix": "ygn-sage-arm-d-smoke"
+  },
+  {
+    "instance_id": "instance_tutao__tutanota-219bc8f05d7b980e038bc1524cb021bf56397a1b-vee878bb72091875e912c52fc32bc60ec3760227b",
+    "patch": "",
+    "prefix": "ygn-sage-arm-d-smoke"
+  },
+  {
+    "instance_id": "instance_NodeBB__NodeBB-76c6e30282906ac664f2c9278fc90999b27b1f48-vd59a5728dfc977f44533186ace531248c2917516",
+    "patch": "",
+    "prefix": "ygn-sage-arm-d-smoke"
+  },
+  {
+    "instance_id": "instance_tutao__tutanota-db90ac26ab78addf72a8efaff3c7acc0fbd6d000-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf",
+    "patch": "",
+    "prefix": "ygn-sage-arm-d-smoke"
+  }
+]

@@ -1,0 +1,60 @@
+{
+  "schema_version": "swebench_pro_canary_launch_v1",
+  "generated_at_utc": "2026-05-12T15:27:54.183280+00:00",
+  "repo": {
+    "path": "C:\\Code\\YGN-SAGE",
+    "head": "7928dd560bb6a278e3a8b1713b36c5c52422766a",
+    "dirty": true,
+    "status_short": " M docs/benchmarks/cycle-13-canary-manifest.md\n?? .venv-linux-piptools/\n?? docs/benchmarks/2026-05-11-canary-n5-graded-postfix/\n?? docs/benchmarks/2026-05-11-canary-n5-graded-slice8/\n?? docs/benchmarks/2026-05-11-canary-n5-graded/\n?? docs/benchmarks/2026-05-12-b2-n5-graded/\n?? sage-python/docs/benchmarks/2026-05-12-e2e-campaign.json\n"
+  },
+  "inputs": {
+    "instances_json": {
+      "path": "docs\\benchmarks\\2026-05-11-canary-n5-graded\\instances\\instances.json",
+      "sha256": "b0ea91c4e5e827f9a4ded796bd78bb945ba0d571694f5629a86a2ca72a015c90"
+    },
+    "manifest": {
+      "path": "docs\\benchmarks\\cycle-13-canary-manifest.md",
+      "exists": true,
+      "sha256": "f3625da97c4c1c79da7cae687433fbda9628a483eded56436f0a771f56db7f0f",
+      "declared_commit": "7928dd560bb6a278e3a8b1713b36c5c52422766a",
+      "copied_to": "launch_manifest.md"
+    }
+  },
+  "budget": {
+    "budget_usd_per_task": 5.0,
+    "global_budget_usd": 30.0,
+    "task_timeout_s": 900.0,
+    "effective_profile": "graded_patch_generation",
+    "profile_timeout_default_s": 900.0,
+    "profile_timeout_override": false
+  },
+  "providers": {
+    "allowlist": [
+      "google",
+      "deepseek"
+    ],
+    "denylist": [
+      "openai"
+    ]
+  },
+  "manifest_gate": {
+    "status": "PASS",
+    "reasons": []
+  },
+  "grading_gate": {
+    "status": "PASS",
+    "reason": null,
+    "path": "docs\\benchmarks\\2026-05-12-b2-n5-graded\\grader_preflight.json",
+    "sha256": "ce085f442169453a7bc96256eca9a9e5441c80db2662ca6033c87a34a660a237",
+    "decision": "READY_MODAL",
+    "blockers": []
+  },
+  "ci_gate": {
+    "status": "PASS",
+    "reason": null,
+    "path": "docs\\benchmarks\\2026-05-12-b2-n5-graded\\ci_green.json",
+    "sha256": "34df842301950a4c0622da544c203553fa4d03d7bef65c92974ca55345cf7d68",
+    "commit": "7928dd560bb6a278e3a8b1713b36c5c52422766a",
+    "reported_status": "success"
+  }
+}

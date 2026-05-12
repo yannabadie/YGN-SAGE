@@ -1,0 +1,14 @@
+2026-05-12 17:27:54,187 INFO sage.bench.run_dryrun_arm_d Selected 5/10 tasks (mock=False, tier=reasoner, budget_usd=5.00, prefix=ygn-sage-arm-d-smoke)
+2026-05-12 17:27:54,187 INFO sage.bench.run_dryrun_arm_d Running task instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858 (mock=False)
+2026-05-12 17:28:59,078 INFO sage.bench.run_dryrun_arm_d Spawning sage CLI: C:\ProgramData\miniforge3\python.exe -m sage.cli run --jsonl --budget-usd 5.0 --provider-allowlist google,deepseek --provider-denylist openai
+2026-05-12 17:32:12,717 INFO sage.bench.run_dryrun_arm_d Running task instance_gravitational__teleport-6eaaf3a27e64f4ef4ef855bd35d7ec338cf17460-v626ec2a48416b10a88641359a169d99e935ff037 (mock=False)
+2026-05-12 17:32:49,884 INFO sage.bench.run_dryrun_arm_d Spawning sage CLI: C:\ProgramData\miniforge3\python.exe -m sage.cli run --jsonl --budget-usd 5.0 --provider-allowlist google,deepseek --provider-denylist openai
+2026-05-12 17:38:04,887 INFO sage.bench.run_dryrun_arm_d Running task instance_tutao__tutanota-219bc8f05d7b980e038bc1524cb021bf56397a1b-vee878bb72091875e912c52fc32bc60ec3760227b (mock=False)
+2026-05-12 17:38:15,939 INFO sage.bench.run_dryrun_arm_d Spawning sage CLI: C:\ProgramData\miniforge3\python.exe -m sage.cli run --jsonl --budget-usd 5.0 --provider-allowlist google,deepseek --provider-denylist openai
+2026-05-12 17:45:12,255 INFO sage.bench.run_dryrun_arm_d Running task instance_NodeBB__NodeBB-76c6e30282906ac664f2c9278fc90999b27b1f48-vd59a5728dfc977f44533186ace531248c2917516 (mock=False)
+2026-05-12 17:45:25,398 INFO sage.bench.run_dryrun_arm_d Spawning sage CLI: C:\ProgramData\miniforge3\python.exe -m sage.cli run --jsonl --budget-usd 5.0 --provider-allowlist google,deepseek --provider-denylist openai
+2026-05-12 17:52:18,550 INFO sage.bench.run_dryrun_arm_d Running task instance_tutao__tutanota-db90ac26ab78addf72a8efaff3c7acc0fbd6d000-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf (mock=False)
+2026-05-12 17:52:33,863 INFO sage.bench.run_dryrun_arm_d Spawning sage CLI: C:\ProgramData\miniforge3\python.exe -m sage.cli run --jsonl --budget-usd 5.0 --provider-allowlist google,deepseek --provider-denylist openai
+2026-05-12 17:57:59,763 INFO sage.bench.swebench_pro_format_patch Wrote 5 Pro records to docs\benchmarks\2026-05-12-b2-n5-graded\run\predictions.json
+2026-05-12 17:57:59,769 INFO sage.bench.run_dryrun_arm_d Done. predictions=5 patches_extracted=1 cost=$0.2983 latency=1649.6s
+2026-05-12 17:57:59,769 ERROR sage.bench.run_dryrun_arm_d Learning side-effect evidence boundary failed

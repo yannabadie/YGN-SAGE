@@ -1,0 +1,55 @@
+{
+  "schema_version": "ygn_sage_ci_green_artifact_v0",
+  "head_sha": "7928dd560bb6a278e3a8b1713b36c5c52422766a",
+  "commit": "7928dd560bb6a278e3a8b1713b36c5c52422766a",
+  "branch": "main",
+  "status": "success",
+  "conclusion": "success",
+  "source": "github_actions",
+  "generated_at_utc": "2026-05-12T15:23:12.930203Z",
+  "workflow_runs": [
+    {
+      "workflow_name": "CI",
+      "workflow_run_id": 25740305085,
+      "workflow_run_url": "https://github.com/yannabadie/YGN-SAGE/actions/runs/25740305085",
+      "conclusion": "success",
+      "created_at_utc": "2026-05-12T14:15:35Z"
+    },
+    {
+      "workflow_name": "Doc counters coherence",
+      "workflow_run_id": 25740305055,
+      "workflow_run_url": "https://github.com/yannabadie/YGN-SAGE/actions/runs/25740305055",
+      "conclusion": "success",
+      "created_at_utc": "2026-05-12T14:15:35Z"
+    },
+    {
+      "workflow_name": "Security",
+      "workflow_run_id": 25740305123,
+      "workflow_run_url": "https://github.com/yannabadie/YGN-SAGE/actions/runs/25740305123",
+      "conclusion": "success",
+      "created_at_utc": "2026-05-12T14:15:35Z"
+    },
+    {
+      "workflow_name": "Strict current.json coherence",
+      "workflow_run_id": 25740305073,
+      "workflow_run_url": "https://github.com/yannabadie/YGN-SAGE/actions/runs/25740305073",
+      "conclusion": "success",
+      "created_at_utc": "2026-05-12T14:15:35Z"
+    },
+    {
+      "workflow_name": "fuzz-smoke",
+      "workflow_run_id": 25740305068,
+      "workflow_run_url": "https://github.com/yannabadie/YGN-SAGE/actions/runs/25740305068",
+      "conclusion": "success",
+      "created_at_utc": "2026-05-12T14:15:35Z"
+    },
+    {
+      "workflow_name": "rust-core-coverage",
+      "workflow_run_id": 25740305074,
+      "workflow_run_url": "https://github.com/yannabadie/YGN-SAGE/actions/runs/25740305074",
+      "conclusion": "success",
+      "created_at_utc": "2026-05-12T14:15:35Z"
+    }
+  ],
+  "notes": "B2 N=5 SWE-bench Pro graded launch \u2014 CI green attestation at HEAD 7928dd56 after dep regen Linux + grader_gate READY_MODAL + pywin32 audit filter + mypy<2 cap fixes. All 6 workflows succeeded."
+}
