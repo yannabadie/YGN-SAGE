@@ -616,8 +616,12 @@ class RuntimeEventLog:
         # + phase + routing identity, not the whole payload — the
         # invariant binds on `routing_candidate_decision` specifically.
         if seq is not None:
-            pol = payload["policy"]
-            rt = payload["routing"]
+            # Explicit dict[str, Any] casts so mypy infers `.get(...)`
+            # instead of `Collection[Collection[str]]`. The payload
+            # values are dicts at runtime (we just built them above);
+            # mypy can't narrow because dict's values are heterogeneous.
+            pol = cast("dict[str, Any]", payload["policy"])
+            rt = cast("dict[str, Any]", payload["routing"])
             self._last_witness_state = {
                 "phase": payload["assignment_phase"],
                 "active": bool(pol.get("active")),
@@ -836,11 +840,15 @@ class RuntimeEventLog:
                 #   else:
                 #       fall back to LIFO + dispatch-window (legacy)
                 payload = event.get("payload") or {}
-                corr_seq = None
+                corr_seq: int | None = None
                 if isinstance(payload, dict):
-                    raw = payload.get("correlation_witness_seq")
-                    if isinstance(raw, int):
-                        corr_seq = raw
+                    # Local var named differently from line 759 `raw`
+                    # (which is the file content string) to avoid mypy
+                    # type-narrowing conflict on the same name in this
+                    # function scope.
+                    corr_raw = payload.get("correlation_witness_seq")
+                    if isinstance(corr_raw, int):
+                        corr_seq = corr_raw
                 matched_index = None
                 if corr_seq is not None:
                     # Identity pairing: find the unmatched entry

@@ -536,8 +536,14 @@ def test_evidence_boundary_requires_oracle_payload_trainable(
         validate_evidence_boundary(trace_dir, run_id=log.run_id)
 
 
-def test_runtime_event_taxonomy_remains_v0_15_types() -> None:
-    assert len(EVENT_TYPES) == 15
+def test_runtime_event_taxonomy_at_v0_17_types() -> None:
+    """v0 taxonomy went 15 → 17 with slice 10D (2026-05-11):
+    +provider_execution_witness (Route A) +runtime_integrity_assertion
+    (I-11 invariant). The original `learning_side_effect` and
+    `credit_assignment` proposals remain explicitly OUT of v0 — they
+    are deferred to a later cycle.
+    """
+    assert len(EVENT_TYPES) == 17
     assert "learning_side_effect" not in EVENT_TYPES
     assert "credit_assignment" not in EVENT_TYPES
 

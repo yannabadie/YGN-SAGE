@@ -393,7 +393,16 @@ async def test_run_byte_identical_s1_bypass_locks_event_sequence(
     await pipeline.run("characterization S1 task", budget_usd=3.0)
 
     event_types = _read_event_types(tmp_path)
-    expected = ["task_started", "routing_decision", "final_result"]
+    # Slice 10D Route A (2026-05-11): provider_execution_witness is
+    # emitted by the orchestrator AFTER model_assigned and BEFORE
+    # enforce_provider_policy — applies to both bypass and multi-
+    # agent paths. ADR-015 contract change captured here.
+    expected = [
+        "task_started",
+        "routing_decision",
+        "provider_execution_witness",
+        "final_result",
+    ]
     assert event_types == expected, (
         f"Event ledger sequence drift: got {event_types!r}, expected "
         f"{expected!r}. Cycle-12 phase 2 must preserve ordering. "

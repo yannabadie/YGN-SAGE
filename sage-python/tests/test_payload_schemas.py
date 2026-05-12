@@ -30,8 +30,12 @@ MANIFEST_DIR = (
 GOLDEN_DIR = pathlib.Path(__file__).parent / "golden" / "runtime_events"
 
 
-def test_all_15_event_types_have_schemas() -> None:
-    assert len(EVENT_TYPES) == 15
+def test_all_17_event_types_have_schemas() -> None:
+    """Slice 10D added 2 event types: `provider_execution_witness`
+    (Route A v0, 2026-05-11) and `runtime_integrity_assertion`
+    (I-11 invariant, 2026-05-11). Bumped 15 → 17 catalog size.
+    """
+    assert len(EVENT_TYPES) == 17
     for event_type in EVENT_TYPES:
         versions = PAYLOAD_SCHEMAS.get(event_type)
         assert versions, f"{event_type} has no registered payload schema"
