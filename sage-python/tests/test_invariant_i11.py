@@ -895,21 +895,251 @@ def test_i11_close_time_audit_uses_correlation_when_present(
         },
     )
 
-    # Failure references the FIRST witness explicitly — LIFO would
-    # have paired with witness 2 instead.
+    # Failure references the FIRST witness explicitly — but the
+    # intervening reroute witness flipped dispatch_seen=True on
+    # witness 1. Per cgpro VERIFY
+    # I11_CORRELATION_TEMPORAL_ORDERING_PATCH 2026-05-12: identity
+    # pairing does NOT waive temporal ordering. The correlated
+    # failure is rejected, witness 1 stays unmatched (violation),
+    # witness 2 has no failure pairing (violation).
     log.emit_failure(
         kind="provider_policy",
         error_type="provider_policy_violation",
-        message="openai denied (initial)",
+        message="openai denied (late correlation)",
         correlation_witness_seq=w1_seq,
     )
     log.emit_final_result(status="failure", output="", total_cost_usd=0, total_latency_ms=1.0, node_count=0)
 
     violations = log.validate_invariants()
     log.close()
-    # Witness 2 (reroute) remains unmatched
-    assert len(violations) == 1
-    assert violations[0]["witness_phase"] == "reroute"
+    # Both witnesses unmatched — w1 because correlation arrived
+    # after dispatch sentinel (intervening w2), w2 because no
+    # failure pairing.
+    assert len(violations) == 2
+    phases_violated = sorted(v["witness_phase"] for v in violations)
+    assert phases_violated == ["initial", "reroute"]
+
+
+def test_i11_close_time_audit_correlated_failure_before_dispatch_passes(
+    tmp_trace_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """cgpro VERIFY 2026-05-12 I11_CORRELATION_TEMPORAL_ORDERING_PATCH
+    required test #1: explicit correlation BEFORE any dispatch
+    sentinel passes audit cleanly.
+
+    Trace:
+      W(seq=N, blocked)
+      F(error_type=provider_policy_violation, correlation_witness_seq=N)
+
+    Expected: no I-11 violation.
+    """
+    monkeypatch.delenv("SAGE_TRACE_FAIL_CLOSED", raising=False)
+    monkeypatch.setenv("SAGE_TRACE_RAW", "1")
+    run_id = "01I11CORRBEFOREDISP000001"
+    log = RuntimeEventLog(run_id=run_id, trace_dir=tmp_trace_dir)
+    log.set_task_text("t")
+    log.emit_task_started("t")
+    log.emit_provider_execution_witness(
+        witness_schema_version="v0", assignment_phase="initial",
+        routing={"routing_model_id": "gpt-5.4-pro", "routing_provider_id": "openai"},
+        policy={
+            "active": True, "source": "cli",
+            "allowlist": [], "denylist": ["openai"],
+            "routing_candidate_decision": "blocked",
+            "routing_candidate_reason_code": "provider_in_denylist",
+        },
+        per_node_assignments=[
+            {
+                "node_id": "0", "node_role": "actor",
+                "assigned_model_id": "gpt-5.4-pro",
+                "assigned_provider_id": "openai",
+                "required_capabilities": [],
+                "assignment_policy_decision": "blocked",
+                "assignment_policy_reason_code": "provider_in_denylist",
+            }
+        ],
+        substitution_summary={
+            "routing_model_distinct_from_assignments": False,
+            "routing_candidate_blocked_by_policy": True,
+            "executed_models_distinct_from_routing": False,
+            "assignment_count": 1, "allowed_assignment_count": 0,
+            "blocked_assignment_count": 1,
+            "rust_filter_details_observed": False,
+        },
+    )
+    witness_seq = log._last_witness_state["witness_seq"]
+    log.emit_failure(
+        kind="provider_policy",
+        error_type="provider_policy_violation",
+        message="openai denied (timely)",
+        correlation_witness_seq=witness_seq,
+    )
+    log.emit_final_result(status="failure", output="", total_cost_usd=0, total_latency_ms=1.0, node_count=0)
+    violations = log.validate_invariants()
+    log.close()
+    assert violations == [], (
+        "correlated failure arriving BEFORE dispatch is valid evidence — "
+        "audit should pass cleanly"
+    )
+
+
+def test_i11_close_time_audit_correlated_failure_after_dispatch_fails(
+    tmp_trace_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """cgpro VERIFY 2026-05-12 I11_CORRELATION_TEMPORAL_ORDERING_PATCH
+    required test #2: explicit correlation AFTER node_started
+    (provider dispatch) MUST fail. Identity pairing does not waive
+    temporal ordering — late denial evidence cannot retroactively
+    validate a trace where the protected side effect already
+    happened.
+
+    Trace:
+      W(seq=N, blocked)
+      node_started
+      F(error_type=provider_policy_violation, correlation_witness_seq=N)
+
+    Expected: I-11 violation mentioning provider dispatch.
+    """
+    monkeypatch.delenv("SAGE_TRACE_FAIL_CLOSED", raising=False)
+    monkeypatch.setenv("SAGE_TRACE_RAW", "1")
+    run_id = "01I11CORRAFTERDISP0000001"
+    log = RuntimeEventLog(run_id=run_id, trace_dir=tmp_trace_dir)
+    log.set_task_text("t")
+    log.emit_task_started("t")
+    log.emit_provider_execution_witness(
+        witness_schema_version="v0", assignment_phase="initial",
+        routing={"routing_model_id": "gpt-5.4-pro", "routing_provider_id": "openai"},
+        policy={
+            "active": True, "source": "cli",
+            "allowlist": [], "denylist": ["openai"],
+            "routing_candidate_decision": "blocked",
+            "routing_candidate_reason_code": "provider_in_denylist",
+        },
+        per_node_assignments=[
+            {
+                "node_id": "0", "node_role": "actor",
+                "assigned_model_id": "gpt-5.4-pro",
+                "assigned_provider_id": "openai",
+                "required_capabilities": [],
+                "assignment_policy_decision": "blocked",
+                "assignment_policy_reason_code": "provider_in_denylist",
+            }
+        ],
+        substitution_summary={
+            "routing_model_distinct_from_assignments": False,
+            "routing_candidate_blocked_by_policy": True,
+            "executed_models_distinct_from_routing": False,
+            "assignment_count": 1, "allowed_assignment_count": 0,
+            "blocked_assignment_count": 1,
+            "rust_filter_details_observed": False,
+        },
+    )
+    witness_seq = log._last_witness_state["witness_seq"]
+    log.emit_node_started(
+        topology_id="t1", node_id="n0", node_role="actor",
+        attempt=1, model_id="gpt-5.4-pro", provider_id="openai",
+        predecessor_ids=(), edge_ids=(),
+        predecessors_by_channel=None,
+    )
+    log.emit_failure(
+        kind="provider_policy",
+        error_type="provider_policy_violation",
+        message="openai denied (LATE — after dispatch)",
+        correlation_witness_seq=witness_seq,
+    )
+    log.emit_final_result(status="success", output="", total_cost_usd=0, total_latency_ms=1.0, node_count=1)
+
+    violations = log.validate_invariants()
+    log.close()
+    assert len(violations) == 1, (
+        "correlated failure AFTER dispatch MUST be rejected per "
+        "I-11 temporal ordering contract (cgpro 2026-05-12 lock)"
+    )
+    assert "provider dispatch" in violations[0]["message"]
+
+
+def test_i11_close_time_audit_rejects_correlation_to_non_blocked_or_missing_witness(
+    tmp_trace_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """cgpro VERIFY 2026-05-12 I11_CORRELATION_TEMPORAL_ORDERING_PATCH
+    required test #3: when correlation_witness_seq points to a
+    witness that is NOT policy-active + blocked (or doesn't exist),
+    the failure MUST NOT be accepted as valid I-11 evidence.
+
+    Sub-trace A — correlation to allowed witness:
+      W(seq=N, ALLOWED)
+      F(error_type=provider_policy_violation, correlation_witness_seq=N)
+    → no blocked witness in unmatched → failure silently dropped.
+
+    Sub-trace B — correlation to non-existent witness seq:
+      F(error_type=provider_policy_violation, correlation_witness_seq=999999)
+    → no matching witness → failure silently dropped.
+
+    Neither case produces an I-11 violation because there is no
+    blocked-witness-without-failure to report. The failure event
+    itself is just orphaned evidence.
+    """
+    monkeypatch.delenv("SAGE_TRACE_FAIL_CLOSED", raising=False)
+    monkeypatch.setenv("SAGE_TRACE_RAW", "1")
+    run_id = "01I11CORRWRONGTARGET00001"
+    log = RuntimeEventLog(run_id=run_id, trace_dir=tmp_trace_dir)
+    log.set_task_text("t")
+    log.emit_task_started("t")
+    # Allowed witness — not in `unmatched` since it's not blocked
+    log.emit_provider_execution_witness(
+        witness_schema_version="v0", assignment_phase="initial",
+        routing={"routing_model_id": "deepseek-v4-pro", "routing_provider_id": "deepseek"},
+        policy={
+            "active": True, "source": "cli",
+            "allowlist": ["deepseek"], "denylist": [],
+            "routing_candidate_decision": "allowed",
+            "routing_candidate_reason_code": "passes_policy",
+        },
+        per_node_assignments=[
+            {
+                "node_id": "0", "node_role": "actor",
+                "assigned_model_id": "deepseek-v4-pro",
+                "assigned_provider_id": "deepseek",
+                "required_capabilities": [],
+                "assignment_policy_decision": "allowed",
+                "assignment_policy_reason_code": "passes_policy",
+            }
+        ],
+        substitution_summary={
+            "routing_model_distinct_from_assignments": False,
+            "routing_candidate_blocked_by_policy": False,
+            "executed_models_distinct_from_routing": False,
+            "assignment_count": 1, "allowed_assignment_count": 1,
+            "blocked_assignment_count": 0,
+            "rust_filter_details_observed": False,
+        },
+    )
+    w_seq = log._last_witness_state["witness_seq"]
+    # Sub-trace A: correlate to the allowed witness
+    log.emit_failure(
+        kind="provider_policy",
+        error_type="provider_policy_violation",
+        message="orphaned failure correlated to allowed witness",
+        correlation_witness_seq=w_seq,
+    )
+    # Sub-trace B: correlate to a non-existent witness seq
+    log.emit_failure(
+        kind="provider_policy",
+        error_type="provider_policy_violation",
+        message="orphaned failure correlated to missing witness",
+        correlation_witness_seq=999999,
+    )
+    log.emit_final_result(status="success", output="ok", total_cost_usd=0, total_latency_ms=1.0, node_count=0)
+
+    violations = log.validate_invariants()
+    log.close()
+    # No blocked-witness-without-failure → no violations. The two
+    # orphaned failures are silently dropped (not paired, not
+    # reported as I-11 evidence).
+    assert violations == []
 
 
 def test_witness_reads_policy_from_pipeline_underscore_attrs() -> None:

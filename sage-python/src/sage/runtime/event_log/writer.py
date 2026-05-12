@@ -814,10 +814,27 @@ class RuntimeEventLog:
                 if event.get("error_type") != "provider_policy_violation":
                     continue
                 # cgpro DESIGN_LOCKED 2026-05-12
-                # I11_FAILURE_CORRELATION_METADATA: prefer explicit
-                # `correlation_witness_seq` from the failure payload.
-                # Falls back to LIFO + dispatch-window pairing when
-                # the correlation is absent (legacy traces).
+                # I11_CORRELATION_TEMPORAL_ORDERING_PATCH:
+                # explicit `correlation_witness_seq` from the failure
+                # payload provides IDENTITY pairing — but it does NOT
+                # waive the TEMPORAL safety check. Per CWE-636 / OWASP
+                # logging guidance, the failure evidence must arrive
+                # BEFORE any provider-dispatch sentinel for the same
+                # blocked attempt. Accepting "late denial evidence
+                # after dispatch" would let an invalid protection
+                # sequence fall into a more permissive state.
+                #
+                # Audit logic (cgpro lock §):
+                #   if correlation present:
+                #       find witness by seq (identity)
+                #       verify witness is policy-active + blocked
+                #       verify failure.seq > witness.seq
+                #       verify no dispatch sentinel since witness
+                #       pair only if all checks pass
+                #       else: leave witness unmatched (will be
+                #       reported as I-11 violation)
+                #   else:
+                #       fall back to LIFO + dispatch-window (legacy)
                 payload = event.get("payload") or {}
                 corr_seq = None
                 if isinstance(payload, dict):
@@ -826,18 +843,33 @@ class RuntimeEventLog:
                         corr_seq = raw
                 matched_index = None
                 if corr_seq is not None:
-                    # Explicit identity pairing — find the unmatched
-                    # entry whose witness_seq == corr_seq. Dispatch
-                    # state is irrelevant when identity is asserted.
+                    # Identity pairing: find the unmatched entry
+                    # whose witness_seq == corr_seq. Reject the
+                    # pairing if dispatch_seen=True (temporal check)
+                    # — the failure evidence is too late.
                     for i, entry in enumerate(unmatched):
-                        if entry["witness_seq"] == corr_seq:
-                            matched_index = i
+                        if entry["witness_seq"] != corr_seq:
+                            continue
+                        # Identity match. Now temporal check.
+                        if entry["dispatch_seen"]:
+                            # Late evidence — explicit correlation
+                            # does NOT rescue this. Leave the witness
+                            # in `unmatched` to be flagged as a
+                            # violation below. The failure is then
+                            # an "unrelated" event for the audit.
                             break
-                if matched_index is None:
-                    # Fallback: LIFO + dispatch-window. Scan from the
-                    # end for the most recent unmatched witness that
-                    # has not been invalidated by dispatch / another
-                    # witness.
+                        matched_index = i
+                        break
+                    # If corr_seq present but no matching entry
+                    # (witness was already paired, or witness seq
+                    # doesn't exist, or witness wasn't blocked/active
+                    # so it was never added to `unmatched`), the
+                    # correlation is to a non-blocked / missing
+                    # witness — drop the failure silently.
+                else:
+                    # Legacy fallback: LIFO + dispatch-window. Scan
+                    # from the end for the most recent unmatched
+                    # witness that has not been invalidated.
                     for i in range(len(unmatched) - 1, -1, -1):
                         if not unmatched[i]["dispatch_seen"]:
                             matched_index = i
@@ -846,8 +878,9 @@ class RuntimeEventLog:
                     unmatched.pop(matched_index)
                 # An unrelated provider_policy_violation failure (no
                 # candidate witness, or all candidates already
-                # invalidated) is silently dropped — it's not
-                # evidence for any blocked witness in this trace.
+                # invalidated, or correlation to wrong/missing
+                # witness) is silently dropped — it's not evidence
+                # for any blocked witness in this trace.
 
         for witness in unmatched:
             reason = (
