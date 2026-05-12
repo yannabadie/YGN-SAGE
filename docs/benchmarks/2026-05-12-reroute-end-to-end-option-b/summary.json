@@ -1,0 +1,196 @@
+{
+  "run_started_at_utc": "2026-05-12T07:26:30.917601+00:00",
+  "run_ended_at_utc": "2026-05-12T07:26:44.992165+00:00",
+  "mode": "real",
+  "tier": "fast",
+  "tasks_run": 1,
+  "tasks_in_set": 10,
+  "cumulative_cost_usd": 0.0005537000061497093,
+  "cumulative_latency_ms": 11335,
+  "budget": {
+    "budget_usd_per_task": 1.0,
+    "global_budget_usd": 3.0,
+    "task_timeout_s": 900.0,
+    "effective_profile": "default",
+    "profile_timeout_default_s": 120.0,
+    "profile_timeout_override": true,
+    "stop_reasons": []
+  },
+  "prompt": {
+    "swebench_prompt_profile": "canonical",
+    "topology_override_used": false,
+    "system_hint_forced": false
+  },
+  "predictions_path": "predictions.json",
+  "predictions_jsonl_path": "predictions.jsonl",
+  "events_path": "events.jsonl",
+  "per_task_dir": "per_task/",
+  "patches_extracted": 0,
+  "patches_empty": 1,
+  "task_summaries": [
+    {
+      "instance_id": "instance_future-architect__vuls-139f3a81b66c47e6d8f70ce6c4afe7a9196a6ea8",
+      "exit_code": 1,
+      "latency_ms": 11335,
+      "total_cost_usd": 0.0005537000061497093,
+      "extracted_patch_present": false,
+      "extracted_patch_chars": 0,
+      "mock": false,
+      "timeout": false,
+      "events_path": "per_task\\instance_future-architect__vuls-139f3a81b66c47e6d8f70ce6c4afe7a9196a6ea8.events.jsonl",
+      "model_id_final": "deepseek-v4-pro",
+      "provider_final": "deepseek",
+      "_observed_model_ids": [
+        "deepseek-v4-pro",
+        "gpt-5.4-pro"
+      ],
+      "_observed_providers": [
+        "deepseek"
+      ],
+      "_assigned_model_ids": [
+        "deepseek-v4-pro"
+      ],
+      "_assigned_providers": [
+        "deepseek"
+      ],
+      "_execution_model_ids": [],
+      "_execution_providers": [],
+      "_provider_policy_failure_seen": false,
+      "_observed_event_cost_usd": 0.0,
+      "_verifier_repair_budget_usd": null,
+      "_diff_verifier_mismatches": null,
+      "_diff_verifier_outcome": null,
+      "stderr_chars": 409,
+      "learning_evidence_boundary": {
+        "claimed": false,
+        "status": "skipped",
+        "reason_code": "not_claimed"
+      },
+      "repo_context": {
+        "status": "ready",
+        "repo_url": "https://github.com/future-architect/vuls.git",
+        "base_commit": "d1a617cfff042f4b9cd20334f3c693deae3d956b",
+        "checkout_sha": "d1a617cfff042f4b9cd20334f3c693deae3d956b",
+        "clone_elapsed_ms": 2643,
+        "fetch_fallback_used": true,
+        "subprocess_cwd": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_canary_repo_3kdgn7a6\\vuls",
+        "repo_dir_cleanup_status": "failed",
+        "failure_reason": null
+      },
+      "prompt_metadata": {
+        "prompt_profile": "canonical",
+        "prompt_sha256": "3fd6aa41fd64a3ca79462ed89900b3ba58a61826bf255d8a15bf70b93791eb25",
+        "topology_override_used": false,
+        "system_hint_forced": false
+      },
+      "topology_audit": {
+        "topology_template": "sequential",
+        "topology_id": "01KR1V28D4H484SR52FB4XMBN5",
+        "node_count": 1,
+        "edge_count": 0,
+        "routing_model_id": "gpt-5.4-pro",
+        "routing_confidence": 0.8075,
+        "routing_source": "rust_system_router",
+        "routing_system": 3,
+        "routing_domain": "code",
+        "nodes": [
+          {
+            "node_id": "0",
+            "assigned_role": "agent",
+            "assigned_model_id": "deepseek-v4-pro",
+            "assigned_provider_id": "deepseek"
+          }
+        ],
+        "oracle": {
+          "trainable": false,
+          "verdict_source": "abstain",
+          "quality_label": "unknown",
+          "score": null,
+          "reason_codes": [
+            "hierarchy_exhausted"
+          ]
+        },
+        "control_surface": {
+          "routing_decision_emitted": true,
+          "topology_selected_emitted": true,
+          "model_assigned_for_all_nodes": true,
+          "oracle_verdict_emitted": true,
+          "cli_complete_emitted": true
+        },
+        "provider_policy_substitution_detected": false
+      }
+    }
+  ],
+  "learning_evidence_gate": {
+    "claimed": false,
+    "status": "NOT_CLAIMED",
+    "expect_default_pipeline_learn": false,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 1
+  },
+  "budget_gate": {
+    "status": "PASS",
+    "cumulative_cost_usd": 0.0005537000061497093,
+    "global_budget_usd": 3.0,
+    "stop_reasons": []
+  },
+  "timeout_gate": {
+    "status": "PASS",
+    "timeouts": 0
+  },
+  "launch_manifest_path": "launch_manifest.json",
+  "acceptance_gate_results": {
+    "manifest_gate": {
+      "status": "BLOCKED",
+      "reasons": [
+        "manifest_commit_not_frozen"
+      ]
+    },
+    "budget_gate": {
+      "status": "PASS",
+      "cumulative_cost_usd": 0.0005537000061497093,
+      "global_budget_usd": 3.0,
+      "stop_reasons": []
+    },
+    "timeout_gate": {
+      "status": "PASS",
+      "timeouts": 0
+    },
+    "provider_gate": {
+      "status": "PASS",
+      "reason": null,
+      "observed_providers": [
+        "deepseek"
+      ],
+      "assigned_providers": [
+        "deepseek"
+      ],
+      "execution_providers": [],
+      "provider_policy_failure_seen": false,
+      "missing_provider_or_model": [],
+      "assigned_denied_providers": [],
+      "execution_denied_providers": [],
+      "assigned_outside_allowlist": [],
+      "execution_outside_allowlist": [],
+      "provider_allowlist": [
+        "google",
+        "deepseek"
+      ],
+      "provider_denylist": [
+        "openai"
+      ]
+    },
+    "grading_gate": {
+      "status": "BLOCKED",
+      "reason": "grader_preflight_artifact_not_supplied",
+      "path": null
+    },
+    "ci_gate": {
+      "status": "BLOCKED",
+      "reason": "ci_green_artifact_not_supplied",
+      "path": null
+    }
+  },
+  "canary_decision": "BLOCKED"
+}
