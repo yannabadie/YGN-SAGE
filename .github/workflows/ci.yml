@@ -19,7 +19,7 @@ jobs:
       rustpython-sha: ${{ steps.rustpython-ref.outputs.sha }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.2
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -97,7 +97,7 @@ jobs:
     # dropped, layered sage-discover compile composes with sage-python.
     # Hard gate restored.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.2
 
       - uses: actions/setup-python@v6
         with:
@@ -125,7 +125,7 @@ jobs:
       run:
         working-directory: sage-core
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.2
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -163,7 +163,7 @@ jobs:
       run:
         working-directory: sage-core
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.2
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -178,7 +178,7 @@ jobs:
     name: OTel bridge (B1.b Windows MSVC compile-check)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.2
       - uses: dtolnay/rust-toolchain@stable
       - name: cargo check --features otel
         working-directory: sage-core
@@ -192,7 +192,7 @@ jobs:
       run:
         working-directory: sage-core
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.2
 
       - uses: actions/setup-python@v6
         with:
@@ -283,7 +283,7 @@ jobs:
         python-version: ["3.12", "3.13"]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.2
 
       - uses: actions/setup-python@v6
         with:
@@ -357,7 +357,7 @@ jobs:
     # aligns with docling 2.91.0's `typer<0.22.0,>=0.12.5` upstream).
     # Hard gate restored.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.2
 
       - uses: actions/setup-python@v6
         with:
@@ -416,7 +416,7 @@ jobs:
         python-version: ["3.12", "3.13"]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.2
 
       - uses: actions/setup-python@v6
         with:
@@ -490,7 +490,7 @@ jobs:
     env:
       GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.2
 
       - uses: actions/setup-python@v6
         with:

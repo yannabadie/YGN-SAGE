@@ -22,7 +22,7 @@ jobs:
       matrix:
         language: [python]
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       # NOTE: github/codeql-action v4 is the currently-pinned major for
       # this repo; v3 is upstream-stable. Track via:
       #   gh api repos/github/codeql-action/git/refs/tags/v4 --jq .object.sha
@@ -34,7 +34,7 @@ jobs:
   sbom:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.12'
@@ -68,7 +68,7 @@ jobs:
     name: pip-audit (Python deps)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.12'
@@ -151,7 +151,7 @@ jobs:
       run:
         working-directory: sage-core
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       # TODO(A17): dtolnay/rust-toolchain publishes only floating branch
       # refs (`stable`, `nightly`) — no versioned tags. Track upstream
       # for an SHA-pinnable release or mirror to a fork.
@@ -174,7 +174,7 @@ jobs:
       run:
         working-directory: sage-core
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: dtolnay/rust-toolchain@stable
       - name: Run cargo-deny
         uses: EmbarkStudios/cargo-deny-action@5bb39ff5d5a0e94dc9e2dc94eced0c6129743a57 # v2
