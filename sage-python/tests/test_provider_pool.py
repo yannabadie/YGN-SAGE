@@ -420,3 +420,88 @@ class TestExclusionTTLAndReprobe:
         pool._dead_at["ancient"] = now - 10_000.0   # way past TTL
         current = pool.get_dead_providers(ttl_sec=300.0)
         assert current == ["fresh"]  # expired entry not reported
+
+
+# ---------------------------------------------------------------------------
+# B2_RERUN_UNBLOCKERS bug 1 — provider attribution (2026-05-12 canary task #3)
+# ---------------------------------------------------------------------------
+
+class TestInferProvider:
+    def test_registry_unknown_sentinel_falls_through_to_prefix(self):
+        """B2 bug 1: model_profiles.toml entries without a `provider` key yield
+        ModelProfile(provider="unknown") via registry._profile_from_toml. The
+        truthy "unknown" sentinel used to win over the correct prefix fallback,
+        so node_started carried provider_id="unknown" and the canary
+        provider_gate went NO_GO (execution_outside_allowlist=["unknown"])."""
+        profile = _make_profile("gemini-3.1-pro-preview", "unknown")
+        registry = _make_registry(profile)
+        pool = ProviderPool(
+            default_provider=_make_provider(),
+            registry=registry,
+            providers={},
+        )
+        assert pool.infer_provider("gemini-3.1-pro-preview") == "google"
+
+    def test_registry_empty_provider_falls_through_to_prefix(self):
+        profile = _make_profile("deepseek-v4-flash", "")
+        registry = _make_registry(profile)
+        pool = ProviderPool(
+            default_provider=_make_provider(),
+            registry=registry,
+            providers={},
+        )
+        assert pool.infer_provider("deepseek-v4-flash") == "deepseek"
+
+    def test_registry_real_provider_still_wins_over_prefix(self):
+        """A genuine registry provider must keep priority over the string
+        fallback (the guard only rejects the "unknown" sentinel)."""
+        profile = _make_profile("qwen/qwen3.5-plus-02-15", "openrouter")
+        registry = _make_registry(profile)
+        pool = ProviderPool(
+            default_provider=_make_provider(),
+            registry=registry,
+            providers={},
+        )
+        assert pool.infer_provider("qwen/qwen3.5-plus-02-15") == "openrouter"
+
+
+class TestModelProfilesTomlProviderTripwire:
+    def test_every_curated_entry_declares_provider_matching_cards(self):
+        """Tripwire for B2 bug 1: every entry of the curated knowledge base
+        (sage-python/config/model_profiles.toml) MUST declare an explicit
+        `provider`, and when the id also exists in cards.toml (the provider
+        source of truth, directive #7) the two MUST agree. Without this, any
+        model that is not live-discovered at boot silently becomes
+        provider="unknown" at runtime."""
+        import tomllib
+        from pathlib import Path
+
+        here = Path(__file__).resolve()
+        sage_python_root = here.parents[1]
+        profiles_path = sage_python_root / "config" / "model_profiles.toml"
+        cards_path = sage_python_root.parent / "sage-core" / "config" / "cards.toml"
+        assert profiles_path.exists(), profiles_path
+
+        with open(profiles_path, "rb") as f:
+            profiles = tomllib.load(f).get("models", {})
+        assert profiles, "model_profiles.toml has no [models] entries"
+
+        cards_by_id: dict[str, str] = {}
+        if cards_path.exists():
+            with open(cards_path, "rb") as f:
+                cards_data = tomllib.load(f)
+            for value in cards_data.values():
+                if isinstance(value, list):
+                    for card in value:
+                        if isinstance(card, dict) and card.get("id"):
+                            cards_by_id[str(card["id"])] = str(card.get("provider", ""))
+
+        missing = [mid for mid, entry in profiles.items() if not entry.get("provider")]
+        assert not missing, f"model_profiles.toml entries missing provider: {missing}"
+
+        mismatched = {
+            mid: (entry["provider"], cards_by_id[mid])
+            for mid, entry in profiles.items()
+            if mid in cards_by_id and cards_by_id[mid] and entry["provider"] != cards_by_id[mid]
+        }
+        assert not mismatched, f"provider disagrees with cards.toml: {mismatched}"

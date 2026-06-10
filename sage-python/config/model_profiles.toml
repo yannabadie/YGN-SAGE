@@ -5,7 +5,15 @@
 
 [models]
 
+# `provider` is REQUIRED on every entry (B2 bug 1, 2026-06-10): entries
+# without it materialize as ModelProfile(provider="unknown") whenever the
+# model is not live-discovered at boot, which leaks into node_started
+# provider_id and trips the canary provider_gate. Values must agree with
+# cards.toml (tripwire: tests/test_provider_pool.py
+# TestModelProfilesTomlProviderTripwire).
+
 [models."deepseek-v4-flash"]
+provider = "deepseek"
 reasoning = 0.85
 coding = 0.88
 speed = 0.95
@@ -13,6 +21,7 @@ cost_input_per_1k = 0.00014  # cache-miss; $0.028/1M cache-hit
 cost_output_per_1k = 0.00028
 
 [models."gemini-3.1-pro-preview"]
+provider = "google"
 reasoning = 0.92
 coding = 0.90
 speed = 0.70
@@ -20,6 +29,7 @@ cost_input_per_1k = 0.002
 cost_output_per_1k = 0.012
 
 [models."gemini-3.1-flash-lite-preview"]
+provider = "google"
 reasoning = 0.75
 coding = 0.78
 speed = 0.98
@@ -27,6 +37,7 @@ cost_input_per_1k = 0.00025
 cost_output_per_1k = 0.0015
 
 [models."gpt-5.4"]
+provider = "openai"
 reasoning = 0.95
 coding = 0.95
 speed = 0.65
@@ -34,6 +45,7 @@ cost_input_per_1k = 0.005
 cost_output_per_1k = 0.015
 
 [models."gpt-5.4-mini"]
+provider = "openai"
 reasoning = 0.88
 coding = 0.90
 speed = 0.85

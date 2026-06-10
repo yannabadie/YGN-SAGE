@@ -367,7 +367,12 @@ class ProviderPool:
         if self._registry:
             profile = self._registry.get(model_id) if hasattr(self._registry, 'get') else None
             pname = getattr(profile, 'provider', '') if profile else ''
-            if pname:
+            # B2 bug 1 (2026-05-12 canary): registry._profile_from_toml stamps
+            # provider="unknown" when a curated model_profiles.toml entry has
+            # no `provider` key. That truthy sentinel must NOT win over the
+            # resolvable fallback below — it leaked into node_started
+            # provider_id and tripped the canary provider_gate.
+            if pname and pname != "unknown":
                 return pname
         mid = model_id.lower()
         if mid.startswith("gemini"):

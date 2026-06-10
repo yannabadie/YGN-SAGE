@@ -2660,3 +2660,50 @@ def test_load_grader_gate_blocks_no_go_decisions(tmp_path: Path) -> None:
     assert gate["reason"] == "grader_preflight_not_ready"
     assert gate["decision"] == "NO_GO_GRADER_REPO_DIRTY"
     assert "grader_repo_dirty" in gate["blockers"]
+
+
+# ---------------------------------------------------------------------------
+# B2_RERUN_UNBLOCKERS bug 1 — gate contract locks (cgpro required tests 2-3)
+# ---------------------------------------------------------------------------
+
+def test_provider_gate_still_no_go_on_unknown_provider() -> None:
+    """B2 contract test 2: fixing provider ATTRIBUTION must not weaken the
+    gate — an execution provider of "unknown" still yields NO_GO via
+    execution_outside_allowlist (the exact 2026-05-12 canary task #3 shape)."""
+    gate = arm_d._provider_gate(
+        [
+            {
+                "instance_id": "task-3",
+                "provider_final": "unknown",
+                "model_id_final": "gemini-3.1-pro-preview",
+                "_execution_providers": ["unknown"],
+                "_assigned_providers": ["unknown"],
+            }
+        ],
+        mock=False,
+        provider_allowlist=("google", "deepseek"),
+        provider_denylist=(),
+    )
+    assert gate["status"] == "NO_GO"
+    assert gate["execution_outside_allowlist"] == ["unknown"]
+
+
+def test_provider_gate_pass_on_google_deepseek_only_execution() -> None:
+    """B2 contract test 3: a clean google+deepseek-only execution under the
+    same allowlist passes the gate."""
+    gate = arm_d._provider_gate(
+        [
+            {
+                "instance_id": "task-1",
+                "provider_final": "google",
+                "model_id_final": "gemini-3.1-pro-preview",
+                "_execution_providers": ["google", "deepseek"],
+                "_assigned_providers": ["google", "deepseek"],
+            }
+        ],
+        mock=False,
+        provider_allowlist=("google", "deepseek"),
+        provider_denylist=(),
+    )
+    assert gate["status"] == "PASS"
+    assert gate["execution_outside_allowlist"] == []
