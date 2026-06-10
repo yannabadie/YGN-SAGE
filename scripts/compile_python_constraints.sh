@@ -5,12 +5,29 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON_BIN="${PYTHON:-python}"
 UPGRADE_FLAG=()
 
-if [[ "${1:-}" == "--upgrade" ]]; then
-  UPGRADE_FLAG=(--upgrade)
-elif [[ "${1:-}" != "" ]]; then
-  echo "usage: $0 [--upgrade]" >&2
-  exit 2
-fi
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --upgrade)
+      UPGRADE_FLAG+=(--upgrade)
+      shift
+      ;;
+    --upgrade-package)
+      # Targeted bump (repeatable). Native pip-compile flag; preferred over
+      # full --upgrade for advisory-driven bumps because floor-pinned deps
+      # (e.g. pydantic-ai-slim>=1.84, no cap) could otherwise jump majors.
+      if [[ -z "${2:-}" ]]; then
+        echo "usage: $0 [--upgrade] [--upgrade-package NAME]..." >&2
+        exit 2
+      fi
+      UPGRADE_FLAG+=(--upgrade-package "$2")
+      shift 2
+      ;;
+    *)
+      echo "usage: $0 [--upgrade] [--upgrade-package NAME]..." >&2
+      exit 2
+      ;;
+  esac
+done
 
 # Pin the compiler toolchain. pip-tools 7.5.3 is current enough for the
 # pip 26.0 generation baseline and avoids resolver behavior drift during
