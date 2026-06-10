@@ -1519,7 +1519,7 @@ def test_run_one_task_uses_swebench_template_prompt(monkeypatch, tmp_path) -> No
     captured_prompts: list[str] = []
 
     async def _capture_cli(prompt, *, budget_usd, output_events_path, tier,
-                          provider_allowlist=(), provider_denylist=(), cwd=None):
+                          provider_allowlist=(), provider_denylist=(), cwd=None, **_ignored):
         captured_prompts.append(prompt)
         output_events_path.parent.mkdir(parents=True, exist_ok=True)
         output_events_path.write_text("", encoding="utf-8")
@@ -1626,7 +1626,7 @@ def test_run_one_task_extracts_fenced_diff_via_swebench_extractor(
     )
 
     async def _fake_cli(prompt, *, budget_usd, output_events_path, tier,
-                       provider_allowlist=(), provider_denylist=(), cwd=None):
+                       provider_allowlist=(), provider_denylist=(), cwd=None, **_ignored):
         output_events_path.parent.mkdir(parents=True, exist_ok=True)
         output_events_path.write_text("", encoding="utf-8")
         return {
@@ -2067,7 +2067,7 @@ def test_run_one_task_passes_cwd_and_records_repo_context(
     captured_cwd: dict[str, Any] = {}
 
     async def _fake_cli(prompt, *, budget_usd, output_events_path, tier,
-                       provider_allowlist=(), provider_denylist=(), cwd=None):
+                       provider_allowlist=(), provider_denylist=(), cwd=None, **_ignored):
         captured_cwd["value"] = cwd
         output_events_path.parent.mkdir(parents=True, exist_ok=True)
         output_events_path.write_text("", encoding="utf-8")
@@ -2236,7 +2236,7 @@ def test_run_one_task_blind_generation_escape_flag(monkeypatch, tmp_path) -> Non
     captured_cwd: dict[str, Any] = {"value": "<unset>"}
 
     async def _fake_cli(prompt, *, budget_usd, output_events_path, tier,
-                       provider_allowlist=(), provider_denylist=(), cwd=None):
+                       provider_allowlist=(), provider_denylist=(), cwd=None, **_ignored):
         captured_cwd["value"] = cwd
         output_events_path.parent.mkdir(parents=True, exist_ok=True)
         output_events_path.write_text("", encoding="utf-8")
@@ -2465,7 +2465,7 @@ def test_run_one_task_propagates_prompt_metadata_to_summary(monkeypatch, tmp_pat
     captured_prompts: list[str] = []
 
     async def _capture_cli(prompt, *, budget_usd, output_events_path, tier,
-                          provider_allowlist=(), provider_denylist=(), cwd=None):
+                          provider_allowlist=(), provider_denylist=(), cwd=None, **_ignored):
         captured_prompts.append(prompt)
         output_events_path.parent.mkdir(parents=True, exist_ok=True)
         output_events_path.write_text("", encoding="utf-8")
@@ -3097,3 +3097,204 @@ def test_event_audit_plain_provider_error_is_not_policy_failure(tmp_path: Path) 
 
     audit = arm_d._event_audit_from_file(events_path)
     assert audit["_provider_policy_failure_seen"] is False
+
+
+# ---------------------------------------------------------------------------
+# RESOLUTION_UNBLOCKERS criteria 3-4 — repair actually wired (cgpro 2026-06-10)
+# ---------------------------------------------------------------------------
+
+class _FakeCanaryRepairLLM:
+    """Minimal LLMProvider double for the canary repair chain."""
+
+    def __init__(self, reply: str):
+        self._reply = reply
+        self.calls = 0
+
+    async def generate(self, messages, **kwargs):
+        self.calls += 1
+
+        class _Resp:
+            content = self._reply
+            usage = {"input_tokens": 100, "output_tokens": 50}
+
+        return _Resp()
+
+
+def _write_target(tmp_path, body: str):
+    target = tmp_path / "mod.py"
+    target.write_text(body, encoding="utf-8")
+    return target
+
+
+def test_repair_chain_mechanical_counts_fix_no_llm(tmp_path) -> None:
+    """cgpro trap #2 + research finding (RustAssistant/V4A class): a
+    hunk_body_count_mismatch is fixed by MECHANICAL recount — the LLM must
+    NOT be asked to do line arithmetic, and must not be constructed at all
+    when the recount suffices."""
+    _write_target(tmp_path, "a = 1\nb = 2\nc = 3\n")
+    # Correct content, WRONG header counts (says 2 lines, body has 3+3).
+    patch = (
+        "--- a/mod.py\n"
+        "+++ b/mod.py\n"
+        "@@ -1,2 +1,2 @@\n"
+        " a = 1\n"
+        "-b = 2\n"
+        "+b = 5\n"
+        " c = 3\n"
+    )
+    factory_calls = {"n": 0}
+
+    def _factory():
+        factory_calls["n"] += 1
+        raise AssertionError("LLM must not be built for a counts-only fix")
+
+    final_patch, meta, annotation = asyncio.run(
+        arm_d._repair_patch_with_feedback(
+            patch=patch,
+            repo_dir=str(tmp_path),
+            problem_statement="fix b",
+            instance_id="t-counts",
+            repair_budget_usd=0.5,
+            llm_factory=_factory,
+        )
+    )
+    assert factory_calls["n"] == 0
+    assert meta["_verifier_repair_stage"] == "mechanical_counts_fix"
+    assert meta["_verifier_repair_budget_usd"] == 0.5
+    assert "@@ -1,3 +1,3 @@" in final_patch
+    assert annotation["_diff_verifier_mismatches"] == []
+    assert annotation["_diff_verifier_outcome"] not in (None, "")
+
+
+def test_repair_chain_llm_repairs_content_mismatch(tmp_path) -> None:
+    """Criterion 3: the LLM repair is ACTUALLY invoked on content-class
+    mismatches, and the repaired patch is re-verified before adoption
+    (research trap: never count a patch repaired without re-verification)."""
+    _write_target(tmp_path, "x = 10\ny = 20\nz = 30\n")
+    broken = (
+        "--- a/mod.py\n"
+        "+++ b/mod.py\n"
+        "@@ -1,3 +1,3 @@\n"
+        " a = 1\n"
+        "-b = 2\n"
+        "+b = 5\n"
+        " c = 3\n"
+    )
+    repaired = (
+        "--- a/mod.py\n"
+        "+++ b/mod.py\n"
+        "@@ -1,3 +1,3 @@\n"
+        " x = 10\n"
+        "-y = 20\n"
+        "+y = 50\n"
+        " z = 30\n"
+    )
+    llm = _FakeCanaryRepairLLM(reply=repaired)
+
+    final_patch, meta, annotation = asyncio.run(
+        arm_d._repair_patch_with_feedback(
+            patch=broken,
+            repo_dir=str(tmp_path),
+            problem_statement="fix y",
+            instance_id="t-content",
+            repair_budget_usd=0.5,
+            llm_factory=lambda: llm,
+        )
+    )
+    assert llm.calls == 1
+    assert meta["_verifier_repair_stage"] == "verifier_repair"
+    assert "y = 50" in final_patch
+    assert annotation["_diff_verifier_mismatches"] == []
+
+
+def test_repair_chain_non_repairable_is_explicit(tmp_path) -> None:
+    """Criterion 4: when the LLM cannot produce a usable diff the outcome
+    stays explicit (stage verifier_repair_empty, original patch kept,
+    mismatches still reported)."""
+    _write_target(tmp_path, "x = 10\ny = 20\nz = 30\n")
+    broken = (
+        "--- a/mod.py\n"
+        "+++ b/mod.py\n"
+        "@@ -1,3 +1,3 @@\n"
+        " a = 1\n"
+        "-b = 2\n"
+        "+b = 5\n"
+        " c = 3\n"
+    )
+    llm = _FakeCanaryRepairLLM(reply="I cannot help with that.")
+
+    final_patch, meta, annotation = asyncio.run(
+        arm_d._repair_patch_with_feedback(
+            patch=broken,
+            repo_dir=str(tmp_path),
+            problem_statement="fix y",
+            instance_id="t-bad",
+            repair_budget_usd=0.5,
+            llm_factory=lambda: llm,
+        )
+    )
+    assert meta["_verifier_repair_stage"] == "verifier_repair_empty"
+    assert final_patch == broken
+    assert annotation["_diff_verifier_mismatches"]
+
+
+def test_repair_chain_budget_zero_skips_llm(tmp_path) -> None:
+    """Block D contract: zero repair budget means the LLM is never built;
+    the skip is explicit."""
+    _write_target(tmp_path, "x = 10\ny = 20\nz = 30\n")
+    broken = (
+        "--- a/mod.py\n"
+        "+++ b/mod.py\n"
+        "@@ -1,3 +1,3 @@\n"
+        " a = 1\n"
+        "-b = 2\n"
+        "+b = 5\n"
+        " c = 3\n"
+    )
+
+    def _factory():
+        raise AssertionError("LLM must not be built with zero budget")
+
+    final_patch, meta, annotation = asyncio.run(
+        arm_d._repair_patch_with_feedback(
+            patch=broken,
+            repo_dir=str(tmp_path),
+            problem_statement="fix y",
+            instance_id="t-budget",
+            repair_budget_usd=0.0,
+            llm_factory=_factory,
+        )
+    )
+    assert meta["_verifier_repair_stage"] == "repair_skipped_budget_exhausted"
+    assert final_patch == broken
+
+
+def test_repair_chain_clean_patch_not_needed(tmp_path) -> None:
+    """A clean patch goes straight through: no recount, no LLM."""
+    _write_target(tmp_path, "a = 1\nb = 2\nc = 3\n")
+    clean = (
+        "--- a/mod.py\n"
+        "+++ b/mod.py\n"
+        "@@ -1,3 +1,3 @@\n"
+        " a = 1\n"
+        "-b = 2\n"
+        "+b = 5\n"
+        " c = 3\n"
+    )
+
+    def _factory():
+        raise AssertionError("LLM must not be built for a clean patch")
+
+    final_patch, meta, annotation = asyncio.run(
+        arm_d._repair_patch_with_feedback(
+            patch=clean,
+            repo_dir=str(tmp_path),
+            problem_statement="fix b",
+            instance_id="t-clean",
+            repair_budget_usd=0.5,
+            llm_factory=_factory,
+        )
+    )
+    assert meta["_verifier_repair_stage"] == "repair_not_needed"
+    assert final_patch == clean
+    assert annotation["_diff_verifier_mismatches"] == []

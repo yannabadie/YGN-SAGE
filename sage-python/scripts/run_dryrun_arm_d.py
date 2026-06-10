@@ -1046,13 +1046,22 @@ def _extract_patch_from_text(text: str) -> str:
 # instantiates).
 _CANARY_DIFF_VERIFIER_MODE = "observe"
 
+# RESOLUTION_UNBLOCKERS (2026-06-10): per-task cap for the ONE LLM repair
+# pass in the canary repair chain (Block D contract: explicit cap or
+# explicit budget-exhausted skip — never an unbounded repair loop;
+# research: at equal token budget, deep repair chains lose to
+# regeneration, so the chain is capped at a single pass).
+_DEFAULT_REPAIR_BUDGET_USD = 0.50
 
-def _task_subprocess_env(tier: str) -> dict[str, str]:
+
+def _task_subprocess_env(
+    tier: str, verifier_mode: str = _CANARY_DIFF_VERIFIER_MODE
+) -> dict[str, str]:
     """Build the per-task subprocess environment (extracted for testability —
     B2 contract test 6 asserts SAGE_DIFF_VERIFIER_MODE propagation)."""
     env = os.environ.copy()
     env["SAGE_LLM_TIER"] = tier
-    env["SAGE_DIFF_VERIFIER_MODE"] = _CANARY_DIFF_VERIFIER_MODE
+    env["SAGE_DIFF_VERIFIER_MODE"] = verifier_mode
     env["SAGE_OTEL_EXPORTER"] = "none"
     return env
 
@@ -1065,6 +1074,7 @@ async def _run_sage_cli(
     provider_allowlist: tuple[str, ...] = (),
     provider_denylist: tuple[str, ...] = (),
     cwd: str | Path | None = None,
+    verifier_mode: str = _CANARY_DIFF_VERIFIER_MODE,
 ) -> dict[str, Any]:
     """Invoke `python -m sage.cli run --jsonl` as subprocess.
 
@@ -1077,7 +1087,7 @@ async def _run_sage_cli(
     """
     output_events_path.parent.mkdir(parents=True, exist_ok=True)
 
-    env = _task_subprocess_env(tier)
+    env = _task_subprocess_env(tier, verifier_mode=verifier_mode)
     env.setdefault("SAGE_BOOT_BYPASS_EPOCH_GUARD", "1")
     env.setdefault("SAGE_BOOT_BYPASS_REASON",
         "cycle-13 E Tier 2.1 arm D smoke run; bypass disables atexit "
@@ -1963,6 +1973,12 @@ def _annotate_diff_verifier(
             "_diff_verifier_mismatches": [],
             "_diff_verifier_reasons": ["unsupported_no_opinion"],
         }
+    return _serialize_verifier_result(result)
+
+
+def _serialize_verifier_result(result: Any) -> dict[str, Any]:
+    """Compact annotation dict from a DiffVerifierResult (mirrors
+    swebench_bench serialization — no expected/actual bodies)."""
     return {
         "_diff_verifier_outcome": str(result.outcome),
         "_diff_verifier_mismatches": [
@@ -1978,6 +1994,148 @@ def _annotate_diff_verifier(
         ],
         "_diff_verifier_reasons": [str(reason) for reason in result.reasons],
     }
+
+
+def _build_repair_llm() -> Any:
+    """Standalone budget-tier LLM client for the canary repair chain.
+
+    The canary launcher is a subprocess orchestrator with NO pipeline of
+    its own (cgpro post-run 2026-06-10: the env flip alone was a no-op
+    because nobody on the launcher path could call the repair LLM). This
+    builds the lightest possible client: budget tier model from the
+    router config (cards.toml truth, directive #7 — no hardcoded model
+    ids here), PydanticAIProvider, API key from the environment
+    (``_load_ygn_dotenv_into`` fills os.environ if .env hasn't been
+    sourced).
+    """
+    from sage.llm.router import ModelRouter
+    from sage.providers.connector import get_provider_for_model
+    from sage.providers.pydantic_ai_provider import PydanticAIProvider
+
+    _load_ygn_dotenv_into(os.environ)  # type: ignore[arg-type]
+    config = ModelRouter.get_config(tier="budget")
+    model_id = config.model
+    provider_name = get_provider_for_model(model_id) or config.provider
+    return PydanticAIProvider(provider_name, model_id)
+
+
+async def _repair_patch_with_feedback(
+    *,
+    patch: str,
+    repo_dir: str,
+    problem_statement: str,
+    instance_id: str,
+    repair_budget_usd: float,
+    llm_factory: Any = None,
+) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    """Canary-side repair chain (RESOLUTION_UNBLOCKERS criteria 3-4).
+
+    Order is research-mandated (RustAssistant / V4A class — LLMs are
+    unreliable at hunk line arithmetic, so never ask one to fix counts):
+
+    1. verify;
+    2. ``hunk_body_count_mismatch`` → MECHANICAL ``@@`` recount
+       (``_fix_hunk_header_counts``), free, then re-verify;
+    3. surviving content-class mismatches → ONE LLM repair pass
+       (``repair_with_verifier_feedback``) under ``repair_budget_usd``,
+       then re-verify (a repaired patch is never adopted unverified);
+    4. every terminal state is an explicit stage string.
+
+    Returns ``(final_patch, repair_meta, final_annotation)`` where
+    ``repair_meta`` carries ``_verifier_repair_stage``,
+    ``_verifier_repair_budget_usd`` and
+    ``_diff_verifier_outcome_pre_repair``.
+    """
+    from sage.bench.swebench_diff_verifier import (
+        repair_with_verifier_feedback,
+        verify_diff_context_with_reasons,
+    )
+    from sage.bench.swebench_patch_repair import _fix_hunk_header_counts
+
+    def _verify(p: str) -> tuple[Any, dict[str, Any]]:
+        result = verify_diff_context_with_reasons(p, Path(repo_dir))
+        return result, _serialize_verifier_result(result)
+
+    meta: dict[str, Any] = {
+        "_verifier_repair_stage": "repair_not_needed",
+        "_verifier_repair_budget_usd": repair_budget_usd,
+        "_diff_verifier_outcome_pre_repair": None,
+    }
+    try:
+        result, annotation = _verify(patch)
+    except Exception as exc:  # noqa: BLE001 - repair must not kill the task
+        log.warning("[%s] verifier crashed in repair chain: %s", instance_id, exc)
+        meta["_verifier_repair_stage"] = "repair_verifier_crashed"
+        return patch, meta, {
+            "_diff_verifier_outcome": "unsupported_no_opinion",
+            "_diff_verifier_mismatches": [],
+            "_diff_verifier_reasons": ["unsupported_no_opinion"],
+        }
+
+    has_count_reason = "hunk_body_count_mismatch" in (
+        annotation["_diff_verifier_reasons"] or []
+    )
+    if not result.mismatches and not has_count_reason:
+        return patch, meta, annotation
+
+    meta["_diff_verifier_outcome_pre_repair"] = annotation["_diff_verifier_outcome"]
+    work = patch
+
+    if has_count_reason:
+        fixed = _fix_hunk_header_counts(work)
+        if fixed != work:
+            work = fixed
+            meta["_verifier_repair_stage"] = "mechanical_counts_fix"
+            try:
+                result, annotation = _verify(work)
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "[%s] re-verify after counts fix crashed: %s",
+                    instance_id, exc,
+                )
+                meta["_verifier_repair_stage"] = "repair_verifier_crashed"
+                return work, meta, annotation
+
+    if result.mismatches:
+        if repair_budget_usd <= 0.0:
+            meta["_verifier_repair_stage"] = "repair_skipped_budget_exhausted"
+            return work, meta, annotation
+        try:
+            llm = (llm_factory or _build_repair_llm)()
+        except Exception as exc:  # noqa: BLE001 - missing keys/deps must not kill the task
+            log.warning("[%s] repair LLM unavailable: %s", instance_id, exc)
+            meta["_verifier_repair_stage"] = "repair_llm_unavailable"
+            return work, meta, annotation
+        new_patch, stage = await repair_with_verifier_feedback(
+            llm,
+            problem_statement,
+            work,
+            list(result.mismatches),
+            instance_id=instance_id,
+            repair_budget_usd=repair_budget_usd,
+        )
+        meta["_verifier_repair_stage"] = stage
+        if stage == "verifier_repair" and new_patch:
+            try:
+                _, post_annotation = _verify(new_patch)
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "[%s] re-verify after LLM repair crashed: %s",
+                    instance_id, exc,
+                )
+                return work, meta, annotation
+            # Adopt only when re-verification confirms improvement
+            # (research trap: fuzzy/LLM repairs can mis-place hunks —
+            # never count a patch repaired without re-running the
+            # verifier).
+            if len(post_annotation["_diff_verifier_mismatches"] or []) < len(
+                annotation["_diff_verifier_mismatches"] or []
+            ):
+                return new_patch, meta, post_annotation
+            meta["_verifier_repair_stage"] = "verifier_repair_not_improved"
+            return work, meta, annotation
+
+    return work, meta, annotation
 
 
 def _timeout_task_result(
@@ -2222,6 +2380,8 @@ async def _run_one_task(
     expect_default_pipeline_learn: bool,
     swebench_prompt_profile: str = _DEFAULT_PROMPT_PROFILE,
     allow_blind_generation_on_repo_failure: bool = False,
+    verifier_mode: str = _CANARY_DIFF_VERIFIER_MODE,
+    repair_budget_usd: float = _DEFAULT_REPAIR_BUDGET_USD,
 ) -> dict[str, Any]:
     """Run one task end-to-end. Returns a per-task summary dict."""
     instance_id = task["instance_id"]
@@ -2355,6 +2515,7 @@ async def _run_one_task(
                 provider_allowlist=provider_allowlist,
                 provider_denylist=provider_denylist,
                 cwd=repo_dir if isinstance(repo_dir, str) else None,
+                verifier_mode=verifier_mode,
             )
             # Extract patch from final_result. B2 bug 3 (2026-06-10): the
             # extraction AND the diff-context verification moved INSIDE this
@@ -2382,8 +2543,41 @@ async def _run_one_task(
             diff_verifier_annotation = _annotate_diff_verifier(
                 patch=patch,
                 repo_dir=repo_dir if isinstance(repo_dir, str) else None,
-                mode=_CANARY_DIFF_VERIFIER_MODE,
+                mode=verifier_mode,
             )
+            # RESOLUTION_UNBLOCKERS criteria 3-4 (cgpro 2026-06-10): in
+            # repair mode the chain is ACTUALLY invoked launcher-side —
+            # mechanical @@ recount first, one LLM pass on surviving
+            # content mismatches, re-verify before adoption. Must run
+            # INSIDE this try (worktree still present).
+            repair_meta = {
+                "_verifier_repair_stage": None,
+                "_verifier_repair_budget_usd": None,
+                "_diff_verifier_outcome_pre_repair": None,
+            }
+            if (
+                verifier_mode == "repair"
+                and patch
+                and isinstance(repo_dir, str)
+                and diff_verifier_annotation["_diff_verifier_outcome"]
+                not in {
+                    "skipped_no_patch",
+                    "skipped_no_repo_dir",
+                    "skipped_mode_off",
+                    "unsupported_no_opinion",
+                }
+            ):
+                patch, repair_meta, diff_verifier_annotation = (
+                    await _repair_patch_with_feedback(
+                        patch=patch,
+                        repo_dir=repo_dir,
+                        problem_statement=str(
+                            task.get("problem_statement") or ""
+                        ),
+                        instance_id=instance_id,
+                        repair_budget_usd=repair_budget_usd,
+                    )
+                )
         finally:
             if tmp_root_to_clean is not None:
                 cleanup_status = _cleanup_repo_dir(
@@ -2468,7 +2662,13 @@ async def _run_one_task(
                 False,
             ),
             "_observed_event_cost_usd": cli_result.get("_observed_event_cost_usd", 0.0),
-            "_verifier_repair_budget_usd": None,
+            "_verifier_repair_budget_usd": repair_meta[
+                "_verifier_repair_budget_usd"
+            ],
+            "_verifier_repair_stage": repair_meta["_verifier_repair_stage"],
+            "_diff_verifier_outcome_pre_repair": repair_meta[
+                "_diff_verifier_outcome_pre_repair"
+            ],
             "_diff_verifier_mismatches": diff_verifier_annotation[
                 "_diff_verifier_mismatches"
             ],
@@ -2527,6 +2727,8 @@ async def run(
     expect_default_pipeline_learn: bool = False,
     swebench_prompt_profile: str = _DEFAULT_PROMPT_PROFILE,
     allow_blind_generation_on_repo_failure: bool = False,
+    verifier_mode: str = _CANARY_DIFF_VERIFIER_MODE,
+    repair_budget_usd: float = _DEFAULT_REPAIR_BUDGET_USD,
 ) -> int:
     if mock and claim_default_pipeline_learning_evidence:
         log.error(
@@ -2608,6 +2810,8 @@ async def run(
                     allow_blind_generation_on_repo_failure=(
                         allow_blind_generation_on_repo_failure
                     ),
+                    verifier_mode=verifier_mode,
+                    repair_budget_usd=repair_budget_usd,
                 ),
                 timeout=task_timeout_s,
             )
@@ -2835,6 +3039,30 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--verifier-mode",
+        choices=["observe", "repair"],
+        default=_CANARY_DIFF_VERIFIER_MODE,
+        help=(
+            "Diff-context verifier mode for the canary. ``observe`` "
+            "(default) annotates only. ``repair`` runs the launcher-side "
+            "repair chain on flagged patches: mechanical @@ recount "
+            "first, then ONE budget-capped LLM pass on surviving "
+            "content mismatches, re-verified before adoption "
+            "(RESOLUTION_UNBLOCKERS criteria 3-4, cgpro 2026-06-10)."
+        ),
+    )
+    parser.add_argument(
+        "--repair-budget-usd",
+        type=float,
+        default=_DEFAULT_REPAIR_BUDGET_USD,
+        help=(
+            "Per-task cap for the LLM repair pass (repair mode only). "
+            "0 disables the LLM pass with an explicit "
+            "repair_skipped_budget_exhausted stage; the mechanical "
+            "counts fix still runs."
+        ),
+    )
+    parser.add_argument(
         "--manifest-path",
         type=Path,
         default=_DEFAULT_CANARY_MANIFEST_PATH,
@@ -2969,6 +3197,8 @@ def main(argv: list[str] | None = None) -> int:
             allow_blind_generation_on_repo_failure=(
                 args.allow_blind_generation_on_repo_failure
             ),
+            verifier_mode=args.verifier_mode,
+            repair_budget_usd=args.repair_budget_usd,
         )
     )
 
