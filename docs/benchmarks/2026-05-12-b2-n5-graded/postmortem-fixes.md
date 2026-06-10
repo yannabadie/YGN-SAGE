@@ -36,6 +36,32 @@ TDD'd against the committed task artifacts of the N=5 run (ground truth:
 8. no patch → explicit skipped_no_patch ✓ (`test_no_patch_yields_explicit_skipped_no_patch`)
 9. 55/55 pre-existing run_dryrun tests stay green ✓ (file now 67/67)
 
+## cgpro VERIFY round (conv `cgpro_b2_unblockers_verify`, 2026-06-10)
+
+Verdict: `EDIT_REQUIRED` → both items closed TDD in the follow-up commit:
+
+1. **resolve() guard** — the production path (TopologyRunner → `resolve()`)
+   read `profile.provider` straight into policy enforcement; the
+   `infer_provider()` guard alone did not cover it. The sentinel now
+   re-resolves through `infer_provider` before enforcement (test replicates
+   the exact canary violation: allowlist google,deepseek + registry
+   `unknown` → google, no `ProviderPolicyViolation`).
+2. **Policy-event matcher** (new declared≠verified catch, cgpro Q4) — the
+   real task #3 event carries `kind='provider_error'` +
+   `error_type='ProviderPolicyViolation'` but the audit matcher only knew
+   `kind='provider_policy'`/snake_case, so
+   `_provider_policy_failure_seen=false` against a trace that proved a
+   policy block. Matcher now binds to policy CONTENT (exception class name
+   or canonical message prefix), with a tightness guard (plain rate-limit
+   `provider_error` does NOT set the flag). Test seeds the byte-exact
+   canary event.
+
+cgpro validations: Q2 — **no** `_PREDICTION_AUDIT_SCHEMA_VERSION` bump
+(v1 field population tightened; no schema-field change). Q3 —
+max-of-sources cost rule + epsilon validated (no disguised double-count;
+budget consuming the resolved figure is the right wiring). Scope — pool-side
+guard over registry default validated.
+
 ## Scope notes for VERIFY
 
 - `sage/llm/provider_pool.py` matches the allowed glob (`provider*.py`);
