@@ -18,6 +18,9 @@ dist/
 build/
 .venv/
 venv/
+# pip-tools constraint-regen venvs (Windows + WSL; see scripts/compile_python_constraints.sh)
+.venv-piptools/
+.venv-linux-piptools/
 .hypothesis/
 
 # SWE-Bench evaluation logs (reproductible via python -m sage.bench --type swebench)

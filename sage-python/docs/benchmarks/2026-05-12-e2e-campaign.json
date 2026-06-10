@@ -1,0 +1,67 @@
+{
+  "campaign": "e2e-validation",
+  "date": "2026-05-12",
+  "timestamp": "2026-05-12T12:58:02.806267",
+  "python_version": "3.13.12 | packaged by conda-forge | (main, Feb  5 2026, 05:41:12) [MSC v.1944 64 bit (AMD64)]",
+  "results": {
+    "c1": {
+      "status": "PASS",
+      "result_len": 486,
+      "event_count": 14,
+      "event_types": [
+        "LEARN",
+        "PERCEIVE",
+        "PIPELINE",
+        "THINK"
+      ]
+    },
+    "c2": {
+      "status": "PASS",
+      "system": 3,
+      "domain": "code",
+      "assignments": {
+        "0": "MiniMax-M2.7",
+        "1": "gpt-5.4"
+      },
+      "has_topology": true,
+      "node_count": 2,
+      "non_empty_model_ids": 2
+    },
+    "c3": {
+      "status": "PASS",
+      "quality_empty": 0.0,
+      "quality_good": 0.3606,
+      "delta": 0.3606
+    },
+    "c4": {
+      "status": "PASS",
+      "timings_ms": {
+        "memory_safety": 8.7538,
+        "memory_unsafe": 0.1071,
+        "arithmetic": 0.0377,
+        "invariant": 0.0376
+      }
+    },
+    "c5": {
+      "status": "PASS",
+      "heuristic_accuracy": 0.5,
+      "knn_accuracy": 0.85,
+      "knn_skipped": 0,
+      "knn_ready": true,
+      "total_tasks": 20
+    },
+    "c6": {
+      "status": "PASS",
+      "episodic_session1_results": 1,
+      "episodic_session2_python": 1,
+      "episodic_session2_rust": 1,
+      "semantic_entities": 2,
+      "semantic_context_preview": "Guido van Rossum --[created]--> Python"
+    }
+  },
+  "summary": {
+    "total_tests": 7,
+    "passed": 6,
+    "claims_validated": 6
+  }
+}

