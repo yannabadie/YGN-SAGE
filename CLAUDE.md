@@ -53,6 +53,12 @@ cd sage-core && maturin develop --features otel,smt,onnx
 # be used with --strip" (pyproject.toml has strip=true for wheel size):
 #   cd sage-core && maturin build --release --features smt,onnx --out target/wheels
 #   pip install target/wheels/sage_core-0.1.0-cp313-*.whl --force-reinstall --no-deps
+# ALWAYS pass `-i <your python>` to `maturin build` on this machine
+# (2026-06-10 incident): without it maturin auto-picked a stray Python
+# 3.12 and silently built a cp312 wheel while the pip glob above
+# reinstalled the OLD cp313 wheel — the sage_core_version L3 check
+# caught the stale binary (matches:false). Example:
+#   maturin build --release --features smt,onnx -i C:/ProgramData/miniforge3/python.exe --out target/wheels
 cd sage-python && pip install -e ".[all,dev]"
 
 # Build recipe for the embedded RustPython wasm (one-time, cached):
