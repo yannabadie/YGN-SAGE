@@ -1,0 +1,113 @@
+{
+  "schema_version": "swebench_pro_grader_preflight_v1",
+  "generated_at_utc": "2026-06-10T18:03:38.599114+00:00",
+  "repo": {
+    "path": "C:\\Code\\YGN-SAGE",
+    "commit": "b2b40b3021d844d009fc35bc690ccb9a561f05c0",
+    "dirty": true
+  },
+  "grader_repo": "C:\\Code\\YGN-SAGE\\external\\SWE-bench_Pro-os",
+  "mode_requested": "modal",
+  "mode_effective": "modal",
+  "local_grading_ready": false,
+  "modal_grading_ready": true,
+  "decision": "READY_MODAL",
+  "blockers": [],
+  "all_potential_blockers": [
+    "host_disk_below_swebench_minimum",
+    "docker_daemon_unreachable"
+  ],
+  "checks": {
+    "host_resources": {
+      "path": "C:\\Code\\YGN-SAGE",
+      "free_disk_gb": 64.56,
+      "min_free_disk_gb": 120.0,
+      "disk_ok": false,
+      "note": "SWE-bench Docker guidance commonly requires large local image/cache space."
+    },
+    "docker_cli": {
+      "available": true,
+      "path": "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.EXE"
+    },
+    "docker_context": {
+      "ok": true,
+      "docker_host_env_set": false,
+      "docker_context_env": null,
+      "active_context": "desktop-linux",
+      "endpoint": "npipe:////./pipe/dockerDesktopLinuxEngine",
+      "remote_endpoint": false,
+      "context_show": {
+        "command": [
+          "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.EXE",
+          "context",
+          "show"
+        ],
+        "returncode": 0,
+        "stdout": "desktop-linux",
+        "stderr": ""
+      },
+      "context_inspect": {
+        "command": [
+          "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.EXE",
+          "context",
+          "inspect",
+          "desktop-linux",
+          "--format",
+          "{{json .Endpoints.docker.Host}}"
+        ],
+        "returncode": 0,
+        "stdout": "\"npipe:////./pipe/dockerDesktopLinuxEngine\"",
+        "stderr": ""
+      }
+    },
+    "docker_daemon": {
+      "command": [
+        "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.EXE",
+        "info",
+        "--format",
+        "{{json .ServerVersion}}"
+      ],
+      "returncode": 1,
+      "stdout": "\"\"",
+      "stderr": "failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine; check if the path is correct and if the daemon is running: open //./pipe/dockerDesktopLinuxEngine: Le fichier sp\u00e9cifi\u00e9 est introuvable.",
+      "ok": false,
+      "server_version": null
+    },
+    "docker_ostype": {
+      "ok": false,
+      "reason": "not checked because docker daemon is unreachable"
+    },
+    "grader_repo": {
+      "path": "C:\\Code\\YGN-SAGE\\external\\SWE-bench_Pro-os",
+      "exists": true,
+      "eval_script_exists": true,
+      "git_commit": "0c64e26f00b9c190432de7fc520c8ceed5c25518",
+      "expected_commit": "0c64e26f00b9c190432de7fc520c8ceed5c25518",
+      "commit_matches_expected": true,
+      "remote_urls": [
+        "https://github.com/scaleapi/SWE-bench_Pro-os"
+      ],
+      "expected_remote": "github.com/scaleapi/SWE-bench_Pro-os",
+      "remote_matches_expected": true,
+      "dirty_status": ""
+    },
+    "modal_cli": {
+      "available": true,
+      "path": "C:\\Code\\YGN-SAGE\\.tmp\\modal-shim\\modal.BAT",
+      "note": "remote grading candidate only"
+    },
+    "modal_token": {
+      "command": [
+        "C:\\Code\\YGN-SAGE\\.tmp\\modal-shim\\modal.BAT",
+        "token",
+        "info"
+      ],
+      "returncode": 0,
+      "stdout": "Token: ak-Rai059Pck1sLQ7qKrQ82Ky\nWorkspace: yann-abadie (ac-cn3YIrvqRFeMxs79QLGoia)\nUser: yann-abadie (us-LjFqf0BEoUdDkyAlmrTV6z)\nCreated at: 2026-05-10 18:46:20 Paris, Madrid (heure d\ufffd\ufffdt\ufffd)",
+      "stderr": "",
+      "ok": true,
+      "note": "auth only; SWE-bench Pro job wiring is not proven"
+    }
+  },
+  "next_action": "Do not launch or label SWE-bench Pro N=5 as official locally until decision is READY_LOCAL_DOCKER or READY_MODAL. Generate-only traces may continue if marked ungraded. Otherwise move grading to a clean Linux Docker runner with sufficient disk/RAM or a Modal setup with token auth and job wiring verified."
+}

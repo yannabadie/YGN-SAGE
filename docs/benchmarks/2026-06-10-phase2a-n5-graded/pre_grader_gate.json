@@ -1,0 +1,70 @@
+{
+  "allowed_reason_codes": [
+    "no_patch_extracted",
+    "no_patch_to_verify",
+    "provider_call_timeout",
+    "reasoner_thinking_overflow",
+    "scoring_boot_impossible",
+    "stage_deadlock",
+    "task_budget_exhausted"
+  ],
+  "events_dir": "docs\\benchmarks\\2026-06-10-phase2a-n5-graded\\run\\per_task",
+  "gate_status": "PASS",
+  "n_fail": 0,
+  "n_pass": 5,
+  "n_predictions": 5,
+  "per_instance": [
+    {
+      "evidence": {
+        "budget_exhausted": false,
+        "diff_verifier_outcome": "skipped_no_patch",
+        "source": "classify_non_timeout_empty_patch"
+      },
+      "instance_id": "instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858",
+      "patch_present": false,
+      "reason_code": "no_patch_extracted",
+      "verdict": "pass:no_patch_extracted"
+    },
+    {
+      "evidence": {
+        "patch_chars": 4931
+      },
+      "instance_id": "instance_gravitational__teleport-6eaaf3a27e64f4ef4ef855bd35d7ec338cf17460-v626ec2a48416b10a88641359a169d99e935ff037",
+      "patch_present": true,
+      "reason_code": null,
+      "verdict": "pass:non_empty_patch"
+    },
+    {
+      "evidence": {
+        "patch_chars": 1467
+      },
+      "instance_id": "instance_tutao__tutanota-219bc8f05d7b980e038bc1524cb021bf56397a1b-vee878bb72091875e912c52fc32bc60ec3760227b",
+      "patch_present": true,
+      "reason_code": null,
+      "verdict": "pass:non_empty_patch"
+    },
+    {
+      "evidence": {
+        "budget_exhausted": false,
+        "diff_verifier_outcome": "skipped_no_patch",
+        "source": "classify_non_timeout_empty_patch"
+      },
+      "instance_id": "instance_NodeBB__NodeBB-76c6e30282906ac664f2c9278fc90999b27b1f48-vd59a5728dfc977f44533186ace531248c2917516",
+      "patch_present": false,
+      "reason_code": "no_patch_extracted",
+      "verdict": "pass:no_patch_extracted"
+    },
+    {
+      "evidence": {
+        "patch_chars": 647
+      },
+      "instance_id": "instance_tutao__tutanota-db90ac26ab78addf72a8efaff3c7acc0fbd6d000-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf",
+      "patch_present": true,
+      "reason_code": null,
+      "verdict": "pass:non_empty_patch"
+    }
+  ],
+  "predictions_jsonl_path": "docs\\benchmarks\\2026-06-10-phase2a-n5-graded\\run\\predictions.jsonl",
+  "predictions_path": "docs\\benchmarks\\2026-06-10-phase2a-n5-graded\\run\\predictions.json",
+  "schema_version": "canary_pre_grader_gate_v1"
+}
