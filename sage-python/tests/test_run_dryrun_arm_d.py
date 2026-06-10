@@ -2782,3 +2782,92 @@ def test_resolve_total_cost_timeout_parity_no_missing_warning() -> None:
     assert source0 == "no_cost_evidence"
     assert warning0 is not None
     assert warning0["reason_code"] == "llm_execution_observed_zero_cost"
+
+
+# ---------------------------------------------------------------------------
+# B2_RERUN_UNBLOCKERS bug 3 — diff verifier wiring (cgpro required tests 6-8)
+# ---------------------------------------------------------------------------
+
+def test_diff_verifier_env_propagates_to_subprocess() -> None:
+    """B2 contract test 6: the per-task subprocess env must carry
+    SAGE_DIFF_VERIFIER_MODE=observe (single source: the same constant the
+    launcher-side annotation uses)."""
+    env = arm_d._task_subprocess_env(tier="reasoner")
+    assert env["SAGE_DIFF_VERIFIER_MODE"] == "observe"
+    assert env["SAGE_LLM_TIER"] == "reasoner"
+
+
+def test_patch_with_observe_mode_yields_non_null_verifier_outcome(tmp_path: Path) -> None:
+    """B2 contract test 7: a non-empty patch under observe mode must produce
+    a non-null _diff_verifier_outcome (2026-05-12 N=5: every task had None
+    because the canary never invoked the verifier — it lives in
+    SWEBenchBench, which the canary does not instantiate)."""
+    target = tmp_path / "mod.py"
+    target.write_text("a = 1\nb = 2\nc = 3\n", encoding="utf-8")
+    patch = (
+        "--- a/mod.py\n"
+        "+++ b/mod.py\n"
+        "@@ -1,3 +1,3 @@\n"
+        " a = 1\n"
+        "-b = 2\n"
+        "+b = 5\n"
+        " c = 3\n"
+    )
+    record = arm_d._annotate_diff_verifier(
+        patch=patch, repo_dir=str(tmp_path), mode="observe"
+    )
+    assert record["_diff_verifier_outcome"] is not None
+    assert record["_diff_verifier_outcome"] != ""
+    assert isinstance(record["_diff_verifier_mismatches"], list)
+    assert record["_diff_verifier_mismatches"] == []
+
+
+def test_patch_with_context_mismatch_yields_mismatch_records(tmp_path: Path) -> None:
+    """The wired verifier must surface real mismatches (compact dict shape,
+    mirroring swebench_bench serialization — no expected/actual bodies)."""
+    target = tmp_path / "mod.py"
+    target.write_text("x = 10\ny = 20\nz = 30\n", encoding="utf-8")
+    patch = (
+        "--- a/mod.py\n"
+        "+++ b/mod.py\n"
+        "@@ -1,3 +1,3 @@\n"
+        " a = 1\n"
+        "-b = 2\n"
+        "+b = 5\n"
+        " c = 3\n"
+    )
+    record = arm_d._annotate_diff_verifier(
+        patch=patch, repo_dir=str(tmp_path), mode="observe"
+    )
+    assert record["_diff_verifier_outcome"] is not None
+    assert record["_diff_verifier_mismatches"], "expected at least one mismatch record"
+    first = record["_diff_verifier_mismatches"][0]
+    assert set(first) == {"file", "hunk_index", "old_start", "old_count", "kind", "match_ratio"}
+
+
+def test_no_patch_yields_explicit_skipped_no_patch() -> None:
+    """B2 contract test 8: absence of patch must be an explicit outcome,
+    NOT null (manifest stop condition #5 keys off non-null fields)."""
+    record = arm_d._annotate_diff_verifier(patch="", repo_dir=None, mode="observe")
+    assert record["_diff_verifier_outcome"] == "skipped_no_patch"
+    assert record["_diff_verifier_mismatches"] is None
+
+
+def test_mode_off_yields_explicit_skipped_mode_off(tmp_path: Path) -> None:
+    record = arm_d._annotate_diff_verifier(
+        patch="--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n",
+        repo_dir=str(tmp_path),
+        mode="off",
+    )
+    assert record["_diff_verifier_outcome"] == "skipped_mode_off"
+
+
+def test_missing_repo_dir_yields_explicit_skipped_no_repo() -> None:
+    """Repo clone failures must remain observable: patch present but no
+    worktree to verify against is its own explicit outcome."""
+    record = arm_d._annotate_diff_verifier(
+        patch="--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n",
+        repo_dir=None,
+        mode="observe",
+    )
+    assert record["_diff_verifier_outcome"] == "skipped_no_repo_dir"

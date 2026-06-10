@@ -939,6 +939,26 @@ def _extract_patch_from_text(text: str) -> str:
 # ── Sage CLI subprocess (real mode) ──────────────────────────────────────────
 
 
+# B2 bug 3 (2026-06-10): single source for the canary's diff-verifier mode.
+# The subprocess env AND the launcher-side `_annotate_diff_verifier` call
+# both read this constant, so the env the child sees can never drift from
+# the mode the launcher annotates with (the 2026-05-12 N=5 had the env set
+# but no launcher-side consumer at all — every `_diff_verifier_outcome` was
+# None because the verifier lives in SWEBenchBench, which the canary never
+# instantiates).
+_CANARY_DIFF_VERIFIER_MODE = "observe"
+
+
+def _task_subprocess_env(tier: str) -> dict[str, str]:
+    """Build the per-task subprocess environment (extracted for testability —
+    B2 contract test 6 asserts SAGE_DIFF_VERIFIER_MODE propagation)."""
+    env = os.environ.copy()
+    env["SAGE_LLM_TIER"] = tier
+    env["SAGE_DIFF_VERIFIER_MODE"] = _CANARY_DIFF_VERIFIER_MODE
+    env["SAGE_OTEL_EXPORTER"] = "none"
+    return env
+
+
 async def _run_sage_cli(
     task_text: str,
     budget_usd: float,
@@ -959,10 +979,7 @@ async def _run_sage_cli(
     """
     output_events_path.parent.mkdir(parents=True, exist_ok=True)
 
-    env = os.environ.copy()
-    env["SAGE_LLM_TIER"] = tier
-    env["SAGE_DIFF_VERIFIER_MODE"] = "observe"
-    env["SAGE_OTEL_EXPORTER"] = "none"
+    env = _task_subprocess_env(tier)
     env.setdefault("SAGE_BOOT_BYPASS_EPOCH_GUARD", "1")
     env.setdefault("SAGE_BOOT_BYPASS_REASON",
         "cycle-13 E Tier 2.1 arm D smoke run; bypass disables atexit "
@@ -1780,6 +1797,70 @@ def _resolve_total_cost(
     return 0.0, "no_cost_evidence", warning
 
 
+def _annotate_diff_verifier(
+    *,
+    patch: str,
+    repo_dir: str | None,
+    mode: str,
+) -> dict[str, Any]:
+    """Run the pre-emission diff-context verifier on an extracted patch
+    (B2 bug 3, 2026-05-12 canary): the env flag was correctly propagated to
+    the subprocess but NOBODY consumed it on the canary path — the verifier
+    lives in SWEBenchBench._run_one_instance, which the canary never
+    instantiates. This launcher-side annotation closes that gap.
+
+    Every skip path is an EXPLICIT outcome string (never None): the canary
+    manifest stop condition #5 keys off "zero tasks produce
+    `_diff_verifier_outcome`", which null fields would re-trigger silently.
+    Serialization mirrors swebench_bench (compact mismatch dicts, no
+    expected/actual bodies; crash maps to unsupported_no_opinion).
+    """
+    if mode not in {"observe", "repair"}:
+        return {
+            "_diff_verifier_outcome": "skipped_mode_off",
+            "_diff_verifier_mismatches": None,
+            "_diff_verifier_reasons": None,
+        }
+    if not patch:
+        return {
+            "_diff_verifier_outcome": "skipped_no_patch",
+            "_diff_verifier_mismatches": None,
+            "_diff_verifier_reasons": None,
+        }
+    if not repo_dir or not Path(repo_dir).is_dir():
+        return {
+            "_diff_verifier_outcome": "skipped_no_repo_dir",
+            "_diff_verifier_mismatches": None,
+            "_diff_verifier_reasons": None,
+        }
+    from sage.bench.swebench_diff_verifier import verify_diff_context_with_reasons
+
+    try:
+        result = verify_diff_context_with_reasons(patch, Path(repo_dir))
+    except Exception as exc:  # noqa: BLE001 - observability annotation must not kill the task
+        log.warning("diff verifier crashed during canary annotation: %s", exc)
+        return {
+            "_diff_verifier_outcome": "unsupported_no_opinion",
+            "_diff_verifier_mismatches": [],
+            "_diff_verifier_reasons": ["unsupported_no_opinion"],
+        }
+    return {
+        "_diff_verifier_outcome": str(result.outcome),
+        "_diff_verifier_mismatches": [
+            {
+                "file": m.file,
+                "hunk_index": m.hunk_index,
+                "old_start": m.old_start,
+                "old_count": m.old_count,
+                "kind": m.kind,
+                "match_ratio": m.match_ratio,
+            }
+            for m in result.mismatches
+        ],
+        "_diff_verifier_reasons": [str(reason) for reason in result.reasons],
+    }
+
+
 def _timeout_task_result(
     task: dict[str, Any],
     output_dir: Path,
@@ -1860,7 +1941,11 @@ def _timeout_task_result(
         "events_path": str(per_task_events.relative_to(output_dir)),
         "_verifier_repair_budget_usd": None,
         "_diff_verifier_mismatches": None,
-        "_diff_verifier_outcome": None,
+        # B2 bug 3: explicit skip outcome on timeout — the subprocess was
+        # killed before any patch could exist; null would silently
+        # re-trigger manifest stop condition #5.
+        "_diff_verifier_outcome": "skipped_timeout",
+        "_diff_verifier_reasons": None,
         "model_id_final": (
             timeout_categorization.get("model_id_final")
             or event_audit.get("model_id_final")
@@ -1933,16 +2018,37 @@ async def _run_one_task(
     if mock:
         # No subprocess — synthesize a patch + minimal "summary".
         patch = _synthetic_minimal_patch(instance_id)
+        # B2 (2026-06-10): mock summaries carry the same explicit audit
+        # fields as real ones so a --mock dry-run can prove the three
+        # B2_RERUN_UNBLOCKERS field classes are populated end-to-end.
+        # No repo worktree exists in mock, so the annotation resolves to
+        # the explicit "skipped_no_repo_dir" outcome (never None).
+        mock_verifier_annotation = _annotate_diff_verifier(
+            patch=patch,
+            repo_dir=None,
+            mode=_CANARY_DIFF_VERIFIER_MODE,
+        )
         summary = {
             "instance_id": instance_id,
             "exit_code": 0,
             "latency_ms": 0,
             "total_cost_usd": 0.0,
+            "_total_cost_usd_source": "no_cost_evidence",
+            "cost_integrity_warning": None,
             "extracted_patch_present": bool(patch),
             "extracted_patch_chars": len(patch),
             "mock": True,
             "timeout": False,
             "events_path": str(per_task_events.relative_to(output_dir)),
+            "_diff_verifier_mismatches": mock_verifier_annotation[
+                "_diff_verifier_mismatches"
+            ],
+            "_diff_verifier_outcome": mock_verifier_annotation[
+                "_diff_verifier_outcome"
+            ],
+            "_diff_verifier_reasons": mock_verifier_annotation[
+                "_diff_verifier_reasons"
+            ],
             "learning_evidence_boundary": _learning_evidence_not_requested(),
         }
         # Write a dummy events file so per_task dir is uniform.
@@ -2004,6 +2110,34 @@ async def _run_one_task(
                 provider_denylist=provider_denylist,
                 cwd=repo_dir if isinstance(repo_dir, str) else None,
             )
+            # Extract patch from final_result. B2 bug 3 (2026-06-10): the
+            # extraction AND the diff-context verification moved INSIDE this
+            # try-block — the verifier compares hunk context against real
+            # file bytes, so it must run before the finally below removes
+            # the cloned worktree (previously extraction ran after cleanup
+            # and the verifier had nothing to read even if wired).
+            agent_output = ""
+            payload = cli_result.get("final_result_payload") or {}
+            if isinstance(payload, str):
+                agent_output = payload
+            elif isinstance(payload, dict):
+                for key in ("result", "output", "text", "content", "answer"):
+                    val = payload.get(key)
+                    if isinstance(val, str) and val.strip():
+                        agent_output = val
+                        break
+
+            # Use the swebench_bench extractor (handles raw diffs, fenced
+            # ```diff blocks, mixed text-with-embedded-diff, sentinel
+            # rejection, Unix line-ending normalization). The local
+            # ``_extract_patch_from_text`` is kept for older callers that
+            # only need the dumb header-scan path.
+            patch = _swebench_extract_patch(agent_output)
+            diff_verifier_annotation = _annotate_diff_verifier(
+                patch=patch,
+                repo_dir=repo_dir if isinstance(repo_dir, str) else None,
+                mode=_CANARY_DIFF_VERIFIER_MODE,
+            )
         finally:
             if tmp_root_to_clean is not None:
                 cleanup_status = _cleanup_repo_dir(
@@ -2015,25 +2149,6 @@ async def _run_one_task(
             repo_dir if isinstance(repo_dir, str) else None
         )
         repo_context["repo_dir_cleanup_status"] = cleanup_status
-
-        # Extract patch from final_result
-        agent_output = ""
-        payload = cli_result.get("final_result_payload") or {}
-        if isinstance(payload, str):
-            agent_output = payload
-        elif isinstance(payload, dict):
-            for key in ("result", "output", "text", "content", "answer"):
-                val = payload.get(key)
-                if isinstance(val, str) and val.strip():
-                    agent_output = val
-                    break
-
-        # Use the swebench_bench extractor (handles raw diffs, fenced
-        # ```diff blocks, mixed text-with-embedded-diff, sentinel
-        # rejection, Unix line-ending normalization). The local
-        # ``_extract_patch_from_text`` is kept for older callers that
-        # only need the dumb header-scan path.
-        patch = _swebench_extract_patch(agent_output)
         if claim_default_pipeline_learning_evidence:
             cli_complete_payload = cli_result.get("cli_complete_payload")
             cli_outcome = (
@@ -2108,8 +2223,15 @@ async def _run_one_task(
             ),
             "_observed_event_cost_usd": cli_result.get("_observed_event_cost_usd", 0.0),
             "_verifier_repair_budget_usd": None,
-            "_diff_verifier_mismatches": None,
-            "_diff_verifier_outcome": None,
+            "_diff_verifier_mismatches": diff_verifier_annotation[
+                "_diff_verifier_mismatches"
+            ],
+            "_diff_verifier_outcome": diff_verifier_annotation[
+                "_diff_verifier_outcome"
+            ],
+            "_diff_verifier_reasons": diff_verifier_annotation[
+                "_diff_verifier_reasons"
+            ],
             "stderr_chars": len(cli_result.get("stderr", "")),
             "learning_evidence_boundary": learning_evidence,
             "repo_context": {
