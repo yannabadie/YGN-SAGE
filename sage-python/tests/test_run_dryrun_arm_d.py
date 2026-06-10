@@ -3298,3 +3298,58 @@ def test_repair_chain_clean_patch_not_needed(tmp_path) -> None:
     assert meta["_verifier_repair_stage"] == "repair_not_needed"
     assert final_patch == clean
     assert annotation["_diff_verifier_mismatches"] == []
+
+
+def test_prediction_audit_record_carries_repo_unavailable_reason() -> None:
+    """Review blocker (2026-06-10): the skip summary's patch_empty_reason
+    must reach predictions.jsonl as the gate's pre-recorded _reason_code —
+    summary-only fields never reach the pre-grader gate."""
+    record = {"instance_id": "t", "patch": "", "prefix": "p"}
+    summary = {
+        "instance_id": "t",
+        "mock": False,
+        "timeout": False,
+        "generation_skipped": True,
+        "patch_empty_reason": "repo_unavailable",
+    }
+    audit = arm_d._prediction_audit_record(record, summary, task_index=0)
+    assert audit["_reason_code"] == "repo_unavailable"
+
+    plain_summary = {"instance_id": "t2", "mock": False, "timeout": False}
+    audit2 = arm_d._prediction_audit_record(record, plain_summary, task_index=1)
+    assert "_reason_code" not in audit2
+
+
+def test_repair_adoption_rejects_structurally_broken_llm_patch(tmp_path) -> None:
+    """Review MAJOR (2026-06-10): an LLM 'repair' that verifies with ZERO
+    mismatches but a structural outcome (not_unified_diff) must NOT be
+    adopted on the naive count comparison."""
+    target = tmp_path / "mod.py"
+    target.write_text("x = 10\ny = 20\nz = 30\n", encoding="utf-8")
+    broken = (
+        "--- a/mod.py\n"
+        "+++ b/mod.py\n"
+        "@@ -1,3 +1,3 @@\n"
+        " a = 1\n"
+        "-b = 2\n"
+        "+b = 5\n"
+        " c = 3\n"
+    )
+    # Extractable as a diff, but no @@ hunks at all -> not_unified_diff
+    # with zero mismatches.
+    structurally_broken_reply = "--- a/mod.py\n+++ b/mod.py\n+y = 50\n"
+    llm = _FakeCanaryRepairLLM(reply=structurally_broken_reply)
+
+    final_patch, meta, annotation = asyncio.run(
+        arm_d._repair_patch_with_feedback(
+            patch=broken,
+            repo_dir=str(tmp_path),
+            problem_statement="fix y",
+            instance_id="t-structural",
+            repair_budget_usd=0.5,
+            llm_factory=lambda: llm,
+        )
+    )
+    assert final_patch == broken
+    assert meta["_verifier_repair_stage"] == "verifier_repair_not_improved"
+    assert annotation["_diff_verifier_mismatches"]

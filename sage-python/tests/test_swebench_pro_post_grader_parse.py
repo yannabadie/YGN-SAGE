@@ -239,3 +239,29 @@ def test_every_instance_gets_a_verdict_even_without_artifacts(tmp_path) -> None:
     v = verdicts[iid]
     assert v["verdict"] == "GRADER_OUTPUT_WRITE_FAILED"
     assert v["resolved"] is False
+
+
+def test_legit_test_name_containing_error_is_not_opaque(tmp_path) -> None:
+    """Review MAJOR (2026-06-10): a real test literally named
+    'error_handling_test' must count as a REAL test result — the verdict
+    stays TEST_FAILED even when stdout carries compiler-class noise."""
+    iid = "instance_legit_error_name"
+    _make_instance_dir(
+        tmp_path, iid,
+        stdout=(
+            "running tests...\n"
+            "src/x.ts(1,1): error TS2554: Expected 2 arguments, but got 1.\n"
+        ),
+        output_json={
+            "tests": [
+                {"name": "error_handling_test", "status": "ERROR"},
+                {"name": "test_error_recovery", "status": "ERROR"},
+            ]
+        },
+    )
+    verdicts = _run(
+        tmp_path,
+        predictions=[{"instance_id": iid, "patch": "--- a/x\n+++ b/x\n"}],
+        eval_results={iid: False},
+    )
+    assert verdicts[iid]["verdict"] == "TEST_FAILED"

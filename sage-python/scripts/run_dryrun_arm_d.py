@@ -1469,6 +1469,16 @@ def _prediction_audit_record(
     audit_record["_exit_code"] = summary.get("exit_code")
     audit_record["_latency_ms"] = summary.get("latency_ms")
     audit_record["_events_path"] = summary.get("events_path")
+    # RESOLUTION_UNBLOCKERS (review blocker 2026-06-10): the pre-grader
+    # gate's pre-recorded channel reads ``_reason_code`` from the jsonl
+    # row — summary-only fields never reach it. A fail-closed repo skip
+    # records its infra reason here so the gate classifies it as
+    # repo_unavailable instead of falling through to
+    # no_allowed_reason_code. First (and so far only) writer of the
+    # channel the gate anticipated as "slice 4+ follow-up".
+    patch_empty_reason = summary.get("patch_empty_reason")
+    if isinstance(patch_empty_reason, str) and patch_empty_reason:
+        audit_record["_reason_code"] = patch_empty_reason
     for field in _PREDICTION_AUDIT_FIELDS:
         audit_record[field] = summary.get(field)
     return audit_record
@@ -2127,10 +2137,20 @@ async def _repair_patch_with_feedback(
             # Adopt only when re-verification confirms improvement
             # (research trap: fuzzy/LLM repairs can mis-place hunks —
             # never count a patch repaired without re-running the
-            # verifier).
-            if len(post_annotation["_diff_verifier_mismatches"] or []) < len(
-                annotation["_diff_verifier_mismatches"] or []
-            ):
+            # verifier). Review MAJOR 2026-06-10: a structurally broken
+            # reply (e.g. not_unified_diff) verifies with ZERO mismatches
+            # and would win the naive count comparison — reject any
+            # structural-class outcome outright.
+            post_outcome = post_annotation["_diff_verifier_outcome"]
+            structurally_broken = post_outcome in {
+                "not_unified_diff",
+                "malformed_hunk_header",
+                "hunk_body_count_mismatch",
+                "unsupported_no_opinion",
+            }
+            if not structurally_broken and len(
+                post_annotation["_diff_verifier_mismatches"] or []
+            ) < len(annotation["_diff_verifier_mismatches"] or []):
                 return new_patch, meta, post_annotation
             meta["_verifier_repair_stage"] = "verifier_repair_not_improved"
             return work, meta, annotation

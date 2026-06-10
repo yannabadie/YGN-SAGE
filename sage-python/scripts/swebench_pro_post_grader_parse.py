@@ -149,8 +149,15 @@ def _classify(
     test_names = {
         str(t.get("name", "")) for t in tests_list if isinstance(t, dict)
     }
+    # Opaque-bucket markers as OBSERVED in real grader output (2026-06-10
+    # Phase 2.a bundle) — exact phrases, NOT substrings: a legitimate test
+    # literally named 'error_handling_test' must count as a real result
+    # (review MAJOR 2026-06-10).
     opaque_only = bool(test_names) and all(
-        "unknown" in name or "error" in name.lower() for name in test_names
+        "test/unknown" in name
+        or name == _NO_TESTS_BUCKET
+        or name.startswith("Build/Runtime Error")
+        for name in test_names
     )
     real_results = bool(test_names) and not opaque_only
 

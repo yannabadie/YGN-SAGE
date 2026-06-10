@@ -398,7 +398,8 @@ def test_main_writes_gate_result_json_and_returns_exit_code(tmp_path: Path) -> N
     assert payload["gate_status"] == "PASS"
     assert payload["schema_version"] == "canary_pre_grader_gate_v1"
     assert "non_empty_patch" in payload["per_instance"][0]["verdict"]
-    # allowed_reason_codes must be a sorted list of the 7 enum members.
+    # allowed_reason_codes must be a sorted list of the 8 enum members
+    # (repo_unavailable added by RESOLUTION_UNBLOCKERS 2026-06-10).
     assert payload["allowed_reason_codes"] == sorted(
         {
             "scoring_boot_impossible",
@@ -408,6 +409,7 @@ def test_main_writes_gate_result_json_and_returns_exit_code(tmp_path: Path) -> N
             "no_patch_extracted",
             "task_budget_exhausted",
             "no_patch_to_verify",
+            "repo_unavailable",
         }
     )
 
@@ -478,3 +480,27 @@ def test_real_canary_n1_artefact_passes(tmp_path: Path) -> None:
     assert result["gate_status"] == "PASS", result
     [entry] = result["per_instance"]
     assert entry["reason_code"] == "provider_call_timeout"
+
+
+def test_pre_recorded_repo_unavailable_passes(tmp_path: Path) -> None:
+    """RESOLUTION_UNBLOCKERS (review blocker, 2026-06-10): a fail-closed
+    repo-skip prediction carries the pre-recorded repo_unavailable reason
+    and must PASS the gate as an INFRA classification — never fall through
+    to no_allowed_reason_code."""
+    pj, _, events_dir = _write_predictions(
+        tmp_path,
+        predictions=[{"instance_id": "inst-skip", "patch": "", "prefix": "sage"}],
+        annotations=[
+            {
+                "instance_id": "inst-skip",
+                "patch": "",
+                "_reason_code": "repo_unavailable",
+                "_timeout": False,
+            }
+        ],
+    )
+    result = gate.run_gate(predictions_path=pj, events_dir=events_dir)
+    assert result["gate_status"] == "PASS"
+    [entry] = result["per_instance"]
+    assert entry["verdict"] == "pass:repo_unavailable"
+    assert entry["evidence"]["source"] == "pre_recorded"
