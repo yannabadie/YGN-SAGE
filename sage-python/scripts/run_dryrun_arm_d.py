@@ -647,7 +647,27 @@ def _event_audit_from_file(events_path: Path) -> dict[str, Any]:
             if ev_type == "failure":
                 kind = _event_value(event, "kind")
                 error_type = _event_value(event, "error_type")
-                if kind == "provider_policy" or error_type == "provider_policy_violation":
+                message = _event_value(event, "message")
+                # cgpro VERIFY EDIT_REQUIRED #2 (2026-06-10), declared-vs-
+                # verified: the real runtime event (2026-05-12 task #3,
+                # seq=101) carries kind='provider_error' +
+                # error_type='ProviderPolicyViolation' (CamelCase exception
+                # class name), so the old matcher (kind=='provider_policy'
+                # or snake_case error_type) never fired and the summary
+                # said _provider_policy_failure_seen=false against a trace
+                # that PROVED a policy block. Match on policy CONTENT
+                # (exception class name or canonical message prefix), NOT
+                # on the kind bucket — a plain provider_error (rate limit,
+                # network) must not set the flag.
+                if (
+                    kind == "provider_policy"
+                    or error_type
+                    in {"provider_policy_violation", "ProviderPolicyViolation"}
+                    or (
+                        isinstance(message, str)
+                        and message.startswith("provider policy violation")
+                    )
+                ):
                     provider_policy_failure_seen = True
             if ev_type in {
                 "routing_decision",

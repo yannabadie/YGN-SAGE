@@ -546,6 +546,16 @@ class ProviderPool:
                 )
 
             provider_name: str = getattr(profile, "provider", "")
+            # B2 bug 1 / cgpro VERIFY EDIT_REQUIRED #1 (2026-06-10): resolve()
+            # is the PRODUCTION path (TopologyRunner resolves per-node models
+            # here) and it read profile.provider straight into policy
+            # enforcement — the registry "unknown" sentinel produced the
+            # 2026-05-12 canary failure (reason=outside_allowlist,
+            # provider_id='unknown'). Re-resolve the sentinel through
+            # infer_provider (registry-guarded + cards.toml prefix patterns)
+            # BEFORE enforcement.
+            if not provider_name or provider_name == "unknown":
+                provider_name = self.infer_provider(model_id)
             self._enforce_provider_policy(
                 model_id=model_id,
                 provider_name=provider_name,

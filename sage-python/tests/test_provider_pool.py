@@ -464,6 +464,41 @@ class TestInferProvider:
         )
         assert pool.infer_provider("qwen/qwen3.5-plus-02-15") == "openrouter"
 
+    def test_resolve_unknown_sentinel_does_not_trip_policy(self):
+        """cgpro VERIFY EDIT_REQUIRED #1 (2026-06-10): the PRODUCTION runtime
+        path is resolve(), not infer_provider() — TopologyRunner resolves
+        per-node models through it, and resolve() read profile.provider
+        directly BEFORE policy enforcement. With the registry "unknown"
+        sentinel + an allowlist, this raised ProviderPolicyViolation
+        (the exact 2026-05-12 canary failure event: source=cli;
+        model_id='gemini-3.1-pro-preview'; provider_id='unknown';
+        reason=outside_allowlist). The sentinel must resolve via
+        infer_provider before enforcement."""
+        from sage.pipeline_v2.provider_policy import ProviderPolicyViolation
+
+        profile = _make_profile("gemini-3.1-pro-preview", "unknown")
+        registry = _make_registry(profile)
+        google_provider = _make_provider("google")
+        pool = ProviderPool(
+            default_provider=_make_provider("default"),
+            registry=registry,
+            providers={"google": google_provider},
+        )
+        pool.set_provider_policy(
+            allowlist=frozenset({"google", "deepseek"}),
+            denylist=frozenset(),
+            source="test",
+        )
+        try:
+            provider, config = pool.resolve("gemini-3.1-pro-preview")
+        except ProviderPolicyViolation as exc:
+            raise AssertionError(
+                "resolve() must not trip the policy on the registry "
+                f"'unknown' sentinel: {exc}"
+            ) from exc
+        assert provider is google_provider
+        assert config.provider == "google"
+
 
 class TestModelProfilesTomlProviderTripwire:
     def test_every_curated_entry_declares_provider_matching_cards(self):

@@ -2871,3 +2871,60 @@ def test_missing_repo_dir_yields_explicit_skipped_no_repo() -> None:
         mode="observe",
     )
     assert record["_diff_verifier_outcome"] == "skipped_no_repo_dir"
+
+
+def test_event_audit_recognizes_real_provider_policy_violation_event(tmp_path: Path) -> None:
+    """cgpro VERIFY EDIT_REQUIRED #2 (2026-06-10) — declared-vs-verified
+    catch: the committed 2026-05-12 task #3 trace contains a real failure
+    event with kind='provider_error' + error_type='ProviderPolicyViolation',
+    but the summary said _provider_policy_failure_seen=false because the
+    matcher only recognized kind=='provider_policy' or the snake_case
+    error_type. The audit label MUST bind to the real event content."""
+    events_path = tmp_path / "per_task" / "task.events.jsonl"
+    events_path.parent.mkdir(parents=True, exist_ok=True)
+    # Exact payload shape from
+    # docs/benchmarks/2026-05-12-b2-n5-graded/run/per_task/
+    # instance_tutao__tutanota-219bc8f0...events.jsonl seq=101.
+    real_event = {
+        "schema_version": "1.0",
+        "payload_schema_version": "v1_1",
+        "event_type": "failure",
+        "seq": 101,
+        "parent_event_id": 30,
+        "source_component": "topology_runner",
+        "payload": {
+            "kind": "provider_error",
+            "error_type": "ProviderPolicyViolation",
+            "message": (
+                "provider policy violation: source=cli; "
+                "model_id='gemini-3.1-pro-preview'; provider_id='unknown'; "
+                "reason=outside_allowlist"
+            ),
+        },
+    }
+    with events_path.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps(real_event, ensure_ascii=False) + "\n")
+
+    audit = arm_d._event_audit_from_file(events_path)
+    assert audit["_provider_policy_failure_seen"] is True
+
+
+def test_event_audit_plain_provider_error_is_not_policy_failure(tmp_path: Path) -> None:
+    """Tightness guard: a generic provider_error (network blip, rate limit)
+    without policy content must NOT set the policy-failure flag."""
+    events_path = tmp_path / "per_task" / "task.events.jsonl"
+    events_path.parent.mkdir(parents=True, exist_ok=True)
+    event = {
+        "event_type": "failure",
+        "seq": 7,
+        "payload": {
+            "kind": "provider_error",
+            "error_type": "RateLimitError",
+            "message": "429 too many requests from provider google",
+        },
+    }
+    with events_path.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+    audit = arm_d._event_audit_from_file(events_path)
+    assert audit["_provider_policy_failure_seen"] is False
