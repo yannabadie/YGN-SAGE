@@ -17,10 +17,10 @@ NO_GO and Phase 2.b needs the resolution bottlenecks addressed first (see
   `graded_patch_generation` (900s/task), allowlist google+deepseek,
   denylist openai
 - **Generation cost**: **$0.4748** (vs $0.79 real on 2026-05-12); wall 751s.
-  Grading cost: Modal billing rows not yet aggregated at capture time —
-  `modal_billing.json` honestly records `manual_required /
-  no_rows_for_app_id` (app `ap-LhzIeBC5TBPQ4BumsWJEeD`); ~$0.07 expected per
-  the 2026-05-11 N=1 calibration ($0.0135/sandbox). Re-capture pending.
+  Grading cost: **$0.0415 measured** (`modal_billing.json`
+  status=measured, 1 billing row for app `ap-LhzIeBC5TBPQ4BumsWJEeD`,
+  re-captured 2026-06-10 evening after Modal aggregation lag).
+  **Total Phase 2.a real spend: $0.5163.**
 
 ## Headline vs 2026-05-12 (the B2 rerun this is)
 
