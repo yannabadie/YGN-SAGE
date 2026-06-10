@@ -1696,6 +1696,90 @@ def _categorize_timeout_from_events(
     )
 
 
+def _resolve_total_cost(
+    *,
+    cli_total_cost_usd: float | None,
+    observed_event_cost_usd: float,
+    had_llm_execution: bool,
+    cli_complete_expected: bool,
+) -> tuple[float, str, dict[str, Any] | None]:
+    """Resolve the authoritative per-task cost (B2 bug 2, 2026-05-12 canary).
+
+    The 2026-05-12 N=5 exposed that `cli_complete.total_cost_usd` is lossy
+    outside the happy path: hard failures report $0 while the JSONL trace
+    carries real `node_completed.cost_usd`, and even successes under-report
+    (tutanota db90ac26: $0.134 reported vs $0.266 observed). The eeb3a7fb fix
+    recovered cost on the TIMEOUT path only; this helper generalizes the same
+    rule to all three paths (success / failure / timeout).
+
+    Contract (cgpro stop-condition: never double-count): the two sources are
+    never summed — the larger one wins, with an explicit source label:
+      - "cli_complete"                          cli payload covers observed
+      - "event_audit_observed_event_cost_usd"   trace sum exceeds/replaces it
+      - "no_cost_evidence"                      neither source has a figure
+    A cost_integrity_warning is emitted when the audit had to override or
+    when LLM execution evidence exists with zero recorded cost.
+    `cli_complete_expected=False` (timeout path) suppresses the
+    missing-payload warning: the subprocess was killed, absence is normal.
+    """
+    cli_total = (
+        float(cli_total_cost_usd)
+        if isinstance(cli_total_cost_usd, (int, float))
+        and not isinstance(cli_total_cost_usd, bool)
+        else None
+    )
+    observed = float(observed_event_cost_usd or 0.0)
+    epsilon = 1e-9
+
+    if cli_total is not None and cli_total + epsilon >= observed:
+        return cli_total, "cli_complete", None
+
+    if observed > 0.0:
+        if cli_total is None:
+            warning = (
+                {
+                    "reason_code": "cli_complete_cost_missing",
+                    "detail": (
+                        "cli_complete carried no total_cost_usd but the JSONL "
+                        "trace recorded real per-node cost — recovered from "
+                        "the event audit. Budget reports must use this "
+                        "figure, not $0.00."
+                    ),
+                }
+                if cli_complete_expected
+                else None
+            )
+        else:
+            warning = {
+                "reason_code": "cli_complete_cost_underreport",
+                "detail": (
+                    f"cli_complete reported total_cost_usd={cli_total:.6f} "
+                    f"but the event audit observed {observed:.6f} — using "
+                    "the larger event-derived figure (2.6x under-report "
+                    "class caught by cgpro on the 2026-05-12 N=5)."
+                ),
+                "cli_complete_total_cost_usd": cli_total,
+                "observed_event_cost_usd": observed,
+            }
+        return observed, "event_audit_observed_event_cost_usd", warning
+
+    warning = None
+    if had_llm_execution:
+        warning = {
+            "reason_code": "llm_execution_observed_zero_cost",
+            "detail": (
+                "node_completed / model_assigned events observed in "
+                "trace but no cost_usd > 0 was recorded — provider "
+                "cost accounting may have been lost. "
+                "Do NOT report this as a clean $0.00 spend in any "
+                "downstream budget audit."
+            ),
+        }
+    if cli_total is not None:
+        return cli_total, "cli_complete", warning
+    return 0.0, "no_cost_evidence", warning
+
+
 def _timeout_task_result(
     task: dict[str, Any],
     output_dir: Path,
@@ -1745,35 +1829,29 @@ def _timeout_task_result(
     # consumed. cgpro acceptance criterion #5: emit an explicit
     # cost_integrity_warning when LLM execution evidence exists
     # but cost would have been reported as zero.
-    timeout_observed_cost = float(
-        event_audit.get("_observed_event_cost_usd", 0.0) or 0.0
-    )
-    timeout_had_llm_execution = bool(
-        event_audit.get("_execution_model_ids")
-        or event_audit.get("_observed_model_ids")
-    )
-    timeout_cost_integrity_warning: dict[str, Any] | None = None
-    if timeout_had_llm_execution and timeout_observed_cost <= 0.0:
-        timeout_cost_integrity_warning = {
-            "reason_code": "llm_execution_observed_zero_cost",
-            "detail": (
-                "node_completed / model_assigned events observed in "
-                "trace but no cost_usd > 0 was recorded — provider "
-                "cost accounting may have been lost on timeout. "
-                "Do NOT report this as a clean $0.00 spend in any "
-                "downstream budget audit."
+    # B2 bug 2 (2026-06-10): the inline timeout-only recovery (eeb3a7fb) is
+    # now the shared _resolve_total_cost helper, used by all three result
+    # paths. cli_complete_expected=False — the subprocess was killed, so a
+    # missing payload is normal here, not an integrity anomaly.
+    timeout_total_cost, timeout_cost_source, timeout_cost_integrity_warning = (
+        _resolve_total_cost(
+            cli_total_cost_usd=None,
+            observed_event_cost_usd=float(
+                event_audit.get("_observed_event_cost_usd", 0.0) or 0.0
             ),
-        }
+            had_llm_execution=bool(
+                event_audit.get("_execution_model_ids")
+                or event_audit.get("_observed_model_ids")
+            ),
+            cli_complete_expected=False,
+        )
+    )
     summary = {
         "instance_id": instance_id,
         "exit_code": None,
         "latency_ms": int(task_timeout_s * 1000),
-        "total_cost_usd": timeout_observed_cost,
-        "_total_cost_usd_source": (
-            "event_audit_observed_event_cost_usd"
-            if timeout_observed_cost > 0.0
-            else "no_cost_evidence"
-        ),
+        "total_cost_usd": timeout_total_cost,
+        "_total_cost_usd_source": timeout_cost_source,
         "cost_integrity_warning": timeout_cost_integrity_warning,
         "extracted_patch_present": False,
         "extracted_patch_chars": 0,
@@ -1987,11 +2065,30 @@ async def _run_one_task(
         else:
             learning_evidence = _learning_evidence_not_requested()
 
+        # B2 bug 2 (2026-06-10): the nominal path used to trust
+        # cli_complete.total_cost_usd alone — hard failures reported $0
+        # while the trace carried real cost, and successes under-reported
+        # (real $0.79 vs reported $0.30 on the 2026-05-12 N=5, 2.6x).
+        nominal_total_cost, nominal_cost_source, nominal_cost_warning = (
+            _resolve_total_cost(
+                cli_total_cost_usd=cli_result.get("total_cost_usd"),
+                observed_event_cost_usd=float(
+                    cli_result.get("_observed_event_cost_usd", 0.0) or 0.0
+                ),
+                had_llm_execution=bool(
+                    cli_result.get("_execution_model_ids")
+                    or cli_result.get("_observed_model_ids")
+                ),
+                cli_complete_expected=True,
+            )
+        )
         summary = {
             "instance_id": instance_id,
             "exit_code": cli_result["exit_code"],
             "latency_ms": cli_result["latency_ms"],
-            "total_cost_usd": cli_result.get("total_cost_usd"),
+            "total_cost_usd": nominal_total_cost,
+            "_total_cost_usd_source": nominal_cost_source,
+            "cost_integrity_warning": nominal_cost_warning,
             "extracted_patch_present": bool(patch),
             "extracted_patch_chars": len(patch),
             "mock": False,

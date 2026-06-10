@@ -2707,3 +2707,78 @@ def test_provider_gate_pass_on_google_deepseek_only_execution() -> None:
     )
     assert gate["status"] == "PASS"
     assert gate["execution_outside_allowlist"] == []
+
+
+# ---------------------------------------------------------------------------
+# B2_RERUN_UNBLOCKERS bug 2 — cost resolution (cgpro required tests 4-5)
+# ---------------------------------------------------------------------------
+
+def test_resolve_total_cost_recovers_hard_failure_from_event_audit() -> None:
+    """B2 contract test 4: a hard CLI failure (no cli_complete payload) must
+    surface the observed event cost with an explicit source + integrity
+    warning — NOT report $0 (2026-05-12 canary tasks #2/#3 lost $0.16/$0.18)."""
+    total, source, warning = arm_d._resolve_total_cost(
+        cli_total_cost_usd=None,
+        observed_event_cost_usd=0.158,
+        had_llm_execution=True,
+        cli_complete_expected=True,
+    )
+    assert total == pytest.approx(0.158)
+    assert source == "event_audit_observed_event_cost_usd"
+    assert warning is not None
+    assert warning["reason_code"] == "cli_complete_cost_missing"
+
+
+def test_resolve_total_cost_prefers_larger_observed_on_underreport() -> None:
+    """B2 bug 2 success-path shape: cli_complete under-reported vs event audit
+    (tutanota db90ac26: $0.134 reported vs $0.266 observed = ~50% loss)."""
+    total, source, warning = arm_d._resolve_total_cost(
+        cli_total_cost_usd=0.134,
+        observed_event_cost_usd=0.266,
+        had_llm_execution=True,
+        cli_complete_expected=True,
+    )
+    assert total == pytest.approx(0.266)
+    assert source == "event_audit_observed_event_cost_usd"
+    assert warning is not None
+    assert warning["reason_code"] == "cli_complete_cost_underreport"
+
+
+def test_resolve_total_cost_uses_cli_complete_when_consistent() -> None:
+    """B2 contract test 5: when cli_complete covers the observed cost, it is
+    the authoritative source and no warning is emitted."""
+    total, source, warning = arm_d._resolve_total_cost(
+        cli_total_cost_usd=0.099,
+        observed_event_cost_usd=0.099,
+        had_llm_execution=True,
+        cli_complete_expected=True,
+    )
+    assert total == pytest.approx(0.099)
+    assert source == "cli_complete"
+    assert warning is None
+
+
+def test_resolve_total_cost_timeout_parity_no_missing_warning() -> None:
+    """Timeout path parity: cli_complete is EXPECTED to be absent on timeout
+    (eeb3a7fb behavior) — recovery happens without a missing-payload warning;
+    the llm_execution_observed_zero_cost warning still fires on zero cost."""
+    total, source, warning = arm_d._resolve_total_cost(
+        cli_total_cost_usd=None,
+        observed_event_cost_usd=0.05,
+        had_llm_execution=True,
+        cli_complete_expected=False,
+    )
+    assert total == pytest.approx(0.05)
+    assert source == "event_audit_observed_event_cost_usd"
+    assert warning is None
+
+    total0, source0, warning0 = arm_d._resolve_total_cost(
+        cli_total_cost_usd=None,
+        observed_event_cost_usd=0.0,
+        had_llm_execution=True,
+        cli_complete_expected=False,
+    )
+    assert total0 == 0.0
+    assert source0 == "no_cost_evidence"
+    assert warning0 is not None
+    assert warning0["reason_code"] == "llm_execution_observed_zero_cost"
