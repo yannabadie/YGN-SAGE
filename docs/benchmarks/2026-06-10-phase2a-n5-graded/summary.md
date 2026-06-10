@@ -96,15 +96,50 @@ empty patches carry explicit `no_patch_extracted`).
   unaffected. Next grading run should set `PYTHONIOENCODING=utf-8`.
 - 4f08b2fd CI Windows flakes (sandbox::subprocess, host-python) → issue #26.
 
-## Next steps (master roadmap)
+## cgpro post-run verdict (2026-06-10, conv `cgpro_b2_unblockers_verify`)
 
-1. Re-capture Modal billing once rows aggregate (update
-   `modal_billing.json`).
-2. **Resolution unblockers before Phase 2.b spend**: repair-mode flip
-   (evidence above) + repo-clone budget fix — both cheap, both directly
-   address 2 of the 3 graded failures. cgpro post-run consulted on
-   sequencing.
-3. Phase 2.b (arm A vs arm D, paired N=10, ~$15-20) once a canary shows
-   ≥1 resolved or cgpro/Yann decide the comparative signal is worth it
-   at current resolution.
-4. N=50 4-arm: NO_GO until 2.b justifies it.
+`GO_NEXT_BLOCK` / `NO_GO_DIRECT_2B` / `NO_GO_N50`. Sequencing validated,
+with two real traps caught in my proposed "repair flip":
+
+1. **Env-flip alone is a NO-OP on the canary path** —
+   `_annotate_diff_verifier` only calls `verify_diff_context_with_reasons`
+   in both modes; the actual LLM repair (`repair_with_verifier_feedback`)
+   must be wired explicitly post-extraction pre-cleanup.
+2. **`hunk_body_count_mismatch` is a structural reason event, not a
+   mismatch object** — the repair helper skips on an empty `mismatches`
+   list, so naive repair would skip exactly the two cases that predicted
+   the graded failures. Repair input must consume `_diff_verifier_reasons`
+   (or convert reason events to repairable diagnostics).
+
+Four extra signals cgpro read in the graded bundle: db90's stdout carries
+precise TS2554/TS2345 test-compile errors (repair-exploitable, not opaque
+difficulty); 219's first causal signal is `TS2551 '_onMessage' →
+'_message'` before the make noise; teleport's `output.json` collapses to
+`NO_TESTS_FOUND_OR_PARSING_ERROR` while stdout has the real
+`[build failed]` (post-grader parser should distinguish BUILD_FAILED /
+PATCH_APPLY_FAILED / TEST_FAILED / EMPTY_PATCH / GRADER_ENCODING_FAILURE);
+negative grading cases should always write a minimal machine-readable
+output.json wrapper-side.
+
+## Next block (locked)
+
+**`RESOLUTION_UNBLOCKERS_REPAIR_WIRING_PLUS_REPO_CONTEXT_FAIL_CLOSED`** —
+exit criteria before any re-canary:
+
+- [ ] no repo ⇒ skip generation (no paid blind patch);
+      `--allow-blind-generation-on-repo-failure` escape, off by default
+- [ ] clone/fetch failure reason explicit; `repo_unavailable` reported
+      separately from `model_no_patch` (infra failure ≠ LLM-quality signal);
+      partial/shallow fetch policy rather than just a bigger timeout
+- [ ] repair path actually invoked in the canary (not env-only)
+- [ ] `hunk_body_count_mismatch` ⇒ actionable repair feedback or explicit
+      non-repairable outcome
+- [ ] `first_compiler_error` / `first_test_error` captured per instance and
+      fed to the repair loop alongside verifier feedback
+- [ ] all negative grading cases write machine-readable output
+
+Then: re-canary N=5 (paid, same sha-pinned instances, ~$0.50, fresh GO
+required). 2.b decision after: ≥1/5 resolved OR a clean 0/5 whose failures
+are genuinely reasoning/test-class, not plumbing. N=50 stays NO_GO.
+
+Also queued: re-capture Modal billing once rows aggregate.
