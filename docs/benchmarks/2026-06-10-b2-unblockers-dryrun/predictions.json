@@ -1,0 +1,7 @@
+[
+  {
+    "instance_id": "instance_future-architect__vuls-139f3a81b66c47e6d8f70ce6c4afe7a9196a6ea8",
+    "patch": "diff --git a/synthetic.py b/synthetic.py\nindex 0000000..1111111 100644\n--- a/synthetic.py\n+++ b/synthetic.py\n@@ -1,1 +1,1 @@\n-# placeholder for instance_future-architect__vuls-139f3a81b66c47e6d8f70ce6c4afe7a9196a6ea8\n+# patched by ygn-sage arm-d smoke (mock mode)\n",
+    "prefix": "ygn-sage-arm-d-smoke"
+  }
+]

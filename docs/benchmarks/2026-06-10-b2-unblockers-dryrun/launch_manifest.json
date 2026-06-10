@@ -1,0 +1,56 @@
+{
+  "schema_version": "swebench_pro_canary_launch_v1",
+  "generated_at_utc": "2026-06-10T14:36:18.800479+00:00",
+  "repo": {
+    "path": "C:\\Code\\YGN-SAGE",
+    "head": "5bd351d25df06b8d8f5e3d5355f30e5e46b90987",
+    "dirty": true,
+    "status_short": "?? Amelioration-fable.md\n"
+  },
+  "inputs": {
+    "instances_json": {
+      "path": "sage-python\\data\\swebench_pro\\n10\\instances.json",
+      "sha256": "f1eab20c83ac21b255fbcece771bc2aaf30c2650d4f61257e28ca90ba6b1a3d4"
+    },
+    "manifest": {
+      "path": "C:\\Code\\YGN-SAGE\\docs\\benchmarks\\cycle-13-canary-manifest.md",
+      "exists": true,
+      "sha256": "f3625da97c4c1c79da7cae687433fbda9628a483eded56436f0a771f56db7f0f",
+      "declared_commit": "7928dd560bb6a278e3a8b1713b36c5c52422766a",
+      "copied_to": "launch_manifest.md"
+    }
+  },
+  "budget": {
+    "budget_usd_per_task": 5.0,
+    "global_budget_usd": 25.0,
+    "task_timeout_s": 120.0,
+    "effective_profile": "default",
+    "profile_timeout_default_s": 120.0,
+    "profile_timeout_override": false
+  },
+  "providers": {
+    "allowlist": [
+      "google",
+      "deepseek"
+    ],
+    "denylist": [
+      "openai"
+    ]
+  },
+  "manifest_gate": {
+    "status": "BLOCKED",
+    "reasons": [
+      "manifest_commit_mismatch"
+    ]
+  },
+  "grading_gate": {
+    "status": "BLOCKED",
+    "reason": "grader_preflight_artifact_not_supplied",
+    "path": null
+  },
+  "ci_gate": {
+    "status": "BLOCKED",
+    "reason": "ci_green_artifact_not_supplied",
+    "path": null
+  }
+}
