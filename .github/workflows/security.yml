@@ -177,7 +177,10 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Run cargo-deny
-        uses: EmbarkStudios/cargo-deny-action@5bb39ff5d5a0e94dc9e2dc94eced0c6129743a57 # v2
+        # Re-pinned 2026-06-10: the old 5bb39ff5 commit was orphaned by an
+        # upstream re-tag (workflows could still fetch it by SHA, Dependabot
+        # could not — its updater job errored with "no such commit").
+        uses: EmbarkStudios/cargo-deny-action@bb137d7af7e4fb67e5f82a49c4fce4fad40782fe # v2.0.20
         with:
           manifest-path: sage-core/Cargo.toml
           command: check
