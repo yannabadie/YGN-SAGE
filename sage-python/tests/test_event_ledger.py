@@ -438,8 +438,9 @@ def test_timeout_reason_codes_match_categorize_timeout_outputs() -> None:
 
 def test_empty_patch_reason_codes_superset_of_timeout_codes() -> None:
     """``EMPTY_PATCH_REASON_CODES`` must be a strict superset of
-    ``TIMEOUT_REASON_CODES`` and add the three non-timeout codes
-    documented in cgpro DESIGN 2026-05-11.
+    ``TIMEOUT_REASON_CODES`` and add the four non-timeout codes
+    (three from cgpro DESIGN 2026-05-11 + ``repo_unavailable`` from
+    RESOLUTION_UNBLOCKERS 2026-06-10).
     """
     assert TIMEOUT_REASON_CODES.issubset(EMPTY_PATCH_REASON_CODES)
     extras = EMPTY_PATCH_REASON_CODES - TIMEOUT_REASON_CODES
@@ -447,8 +448,30 @@ def test_empty_patch_reason_codes_superset_of_timeout_codes() -> None:
         "no_patch_extracted",
         "task_budget_exhausted",
         "no_patch_to_verify",
+        "repo_unavailable",
     }
     assert isinstance(EMPTY_PATCH_REASON_CODES, frozenset)
+
+
+def test_classify_repo_unavailable_dominates_everything() -> None:
+    """RESOLUTION_UNBLOCKERS (cgpro Q2): a fail-closed repo skip is an
+    infra failure and must never be reclassified as a budget or model
+    signal, whatever else is set."""
+    assert (
+        classify_non_timeout_empty_patch(
+            budget_exhausted=True,
+            diff_verifier_outcome="no_patch_to_verify",
+            repo_unavailable=True,
+        )
+        == "repo_unavailable"
+    )
+    assert (
+        classify_non_timeout_empty_patch(
+            budget_exhausted=False,
+            repo_unavailable=True,
+        )
+        == "repo_unavailable"
+    )
 
 
 def test_classify_non_timeout_empty_patch_budget_exhausted_wins() -> None:

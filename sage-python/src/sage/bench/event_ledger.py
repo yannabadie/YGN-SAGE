@@ -102,11 +102,17 @@ TIMEOUT_REASON_CODES: frozenset[str] = frozenset(
 # - ``no_patch_to_verify`` — emitted by the diff verifier when the patch
 #   is empty so the verifier has nothing to check (follow-up not yet
 #   shipped at the writer side; the gate accepts it once wired).
+# - ``repo_unavailable`` — the canary could not materialize the task's
+#   repo worktree (clone/fetch/checkout failure or timeout) and the
+#   fail-closed default skipped generation entirely (RESOLUTION_UNBLOCKERS
+#   2026-06-10, cgpro Q2: an infra failure must NOT be conflated with the
+#   model failing to produce a patch).
 EMPTY_PATCH_REASON_CODES: frozenset[str] = TIMEOUT_REASON_CODES | frozenset(
     {
         "no_patch_extracted",
         "task_budget_exhausted",
         "no_patch_to_verify",
+        "repo_unavailable",
     }
 )
 
@@ -115,12 +121,16 @@ def classify_non_timeout_empty_patch(
     *,
     budget_exhausted: bool,
     diff_verifier_outcome: str | None = None,
+    repo_unavailable: bool = False,
 ) -> str:
     """Classify an empty-patch outcome for a task that did NOT time out.
 
     Used by the canary runner when a task completed within ``--task-timeout-s``
     but produced ``extracted_patch_present=False``. Returns one of:
 
+    - ``"repo_unavailable"`` — generation was skipped fail-closed because
+      the repo worktree could not be set up (infra failure, NOT an LLM
+      quality signal; takes precedence over every other classification).
     - ``"task_budget_exhausted"`` — caller signaled budget cap hit.
     - ``"no_patch_to_verify"`` — diff verifier output already says so.
     - ``"no_patch_extracted"`` — fallback for any other empty-patch case.
@@ -129,6 +139,8 @@ def classify_non_timeout_empty_patch(
     and are NOT returned here. All returned values are members of
     ``EMPTY_PATCH_REASON_CODES``.
     """
+    if repo_unavailable:
+        return "repo_unavailable"
     if budget_exhausted:
         return "task_budget_exhausted"
     if diff_verifier_outcome == "no_patch_to_verify":

@@ -1904,7 +1904,14 @@ def test_setup_repo_for_canary_missing_inputs() -> None:
 
 
 def test_setup_repo_for_canary_clone_failed(monkeypatch) -> None:
-    script = [_FakeCompletedProcess(128, stderr=b"could not resolve host")]
+    """Clone fails AND the targeted-fetch fallback fails too → clone_failed
+    with the combined failure chain (both causes auditable)."""
+    script = [
+        _FakeCompletedProcess(128, stderr=b"could not resolve host"),  # clone
+        _FakeCompletedProcess(0),                    # git init OK
+        _FakeCompletedProcess(0),                    # remote add OK
+        _FakeCompletedProcess(128, stderr=b"could not resolve host"),  # fetch
+    ]
     fake_run, _ = _mock_subprocess_factory(script)
     monkeypatch.setattr(arm_d.subprocess, "run", fake_run)
 
@@ -1915,6 +1922,7 @@ def test_setup_repo_for_canary_clone_failed(monkeypatch) -> None:
     })
     assert result["repo_context_status"] == "clone_failed"
     assert "could not resolve host" in (result["failure_reason"] or "")
+    assert "targeted_fetch_failed" in (result["failure_reason"] or "")
     assert result["repo_dir"] is None
 
 
@@ -1938,8 +1946,15 @@ def test_setup_repo_for_canary_fetch_failed(monkeypatch) -> None:
 
 
 def test_setup_repo_for_canary_timeout(monkeypatch) -> None:
-    """A timeout on any git step is caught and surfaced as status=timeout."""
-    script = ["timeout"]
+    """A clone timeout now triggers the targeted-fetch fallback
+    (RESOLUTION_UNBLOCKERS 2026-06-10); when the fallback ALSO fails,
+    the status stays timeout with the combined failure chain."""
+    script = [
+        "timeout",                                   # clone times out
+        _FakeCompletedProcess(0),                    # git init OK
+        _FakeCompletedProcess(0),                    # remote add OK
+        _FakeCompletedProcess(128, stderr=b"fetch refused"),  # targeted fetch fails
+    ]
     fake_run, _ = _mock_subprocess_factory(script)
     monkeypatch.setattr(arm_d.subprocess, "run", fake_run)
 
@@ -1949,6 +1964,63 @@ def test_setup_repo_for_canary_timeout(monkeypatch) -> None:
         "base_commit": "abc",
     })
     assert result["repo_context_status"] == "timeout"
+    assert "git_clone_timeout" in (result["failure_reason"] or "")
+    assert "targeted_fetch_failed" in (result["failure_reason"] or "")
+
+
+def test_setup_repo_targeted_fetch_recovers_clone_timeout(monkeypatch) -> None:
+    """RESOLUTION_UNBLOCKERS criterion 2 (teleport class, 2026-06-10): a
+    clone that blows the 180s budget recovers via git init + single-commit
+    fetch, then the normal checkout/rev-parse chain runs."""
+    script = [
+        "timeout",                                   # clone times out
+        _FakeCompletedProcess(0),                    # git init OK
+        _FakeCompletedProcess(0),                    # remote add OK
+        _FakeCompletedProcess(0),                    # targeted fetch OK
+        _FakeCompletedProcess(0),                    # checkout --detach OK
+        _FakeCompletedProcess(0, stdout=b"abc\n"),   # rev-parse
+    ]
+    fake_run, calls = _mock_subprocess_factory(script)
+    monkeypatch.setattr(arm_d.subprocess, "run", fake_run)
+
+    result = arm_d._setup_repo_for_canary({
+        "instance_id": "z",
+        "repo": "x/y",
+        "base_commit": "abc",
+    })
+    assert result["repo_context_status"] == "ready"
+    assert result["fetch_fallback_used"] is True
+    assert result["checkout_sha"] == "abc"
+    assert "fetch" in calls[3]
+    arm_d._cleanup_repo_dir(
+        result["repo_dir"], tmp_root=os.path.dirname(result["repo_dir"])
+    )
+
+
+def test_setup_repo_targeted_fetch_recovers_clone_failure(monkeypatch) -> None:
+    """A non-timeout clone failure (e.g. transient HTTP 500) also goes
+    through the targeted-fetch recovery."""
+    script = [
+        _FakeCompletedProcess(128, stderr=b"early EOF"),  # clone fails
+        _FakeCompletedProcess(0),                    # git init OK
+        _FakeCompletedProcess(0),                    # remote add OK
+        _FakeCompletedProcess(0),                    # targeted fetch OK
+        _FakeCompletedProcess(0),                    # checkout --detach OK
+        _FakeCompletedProcess(0, stdout=b"abc\n"),   # rev-parse
+    ]
+    fake_run, _ = _mock_subprocess_factory(script)
+    monkeypatch.setattr(arm_d.subprocess, "run", fake_run)
+
+    result = arm_d._setup_repo_for_canary({
+        "instance_id": "z",
+        "repo": "x/y",
+        "base_commit": "abc",
+    })
+    assert result["repo_context_status"] == "ready"
+    assert result["fetch_fallback_used"] is True
+    arm_d._cleanup_repo_dir(
+        result["repo_dir"], tmp_root=os.path.dirname(result["repo_dir"])
+    )
 
 
 def test_cleanup_repo_dir_removes_tree(tmp_path) -> None:
@@ -2076,12 +2148,84 @@ def test_run_one_task_passes_cwd_and_records_repo_context(
     assert "diff --git" in result["record"]["patch"]
 
 
-def test_run_one_task_continues_when_repo_setup_fails(monkeypatch, tmp_path) -> None:
-    """Repo setup failure does NOT abort the task — the subprocess
-    still runs (from the inherited cwd) so the failure mode is
-    observable in the per-task events. The repo_context status
-    surfaces the failure for downstream gates.
+def _repo_setup_failure_stub(inst):
+    return {
+        "repo_context_status": "clone_failed",
+        "repo_dir": None,
+        "tmp_root": None,
+        "repo_url": "https://github.com/x/y.git",
+        "base_commit": "deadbeef",
+        "checkout_sha": None,
+        "clone_elapsed_ms": 30000,
+        "fetch_fallback_used": False,
+        "failure_reason": "git_clone_exit=128 stderr=could not resolve host",
+    }
+
+
+def test_run_one_task_fails_closed_when_repo_setup_fails(monkeypatch, tmp_path) -> None:
+    """RESOLUTION_UNBLOCKERS criterion 1 (cgpro Q2, 2026-06-10): when the
+    repo worktree cannot be set up, the canary must SKIP generation
+    entirely — no paid blind patch. The 2026-06-10 graded N=5 proved the
+    old warn-and-continue default produces plausible-looking patches that
+    break the build (teleport: $0.21 spent, patch applied, build failed).
     """
+    instance = {
+        "instance_id": "fail",
+        "repo": "x/y",
+        "base_commit": "deadbeef",
+        "problem_statement": "Bug in bar.",
+    }
+
+    cli_called: dict[str, Any] = {"value": False}
+
+    async def _fake_cli(*args, **kwargs):
+        cli_called["value"] = True
+        raise AssertionError("generation must not run when repo is unavailable")
+
+    monkeypatch.setattr(arm_d, "_run_sage_cli", _fake_cli)
+    monkeypatch.setattr(arm_d, "_setup_repo_for_canary", _repo_setup_failure_stub)
+    monkeypatch.setattr(
+        arm_d, "_cleanup_repo_dir", lambda repo_dir, *, tmp_root=None: "missing"
+    )
+
+    result = asyncio.run(
+        arm_d._run_one_task(
+            instance,
+            tmp_path / "out",
+            mock=False,
+            budget_usd=5.0,
+            tier="budget",
+            provider_allowlist=("google",),
+            provider_denylist=("openai",),
+            prefix="test",
+            fmt_module=_FakeFormatModule(),
+            claim_default_pipeline_learning_evidence=True,
+            expect_default_pipeline_learn=True,
+        )
+    )
+
+    assert cli_called["value"] is False
+    summary = result["summary"]
+    assert summary["generation_skipped"] is True
+    assert summary["patch_empty_reason"] == "repo_unavailable"
+    assert summary["extracted_patch_present"] is False
+    assert summary["total_cost_usd"] == 0.0
+    assert summary["_total_cost_usd_source"] == "no_cost_evidence"
+    assert summary["_diff_verifier_outcome"] == "skipped_no_patch"
+    assert summary["timeout"] is False
+    # Infra failure must not fail the learning gate: explicit skipped.
+    assert summary["learning_evidence_boundary"]["status"] == "skipped"
+    rc = summary["repo_context"]
+    assert rc["status"] == "clone_failed"
+    assert "could not resolve host" in (rc["failure_reason"] or "")
+    # Prediction record still produced (empty patch, Pro shape).
+    assert result["record"]["patch"] == ""
+
+
+def test_run_one_task_blind_generation_escape_flag(monkeypatch, tmp_path) -> None:
+    """The diagnostic escape `--allow-blind-generation-on-repo-failure`
+    restores the old observable-failure behavior (subprocess runs with
+    inherited cwd). OFF by default on every paid/graded run."""
     instance = {
         "instance_id": "fail",
         "repo": "x/y",
@@ -2112,20 +2256,7 @@ def test_run_one_task_continues_when_repo_setup_fails(monkeypatch, tmp_path) -> 
         }
 
     monkeypatch.setattr(arm_d, "_run_sage_cli", _fake_cli)
-    monkeypatch.setattr(
-        arm_d,
-        "_setup_repo_for_canary",
-        lambda inst: {
-            "repo_context_status": "clone_failed",
-            "repo_dir": None,
-            "repo_url": "https://github.com/x/y.git",
-            "base_commit": "deadbeef",
-            "checkout_sha": None,
-            "clone_elapsed_ms": 30000,
-            "fetch_fallback_used": False,
-            "failure_reason": "git_clone_exit=128 stderr=could not resolve host",
-        },
-    )
+    monkeypatch.setattr(arm_d, "_setup_repo_for_canary", _repo_setup_failure_stub)
     monkeypatch.setattr(
         arm_d, "_cleanup_repo_dir", lambda repo_dir, *, tmp_root=None: "missing"
     )
@@ -2143,20 +2274,58 @@ def test_run_one_task_continues_when_repo_setup_fails(monkeypatch, tmp_path) -> 
             fmt_module=_FakeFormatModule(),
             claim_default_pipeline_learning_evidence=False,
             expect_default_pipeline_learn=False,
+            allow_blind_generation_on_repo_failure=True,
         )
     )
 
-    # cwd=None means the subprocess inherits Python's cwd (YGN repo root).
+    # Escape hatch: subprocess ran with inherited cwd, failure observable.
     assert captured_cwd["value"] is None
-    rc = result["summary"]["repo_context"]
+    summary = result["summary"]
+    assert summary.get("generation_skipped") is not True
+    rc = summary["repo_context"]
     assert rc["status"] == "clone_failed"
-    # The stub does NOT simulate a tmp_root (real
-    # _setup_repo_for_canary would record one even on clone failure),
-    # so the canary has nothing to clean. ``not_attempted`` is the
-    # correct downstream status for that input shape.
-    assert rc["repo_dir_cleanup_status"] == "not_attempted"
-    assert "could not resolve host" in (rc["failure_reason"] or "")
     assert rc["subprocess_cwd"] is None
+
+
+def test_provider_gate_ignores_generation_skipped_tasks() -> None:
+    """A fail-closed repo skip never executed anything — it must not trip
+    the provider gate's missing-provider check. An EXECUTED task without
+    provider_final must still trip it (no weakening)."""
+    skipped = {
+        "instance_id": "skipped-task",
+        "generation_skipped": True,
+        "provider_final": None,
+        "model_id_final": None,
+    }
+    executed_ok = {
+        "instance_id": "ok-task",
+        "provider_final": "google",
+        "model_id_final": "gemini-3.1-pro-preview",
+        "_execution_providers": ["google"],
+        "_assigned_providers": ["google"],
+    }
+    gate = arm_d._provider_gate(
+        [skipped, executed_ok],
+        mock=False,
+        provider_allowlist=("google", "deepseek"),
+        provider_denylist=(),
+    )
+    assert gate["status"] == "PASS"
+    assert gate["missing_provider_or_model"] == []
+
+    executed_missing = {
+        "instance_id": "executed-no-provider",
+        "provider_final": None,
+        "model_id_final": None,
+    }
+    gate2 = arm_d._provider_gate(
+        [executed_missing],
+        mock=False,
+        provider_allowlist=("google", "deepseek"),
+        provider_denylist=(),
+    )
+    assert gate2["status"] == "NO_GO"
+    assert gate2["missing_provider_or_model"] == ["executed-no-provider"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────

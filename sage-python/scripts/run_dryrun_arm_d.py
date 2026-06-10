@@ -276,6 +276,56 @@ import atexit  # noqa: E402  — registered immediately so any tempdir
 atexit.register(_atexit_cleanup_canary_repos)
 
 
+def _targeted_fetch_init(
+    *, repo_url: str, base_commit: str, repo_dir: str
+) -> str | None:
+    """Materialize ``base_commit`` without a full clone.
+
+    ``git init`` + ``remote add`` + ``git fetch --depth 1 origin
+    <base_commit>`` — the single-commit fetch is far lighter than even a
+    shallow clone of a huge repo. Returns ``None`` on success (caller then
+    runs the normal checkout/rev-parse chain) or an error-detail string.
+
+    The target dir is recreated from scratch: a timed-out ``git clone``
+    can leave a partial checkout behind.
+    """
+    try:
+        shutil.rmtree(repo_dir, ignore_errors=True)
+        os.makedirs(repo_dir, exist_ok=True)
+        for step_name, argv, timeout_s in (
+            ("init", ["git", "init", repo_dir], _GIT_CHECKOUT_TIMEOUT_S),
+            (
+                "remote_add",
+                ["git", "-C", repo_dir, "remote", "add", "origin", repo_url],
+                _GIT_CHECKOUT_TIMEOUT_S,
+            ),
+            (
+                "fetch",
+                [
+                    "git", "-C", repo_dir, "fetch", "--depth", "1",
+                    "origin", base_commit,
+                ],
+                _GIT_FETCH_TIMEOUT_S,
+            ),
+        ):
+            proc = subprocess.run(  # noqa: S603 — git is trusted; args validated by caller
+                argv,
+                capture_output=True,
+                timeout=timeout_s,
+                check=False,
+            )
+            if proc.returncode != 0:
+                stderr_tail = (proc.stderr or b"").decode(
+                    "utf-8", errors="replace"
+                )[-500:]
+                return f"{step_name}_exit={proc.returncode} stderr={stderr_tail}"
+        return None
+    except subprocess.TimeoutExpired as exc:
+        return f"targeted_fetch_timeout cmd={exc.cmd[:3]!r}"
+    except (OSError, FileNotFoundError) as exc:
+        return f"targeted_fetch_os_error {exc!r}"
+
+
 def _setup_repo_for_canary(instance: dict[str, Any]) -> dict[str, Any]:
     """Clone ``instance.repo`` at ``instance.base_commit`` into a tempdir.
 
@@ -334,19 +384,47 @@ def _setup_repo_for_canary(instance: dict[str, Any]) -> dict[str, Any]:
 
     start = time.monotonic()
     try:
-        clone = subprocess.run(  # noqa: S603 — git is trusted; args validated above
-            ["git", "clone", "--no-tags", "--depth", "1", repo_url, repo_dir],
-            capture_output=True,
-            timeout=_GIT_CLONE_TIMEOUT_S,
-            check=False,
-        )
-        if clone.returncode != 0:
-            metadata["repo_context_status"] = "clone_failed"
-            stderr_tail = (clone.stderr or b"").decode(
-                "utf-8", errors="replace"
-            )[-2000:]
-            metadata["failure_reason"] = f"git_clone_exit={clone.returncode} stderr={stderr_tail}"
-            return metadata
+        clone_failure: str | None = None
+        clone_timed_out = False
+        try:
+            clone = subprocess.run(  # noqa: S603 — git is trusted; args validated above
+                ["git", "clone", "--no-tags", "--depth", "1", repo_url, repo_dir],
+                capture_output=True,
+                timeout=_GIT_CLONE_TIMEOUT_S,
+                check=False,
+            )
+            if clone.returncode != 0:
+                stderr_tail = (clone.stderr or b"").decode(
+                    "utf-8", errors="replace"
+                )[-2000:]
+                clone_failure = (
+                    f"git_clone_exit={clone.returncode} stderr={stderr_tail}"
+                )
+        except subprocess.TimeoutExpired:
+            clone_timed_out = True
+            clone_failure = f"git_clone_timeout_{_GIT_CLONE_TIMEOUT_S:.0f}s"
+
+        if clone_failure is not None:
+            # RESOLUTION_UNBLOCKERS (cgpro Q2, 2026-06-10): targeted-fetch
+            # fallback. A full shallow clone of a huge repo (teleport
+            # class) can blow the 180s budget while a single-commit fetch
+            # is far lighter: init an empty repo and fetch ONLY
+            # base_commit, then fall through to the normal checkout +
+            # rev-parse chain below. Previously a clone failure skipped
+            # the fetch fallback entirely (it only ran on checkout
+            # failures), so the whole class was unrecoverable.
+            targeted_failure = _targeted_fetch_init(
+                repo_url=repo_url, base_commit=base_commit, repo_dir=repo_dir
+            )
+            if targeted_failure is not None:
+                metadata["repo_context_status"] = (
+                    "timeout" if clone_timed_out else "clone_failed"
+                )
+                metadata["failure_reason"] = (
+                    f"{clone_failure}; targeted_fetch_failed={targeted_failure}"
+                )
+                return metadata
+            metadata["fetch_fallback_used"] = True
 
         # Detached HEAD on the target commit. If the shallow clone does
         # not contain it (commit older than the tip), git checkout
@@ -1216,6 +1294,23 @@ def _learning_evidence_not_requested() -> dict[str, Any]:
     }
 
 
+def _learning_evidence_skipped(*, reason_code: str, detail: str) -> dict[str, Any]:
+    """Explicit learning-evidence skip for tasks that never executed.
+
+    RESOLUTION_UNBLOCKERS (cgpro Q2, 2026-06-10): an infra failure (repo
+    worktree unavailable) is NOT a learning-integrity failure — the task
+    never ran, so there is no learning side-effect to verify. Counting it
+    as ``no_go`` would fail the run-level learning gate on a signal that
+    says nothing about learning integrity.
+    """
+    return {
+        "claimed": True,
+        "status": "skipped",
+        "reason_code": reason_code,
+        "detail": detail,
+    }
+
+
 def _safe_artifact_stem(value: str) -> str:
     stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("._")
     return stem or "task"
@@ -1635,7 +1730,11 @@ def _provider_gate(
         str(summary.get("instance_id"))
         for summary in summaries
         if (
-            not summary.get("_provider_policy_failure_seen")
+            # RESOLUTION_UNBLOCKERS (2026-06-10): a fail-closed repo skip
+            # never executed anything — nothing to audit. Executed tasks
+            # without provider/model attribution still trip the gate.
+            not summary.get("generation_skipped")
+            and not summary.get("_provider_policy_failure_seen")
             and (not summary.get("provider_final") or not summary.get("model_id_final"))
         )
     ]
@@ -2014,6 +2113,100 @@ def _timeout_task_result(
     }
 
 
+def _repo_unavailable_task_result(
+    task: dict[str, Any],
+    output_dir: Path,
+    *,
+    prefix: str,
+    fmt_module: Any,
+    repo_context: dict[str, Any],
+    claim_default_pipeline_learning_evidence: bool,
+    cleanup_status: str,
+) -> dict[str, Any]:
+    """Fail-closed result for a task whose repo worktree never materialized.
+
+    RESOLUTION_UNBLOCKERS criterion 1 (cgpro Q2, 2026-06-10): no repo means
+    NO paid generation — the 2026-06-10 graded N=5 proved blind generation
+    produces plausible patches that break the build (teleport, $0.21).
+    Every field is explicit so downstream gates read this as an INFRA skip,
+    never as a model/budget signal.
+    """
+    instance_id = task["instance_id"]
+    per_task_events = (
+        output_dir / "per_task" / f"{_safe_artifact_stem(instance_id)}.events.jsonl"
+    )
+    per_task_events.parent.mkdir(parents=True, exist_ok=True)
+    per_task_events.write_text(
+        json.dumps(
+            {
+                "event_type": "generation_skipped",
+                "instance_id": instance_id,
+                "reason_code": "repo_unavailable",
+                "repo_context_status": repo_context.get("repo_context_status"),
+                "failure_reason": repo_context.get("failure_reason"),
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    if claim_default_pipeline_learning_evidence:
+        learning_evidence = _learning_evidence_skipped(
+            reason_code="repo_unavailable",
+            detail=(
+                "generation skipped fail-closed: repo worktree setup "
+                f"status={repo_context.get('repo_context_status')!r} — "
+                "no pipeline run occurred, nothing to verify"
+            ),
+        )
+    else:
+        learning_evidence = _learning_evidence_not_requested()
+    summary = {
+        "instance_id": instance_id,
+        "exit_code": None,
+        "latency_ms": int(repo_context.get("clone_elapsed_ms") or 0),
+        "total_cost_usd": 0.0,
+        "_total_cost_usd_source": "no_cost_evidence",
+        "cost_integrity_warning": None,
+        "extracted_patch_present": False,
+        "extracted_patch_chars": 0,
+        "generation_skipped": True,
+        "patch_empty_reason": "repo_unavailable",
+        "mock": False,
+        "timeout": False,
+        "events_path": str(per_task_events.relative_to(output_dir)),
+        "_verifier_repair_budget_usd": None,
+        "_diff_verifier_mismatches": None,
+        "_diff_verifier_outcome": "skipped_no_patch",
+        "_diff_verifier_reasons": None,
+        "model_id_final": None,
+        "provider_final": None,
+        "_observed_model_ids": [],
+        "_observed_providers": [],
+        "_assigned_model_ids": [],
+        "_assigned_providers": [],
+        "_execution_model_ids": [],
+        "_execution_providers": [],
+        "_provider_policy_failure_seen": False,
+        "_observed_event_cost_usd": 0.0,
+        "learning_evidence_boundary": learning_evidence,
+        "repo_context": {
+            "status": repo_context.get("repo_context_status"),
+            "repo_url": repo_context.get("repo_url"),
+            "base_commit": repo_context.get("base_commit"),
+            "checkout_sha": repo_context.get("checkout_sha"),
+            "clone_elapsed_ms": repo_context.get("clone_elapsed_ms"),
+            "fetch_fallback_used": repo_context.get("fetch_fallback_used"),
+            "subprocess_cwd": None,
+            "repo_dir_cleanup_status": cleanup_status,
+            "failure_reason": repo_context.get("failure_reason"),
+        },
+    }
+    record = fmt_module.format_patch(instance_id, "", prefix=prefix)
+    return {"summary": summary, "record": record}
+
+
 async def _run_one_task(
     task: dict[str, Any],
     output_dir: Path,
@@ -2028,6 +2221,7 @@ async def _run_one_task(
     claim_default_pipeline_learning_evidence: bool,
     expect_default_pipeline_learn: bool,
     swebench_prompt_profile: str = _DEFAULT_PROMPT_PROFILE,
+    allow_blind_generation_on_repo_failure: bool = False,
 ) -> dict[str, Any]:
     """Run one task end-to-end. Returns a per-task summary dict."""
     instance_id = task["instance_id"]
@@ -2105,10 +2299,42 @@ async def _run_one_task(
             tmp_root_to_clean = os.path.dirname(repo_dir)
 
         if repo_context.get("repo_context_status") != "ready":
+            if not allow_blind_generation_on_repo_failure:
+                # RESOLUTION_UNBLOCKERS criterion 1 (cgpro Q2, 2026-06-10):
+                # fail-closed is the paid-run default. The patch_focused
+                # prompt PROMISES the model a checked-out repo; without one,
+                # generation is an impossible task under a false premise
+                # that still costs real API budget (teleport 2026-06-10:
+                # $0.21 for a plausible patch that broke the build).
+                log.warning(
+                    "[%s] Repo context NOT ready (%s); SKIPPING generation "
+                    "fail-closed (reason=repo_unavailable). Pass "
+                    "--allow-blind-generation-on-repo-failure to restore "
+                    "the old observable-failure behavior for diagnostics.",
+                    instance_id,
+                    repo_context.get("repo_context_status"),
+                )
+                cleanup_status = "not_attempted"
+                if tmp_root_to_clean is not None:
+                    cleanup_status = _cleanup_repo_dir(
+                        repo_dir, tmp_root=tmp_root_to_clean
+                    )
+                return _repo_unavailable_task_result(
+                    task,
+                    output_dir,
+                    prefix=prefix,
+                    fmt_module=fmt_module,
+                    repo_context=repo_context,
+                    claim_default_pipeline_learning_evidence=(
+                        claim_default_pipeline_learning_evidence
+                    ),
+                    cleanup_status=cleanup_status,
+                )
             log.warning(
                 "[%s] Repo context NOT ready (%s); subprocess will run "
                 "from YGN repo root and tools will likely fail. "
-                "Continuing so the failure is observable in events.",
+                "Continuing so the failure is observable in events "
+                "(--allow-blind-generation-on-repo-failure).",
                 instance_id,
                 repo_context.get("repo_context_status"),
             )
@@ -2300,6 +2526,7 @@ async def run(
     claim_default_pipeline_learning_evidence: bool = False,
     expect_default_pipeline_learn: bool = False,
     swebench_prompt_profile: str = _DEFAULT_PROMPT_PROFILE,
+    allow_blind_generation_on_repo_failure: bool = False,
 ) -> int:
     if mock and claim_default_pipeline_learning_evidence:
         log.error(
@@ -2378,6 +2605,9 @@ async def run(
                     claim_default_pipeline_learning_evidence=claim_default_pipeline_learning_evidence,
                     expect_default_pipeline_learn=expect_default_pipeline_learn,
                     swebench_prompt_profile=swebench_prompt_profile,
+                    allow_blind_generation_on_repo_failure=(
+                        allow_blind_generation_on_repo_failure
+                    ),
                 ),
                 timeout=task_timeout_s,
             )
@@ -2592,6 +2822,19 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--allow-blind-generation-on-repo-failure",
+        action="store_true",
+        default=False,
+        help=(
+            "DIAGNOSTIC ONLY. When repo worktree setup fails, run the "
+            "generation subprocess anyway from the inherited cwd so the "
+            "failure mode is observable in events (pre-2026-06-10 "
+            "behavior). OFF by default: paid/graded runs skip generation "
+            "fail-closed with patch_empty_reason=repo_unavailable "
+            "(RESOLUTION_UNBLOCKERS, cgpro Q2)."
+        ),
+    )
+    parser.add_argument(
         "--manifest-path",
         type=Path,
         default=_DEFAULT_CANARY_MANIFEST_PATH,
@@ -2723,6 +2966,9 @@ def main(argv: list[str] | None = None) -> int:
             ),
             expect_default_pipeline_learn=args.expect_default_pipeline_learn,
             swebench_prompt_profile=args.swebench_prompt_profile,
+            allow_blind_generation_on_repo_failure=(
+                args.allow_blind_generation_on_repo_failure
+            ),
         )
     )
 
