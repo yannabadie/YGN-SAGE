@@ -8,11 +8,11 @@ accelerate==1.13.0
     # via
     #   docling-ibm-models
     #   docling-slim
-aiohappyeyeballs==2.6.1
+aiohappyeyeballs==2.6.2
     # via
     #   -c ../sage-python/constraints.txt
     #   aiohttp
-aiohttp==3.13.5
+aiohttp==3.14.1
     # via
     #   -c ../sage-python/constraints.txt
     #   xai-sdk
@@ -39,12 +39,13 @@ anyio==4.13.0
     #   -c ../sage-python/constraints.txt
     #   google-genai
     #   httpx
+    #   httpx2
     #   mcp
     #   openai
     #   sse-starlette
     #   starlette
     #   ygn-sage
-arxiv==3.0.0
+arxiv==4.0.0
     # via sage-discover (pyproject.toml)
 attrs==26.1.0
     # via
@@ -53,9 +54,9 @@ attrs==26.1.0
     #   jsonlines
     #   jsonschema
     #   referencing
-beautifulsoup4==4.14.3
+beautifulsoup4==4.15.0
     # via docling-slim
-certifi==2026.4.22
+certifi==2026.5.20
     # via
     #   -c ../sage-python/constraints.txt
     #   docling-slim
@@ -70,23 +71,24 @@ charset-normalizer==3.4.7
     # via
     #   -c ../sage-python/constraints.txt
     #   requests
-click==8.3.3
+click==8.4.1
     # via
     #   -c ../sage-python/constraints.txt
+    #   huggingface-hub
     #   typer
     #   uvicorn
 colorlog==6.10.1
     # via rapidocr
-cryptography==48.0.0
+cryptography==48.0.1
     # via
     #   -c ../sage-python/constraints.txt
     #   google-auth
     #   pyjwt
-cuda-bindings==13.2.0
+cuda-bindings==13.3.1
     # via
     #   -c ../sage-python/constraints.txt
     #   torch
-cuda-pathfinder==1.5.4
+cuda-pathfinder==1.5.5
     # via
     #   -c ../sage-python/constraints.txt
     #   cuda-bindings
@@ -107,26 +109,24 @@ distro==1.9.0
     #   -c ../sage-python/constraints.txt
     #   google-genai
     #   openai
-docling==2.93.0
+docling==2.100.0
     # via sage-discover (pyproject.toml)
-docling-core==2.74.1
+docling-core==2.80.0
     # via
     #   docling-ibm-models
     #   docling-parse
     #   docling-slim
-docling-ibm-models==3.13.2
+docling-ibm-models==3.13.3
     # via docling-slim
-docling-parse==5.11.0
+docling-parse==6.2.0
     # via docling-slim
-docling-slim==2.93.0
+docling-slim==2.100.0
     # via docling
 et-xmlfile==2.0.0
     # via openpyxl
-faker==40.15.0
+faker==40.22.0
     # via polyfactory
-feedparser==6.0.12
-    # via arxiv
-filelock==3.29.0
+filelock==3.29.1
     # via
     #   -c ../sage-python/constraints.txt
     #   huggingface-hub
@@ -138,16 +138,16 @@ frozenlist==1.8.0
     #   -c ../sage-python/constraints.txt
     #   aiohttp
     #   aiosignal
-fsspec==2026.2.0
+fsspec==2026.4.0
     # via
     #   -c ../sage-python/constraints.txt
     #   huggingface-hub
     #   torch
-genai-prices==0.0.59
+genai-prices==0.0.66
     # via
     #   -c ../sage-python/constraints.txt
     #   pydantic-ai-slim
-google-auth==2.52.0
+google-auth==2.53.0
     # via
     #   -c ../sage-python/constraints.txt
     #   google-genai
@@ -163,7 +163,7 @@ griffelib==2.0.2
     # via
     #   -c ../sage-python/constraints.txt
     #   pydantic-ai-slim
-grpcio==1.80.0
+grpcio==1.81.0
     # via
     #   -c ../sage-python/constraints.txt
     #   qdrant-client
@@ -172,10 +172,11 @@ h11==0.16.0
     # via
     #   -c ../sage-python/constraints.txt
     #   httpcore
+    #   httpcore2
     #   uvicorn
 h2==4.3.0
     # via httpx
-hf-xet==1.5.0
+hf-xet==1.5.1
     # via
     #   -c ../sage-python/constraints.txt
     #   huggingface-hub
@@ -185,11 +186,14 @@ httpcore==1.0.9
     # via
     #   -c ../sage-python/constraints.txt
     #   httpx
+httpcore2==2.3.0
+    # via
+    #   -c ../sage-python/constraints.txt
+    #   httpx2
 httpx==0.28.1
     # via
     #   -c ../sage-python/constraints.txt
     #   docling-slim
-    #   genai-prices
     #   google-genai
     #   huggingface-hub
     #   mcp
@@ -203,7 +207,11 @@ httpx-sse==0.4.3
     # via
     #   -c ../sage-python/constraints.txt
     #   mcp
-huggingface-hub==1.14.0
+httpx2==2.3.0
+    # via
+    #   -c ../sage-python/constraints.txt
+    #   genai-prices
+huggingface-hub==1.18.0
     # via
     #   -c ../sage-python/constraints.txt
     #   accelerate
@@ -214,22 +222,19 @@ huggingface-hub==1.14.0
     #   transformers
 hyperframe==6.1.0
     # via h2
-idna==3.14
+idna==3.18
     # via
     #   -c ../sage-python/constraints.txt
     #   anyio
     #   httpx
+    #   httpx2
     #   requests
     #   yarl
-importlib-metadata==8.7.1
-    # via
-    #   -c ../sage-python/constraints.txt
-    #   opentelemetry-api
 jinja2==3.1.6
     # via
     #   -c ../sage-python/constraints.txt
     #   torch
-jiter==0.14.0
+jiter==0.15.0
     # via
     #   -c ../sage-python/constraints.txt
     #   openai
@@ -252,26 +257,29 @@ jsonschema-specifications==2025.9.1
     #   jsonschema
 latex2mathml==3.81.0
     # via docling-core
-logfire-api==4.32.1
+logfire-api==4.36.0
     # via
     #   -c ../sage-python/constraints.txt
     #   pydantic-graph
-lxml==6.1.0
+lxml==6.1.1
     # via
+    #   arxiv
     #   docling-slim
     #   python-docx
     #   python-pptx
+mail-parser==4.3.0
+    # via docling-slim
 markdown-it-py==4.2.0
     # via
     #   -c ../sage-python/constraints.txt
     #   rich
-marko==2.2.2
+marko==2.2.3
     # via docling-slim
 markupsafe==3.0.3
     # via
     #   -c ../sage-python/constraints.txt
     #   jinja2
-mcp==1.27.1
+mcp==1.27.2
     # via
     #   -c ../sage-python/constraints.txt
     #   sage-discover (pyproject.toml)
@@ -294,12 +302,16 @@ multiprocess==0.70.19
     # via
     #   -c ../sage-python/constraints.txt
     #   mpire
+narwhals==2.22.1
+    # via
+    #   -c ../sage-python/constraints.txt
+    #   scikit-learn
 networkx==3.6.1
     # via
     #   -c ../sage-python/constraints.txt
     #   sage-discover (pyproject.toml)
     #   torch
-numpy==2.4.4
+numpy==2.4.6
     # via
     #   -c ../sage-python/constraints.txt
     #   accelerate
@@ -317,12 +329,12 @@ numpy==2.4.4
     #   torchvision
     #   transformers
     #   ygn-sage
-nvidia-cublas==13.1.0.3
+nvidia-cublas==13.1.1.3
     # via
     #   -c ../sage-python/constraints.txt
-    #   cuda-toolkit
     #   nvidia-cudnn-cu13
     #   nvidia-cusolver
+    #   torch
 nvidia-cuda-cupti==13.0.85
     # via
     #   -c ../sage-python/constraints.txt
@@ -331,11 +343,12 @@ nvidia-cuda-nvrtc==13.0.88
     # via
     #   -c ../sage-python/constraints.txt
     #   cuda-toolkit
+    #   nvidia-cublas
 nvidia-cuda-runtime==13.0.96
     # via
     #   -c ../sage-python/constraints.txt
     #   cuda-toolkit
-nvidia-cudnn-cu13==9.19.0.56
+nvidia-cudnn-cu13==9.20.0.48
     # via
     #   -c ../sage-python/constraints.txt
     #   torch
@@ -360,11 +373,11 @@ nvidia-cusparse==12.6.3.3
     #   -c ../sage-python/constraints.txt
     #   cuda-toolkit
     #   nvidia-cusolver
-nvidia-cusparselt-cu13==0.8.0
+nvidia-cusparselt-cu13==0.8.1
     # via
     #   -c ../sage-python/constraints.txt
     #   torch
-nvidia-nccl-cu13==2.28.9
+nvidia-nccl-cu13==2.29.7
     # via
     #   -c ../sage-python/constraints.txt
     #   torch
@@ -385,7 +398,7 @@ nvidia-nvtx==13.0.85
     #   cuda-toolkit
 omegaconf==2.3.0
     # via rapidocr
-openai==2.36.0
+openai==2.41.0
     # via
     #   -c ../sage-python/constraints.txt
     #   pydantic-ai-slim
@@ -393,17 +406,17 @@ opencv-python==4.13.0.92
     # via rapidocr
 openpyxl==3.1.5
     # via docling-slim
-opentelemetry-api==1.41.1
+opentelemetry-api==1.42.1
     # via
     #   -c ../sage-python/constraints.txt
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
     #   pydantic-ai-slim
-opentelemetry-sdk==1.41.1
+opentelemetry-sdk==1.42.1
     # via
     #   -c ../sage-python/constraints.txt
     #   xai-sdk
-opentelemetry-semantic-conventions==0.62b1
+opentelemetry-semantic-conventions==0.63b1
     # via
     #   -c ../sage-python/constraints.txt
     #   opentelemetry-sdk
@@ -412,7 +425,6 @@ packaging==25.0
     #   -c ../sage-python/constraints.txt
     #   accelerate
     #   huggingface-hub
-    #   safetensors
     #   transformers
     #   xai-sdk
 pandas==3.0.3
@@ -482,7 +494,7 @@ pydantic==2.13.4
     #   qdrant-client
     #   xai-sdk
     #   ygn-sage
-pydantic-ai-slim==1.94.0
+pydantic-ai-slim==1.106.0
     # via
     #   -c ../sage-python/constraints.txt
     #   ygn-sage
@@ -490,7 +502,7 @@ pydantic-core==2.46.4
     # via
     #   -c ../sage-python/constraints.txt
     #   pydantic
-pydantic-graph==1.94.0
+pydantic-graph==1.106.0
     # via
     #   -c ../sage-python/constraints.txt
     #   pydantic-ai-slim
@@ -505,13 +517,13 @@ pygments==2.20.0
     #   -c ../sage-python/constraints.txt
     #   mpire
     #   rich
-pyjwt==2.12.1
+pyjwt==2.13.0
     # via
     #   -c ../sage-python/constraints.txt
     #   mcp
 pylatexenc==2.10
     # via docling-slim
-pypdfium2==5.8.0
+pypdfium2==5.9.0
     # via docling-slim
 python-dateutil==2.9.0.post0
     # via
@@ -524,7 +536,7 @@ python-dotenv==1.2.2
     #   -c ../sage-python/constraints.txt
     #   mcp
     #   pydantic-settings
-python-multipart==0.0.28
+python-multipart==0.0.32
     # via
     #   -c ../sage-python/constraints.txt
     #   mcp
@@ -570,7 +582,7 @@ rich==15.0.0
     #   docling-slim
     #   typer
     #   ygn-sage
-rpds-py==0.30.0
+rpds-py==2026.5.1
     # via
     #   -c ../sage-python/constraints.txt
     #   jsonschema
@@ -579,7 +591,7 @@ rtree==1.4.1
     # via
     #   docling-ibm-models
     #   docling-slim
-safetensors==0.7.0
+safetensors==0.8.0
     # via
     #   -c ../sage-python/constraints.txt
     #   accelerate
@@ -589,7 +601,7 @@ sage-core==0.1.0
     # via
     #   -c ../sage-python/constraints.txt
     #   ygn-sage
-scikit-learn==1.8.0
+scikit-learn==1.9.0
     # via
     #   -c ../sage-python/constraints.txt
     #   sentence-transformers
@@ -603,12 +615,10 @@ semanticscholar==0.12.0
     # via sage-discover (pyproject.toml)
 semchunk==3.2.5
     # via docling-core
-sentence-transformers==5.4.1
+sentence-transformers==5.5.1
     # via
     #   -c ../sage-python/constraints.txt
     #   sage-discover (pyproject.toml)
-sgmllib3k==1.0.0
-    # via feedparser
 shapely==2.1.2
     # via rapidocr
 shellingham==1.5.4
@@ -625,13 +635,13 @@ sniffio==1.3.1
     #   -c ../sage-python/constraints.txt
     #   google-genai
     #   openai
-soupsieve==2.8.3
+soupsieve==2.8.4
     # via beautifulsoup4
-sse-starlette==3.4.3
+sse-starlette==3.4.4
     # via
     #   -c ../sage-python/constraints.txt
     #   mcp
-starlette==1.0.0
+starlette==1.2.1
     # via
     #   -c ../sage-python/constraints.txt
     #   mcp
@@ -653,7 +663,7 @@ threadpoolctl==3.6.0
     # via
     #   -c ../sage-python/constraints.txt
     #   scikit-learn
-tiktoken==0.12.0
+tiktoken==0.13.0
     # via
     #   -c ../sage-python/constraints.txt
     #   pydantic-ai-slim
@@ -661,7 +671,7 @@ tokenizers==0.22.2
     # via
     #   -c ../sage-python/constraints.txt
     #   transformers
-torch==2.11.0
+torch==2.12.0
     # via
     #   -c ../sage-python/constraints.txt
     #   accelerate
@@ -671,11 +681,11 @@ torch==2.11.0
     #   sage-discover (pyproject.toml)
     #   sentence-transformers
     #   torchvision
-torchvision==0.26.0
+torchvision==0.27.0
     # via
     #   docling-ibm-models
     #   docling-slim
-tqdm==4.67.3
+tqdm==4.68.2
     # via
     #   -c ../sage-python/constraints.txt
     #   docling-ibm-models
@@ -687,7 +697,7 @@ tqdm==4.67.3
     #   semchunk
     #   sentence-transformers
     #   transformers
-transformers==5.8.0
+transformers==5.10.2
     # via
     #   -c ../sage-python/constraints.txt
     #   docling-core
@@ -708,13 +718,15 @@ tree-sitter-python==0.25.0
     #   docling-core
 tree-sitter-typescript==0.23.2
     # via docling-core
-triton==3.6.0
+triton==3.7.0
     # via
     #   -c ../sage-python/constraints.txt
     #   torch
 truststore==0.10.4
     # via
     #   -c ../sage-python/constraints.txt
+    #   httpcore2
+    #   httpx2
     #   ygn-sage
 typer==0.21.2
     # via
@@ -728,6 +740,7 @@ typer==0.21.2
 typing-extensions==4.15.0
     # via
     #   -c ../sage-python/constraints.txt
+    #   aiohttp
     #   aiosignal
     #   anyio
     #   beautifulsoup4
@@ -763,7 +776,7 @@ urllib3==2.7.0
     #   -c ../sage-python/constraints.txt
     #   qdrant-client
     #   requests
-uvicorn==0.46.0
+uvicorn==0.49.0
     # via
     #   -c ../sage-python/constraints.txt
     #   mcp
@@ -772,22 +785,18 @@ websockets==16.0
     #   -c ../sage-python/constraints.txt
     #   docling-slim
     #   google-genai
-xai-sdk==1.12.2
+xai-sdk==1.15.0
     # via
     #   -c ../sage-python/constraints.txt
     #   pydantic-ai-slim
 xlsxwriter==3.2.9
     # via python-pptx
-yarl==1.23.0
+yarl==1.24.2
     # via
     #   -c ../sage-python/constraints.txt
     #   aiohttp
 ygn-sage==0.1.0
     # via sage-discover (pyproject.toml)
-zipp==3.23.1
-    # via
-    #   -c ../sage-python/constraints.txt
-    #   importlib-metadata
 
 # The following packages are considered to be unsafe in a requirements file:
 # setuptools
