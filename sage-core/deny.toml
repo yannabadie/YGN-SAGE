@@ -14,18 +14,10 @@
 # were fixed by upgrading to wasmtime 44.0; the remaining two
 # advisories are quarantined here with rationale).
 ignore = [
-    # RUSTSEC-2026-0097: rand 0.9.x is "unsound with a custom logger
-    # using rand::rng()". The advisory describes a logger-callback
-    # path: if a custom global tracing/logger handler reads
-    # uninitialized RNG state during a panic-unwind, it can observe
-    # before-init bytes. sage-core uses rand::rng() only inside the
-    # bandit + CMA selection helpers (sage-core/src/routing/bandit.rs,
-    # sage-core/src/topology/cma_me.rs), never inside a tracing
-    # handler, and we don't ship a custom logger callback that touches
-    # the RNG. Risk = unreachable from our code paths. Re-evaluate
-    # when rand 0.10 ships with the unsound path removed.
-    # Owner: roadmap-A23-security-followup, 2026-04-27.
-    { id = "RUSTSEC-2026-0097", reason = "unreachable: rand::rng() is not called from any custom logger callback in sage-core" },
+    # RUSTSEC-2026-0097 (rand unsound w/ custom logger) ignore entry
+    # REMOVED 2026-06-10: lockfile now resolves rand 0.9.3 + 0.8.6,
+    # both in the advisory's patched ranges, so the quarantine is
+    # obsolete (and keeping it would mask a future downgrade).
 
     # RUSTSEC-2025-0052: async-std discontinued. Pulled in transitively
     # via only one dev-time path (a build-script chain). Not used by

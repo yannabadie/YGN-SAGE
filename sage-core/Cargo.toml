@@ -29,6 +29,10 @@ pyo3-arrow = "0.10.0"
 # allocator data leakage, etc. — all fixed in 44.x). Cwasm cache
 # remains version-keyed via build.rs hash so stale .cwasm artefacts
 # self-invalidate on the upgrade.
+# Lockfile floor 44.0.2 since 2026-06-10: RUSTSEC-2026-0149 /
+# GHSA-2r75-cxrj-cmph (CVSS 7.5) — WASI path_open(TRUNCATE) bypassed
+# FilePerms::WRITE in <=44.0.1. Patch release, no API change; the "44.0"
+# req below already admits it.
 # cranelift feature EXCLUDED on Windows: causes STATUS_STACK_BUFFER_OVERRUN
 # during MSVC compilation. Use pre-compiled modules + Component::deserialize().
 # On Linux, add "cranelift" feature for JIT compilation.
