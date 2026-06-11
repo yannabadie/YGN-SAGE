@@ -73,6 +73,7 @@ def _spy_loop_passthrough_factory(monkeypatch: pytest.MonkeyPatch) -> None:
         on_drift,
         run_frame_builder,
         runtime_node_run_id,
+        task_profile=None,  # F4 2026-06-11: parity with the real factory
     ):
         singleton.write_gate = write_gate
         singleton.gate_current_task = task_text
