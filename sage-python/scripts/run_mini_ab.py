@@ -63,6 +63,13 @@ from run_dryrun_arm_d import (  # noqa: E402
 )
 from run_dryrun_arm_d import _run_one_task as _arm_d_run_one_task  # noqa: E402
 
+from sage.grounding import (  # noqa: E402  — promoted arm-A helpers
+    LOCALIZE_PROMPT as _LOCALIZE_PROMPT,
+    files_block as _files_block,
+    parse_file_list as _parse_file_list,
+    repo_file_tree as _repo_file_tree,
+)
+
 log = logging.getLogger("sage.bench.run_mini_ab")
 
 
@@ -124,87 +131,6 @@ def _failure_class(
         return "CONTENT_MISMATCH"
     return "APPLY_FAILED"
 
-
-def _repo_file_tree(repo_dir: str, *, max_files: int = 400) -> str:
-    """``git ls-files`` tree for the localization call, capped."""
-    try:
-        proc = subprocess.run(  # noqa: S603
-            ["git", "-C", repo_dir, "ls-files"],
-            capture_output=True,
-            timeout=60,
-            check=False,
-        )
-        files = (proc.stdout or b"").decode(
-            "utf-8", errors="replace"
-        ).splitlines()
-    except (subprocess.TimeoutExpired, OSError):
-        return ""
-    if len(files) > max_files:
-        files = files[:max_files] + [
-            f"... (+{len(files) - max_files} more files)"
-        ]
-    return "\n".join(files)
-
-
-def _parse_file_list(
-    reply: str, repo_dir: str, *, max_files: int = 6
-) -> list[str]:
-    """Extract existing repo-relative paths from the localization reply."""
-    import re
-
-    candidates: list[str] = []
-    for raw in (reply or "").splitlines():
-        line = raw.strip().strip("`*-\u2022 ").strip()
-        if not line:
-            continue
-        if " " in line:
-            found = re.findall(r"[\w./\\-]+\.[A-Za-z0-9_]+", line)
-            line = found[0] if found else ""
-        line = line.strip("`'\"")
-        if not line:
-            continue
-        rel = line.replace("\\", "/").lstrip("./")
-        if (Path(repo_dir) / rel).is_file() and rel not in candidates:
-            candidates.append(rel)
-        if len(candidates) >= max_files:
-            break
-    return candidates
-
-
-def _files_block(
-    repo_dir: str, rel_paths: list[str], *, max_chars_total: int = 60000
-) -> str:
-    """Concatenate selected file contents with headers, capped."""
-    blocks: list[str] = []
-    budget = max_chars_total
-    for rel in rel_paths:
-        try:
-            text = (Path(repo_dir) / rel).read_text(
-                encoding="utf-8", errors="replace"
-            )
-        except OSError:
-            continue
-        chunk = (
-            f"### FILE: {rel}\n```\n{text[: max(0, budget - 40)]}\n```\n"
-        )
-        blocks.append(chunk)
-        budget -= len(chunk)
-        if budget <= 1000:
-            break
-    return "\n".join(blocks)
-
-
-_LOCALIZE_PROMPT = """You are a senior engineer. Given a bug report and the \
-repository file listing, name the files (max {max_files}) most likely \
-needing changes to fix the bug.
-Reply with ONE repo-relative path per line, nothing else.
-
-## Bug report
-{problem}
-
-## Repository files
-{tree}
-"""
 
 _PATCH_PROMPT = """You are a senior engineer fixing a bug. Produce a \
 unified diff patch.
