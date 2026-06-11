@@ -2012,27 +2012,48 @@ def _serialize_verifier_result(result: Any) -> dict[str, Any]:
     }
 
 
-def _build_repair_llm() -> Any:
-    """Standalone budget-tier LLM client for the canary repair chain.
+def _build_repair_llm(tier: str = "budget") -> Any:
+    """Standalone LLM client for the canary repair chain.
 
     The canary launcher is a subprocess orchestrator with NO pipeline of
     its own (cgpro post-run 2026-06-10: the env flip alone was a no-op
     because nobody on the launcher path could call the repair LLM). This
-    builds the lightest possible client: budget tier model from the
+    builds the lightest possible client: the ``tier`` model from the
     router config (cards.toml truth, directive #7 — no hardcoded model
-    ids here), PydanticAIProvider, API key from the environment
-    (``_load_ygn_dotenv_into`` fills os.environ if .env hasn't been
-    sourced).
+    ids here) + PydanticAIProvider.
+
+    2026-06-11 re-canary root cause: ``PydanticAIProvider`` does NO
+    api-key self-lookup — building it without ``api_key`` sent
+    unauthenticated requests (401 ``Authentication Fails`` on both repair
+    attempts, mislabeled ``verifier_repair_empty``). The key is resolved
+    EXPLICITLY via the connector's ``api_key_env`` for the tier's
+    provider; a missing key raises so the caller records the explicit
+    ``repair_llm_unavailable`` stage instead of a silent 401.
     """
     from sage.llm.router import ModelRouter
-    from sage.providers.connector import get_provider_for_model
+    from sage.providers.connector import (
+        get_provider_config,
+        get_provider_for_model,
+    )
     from sage.providers.pydantic_ai_provider import PydanticAIProvider
 
     _load_ygn_dotenv_into(os.environ)  # type: ignore[arg-type]
-    config = ModelRouter.get_config(tier="budget")
+    config = ModelRouter.get_config(tier=tier)
     model_id = config.model
     provider_name = get_provider_for_model(model_id) or config.provider
-    return PydanticAIProvider(provider_name, model_id), provider_name, model_id
+    provider_cfg = get_provider_config(provider_name) or {}
+    api_key_env = str(provider_cfg.get("api_key_env") or "")
+    api_key = os.environ.get(api_key_env) if api_key_env else None
+    if not api_key:
+        raise RuntimeError(
+            f"repair LLM key missing: provider={provider_name!r} expects "
+            f"env {api_key_env!r} (tier={tier!r}, model={model_id!r})"
+        )
+    return (
+        PydanticAIProvider(provider_name, model_id, api_key=api_key),
+        provider_name,
+        model_id,
+    )
 
 
 class _RepairUsageRecorder:
@@ -2062,6 +2083,7 @@ async def _repair_patch_with_feedback(
     llm_factory: Any = None,
     provider_allowlist: tuple[str, ...] = (),
     provider_denylist: tuple[str, ...] = (),
+    repair_tier: str = "budget",
 ) -> tuple[str, dict[str, Any], dict[str, Any]]:
     """Canary-side repair chain (RESOLUTION_UNBLOCKERS criteria 3-4).
 
@@ -2161,9 +2183,10 @@ async def _repair_patch_with_feedback(
             meta["_verifier_repair_stage"] = "repair_skipped_budget_exhausted"
             return _finalize()
         try:
-            llm, repair_provider, repair_model = (
-                llm_factory or _build_repair_llm
-            )()
+            factory = llm_factory or (
+                lambda: _build_repair_llm(tier=repair_tier)
+            )
+            llm, repair_provider, repair_model = factory()
         except Exception as exc:  # noqa: BLE001 - missing keys/deps must not kill the task
             log.warning("[%s] repair LLM unavailable: %s", instance_id, exc)
             meta["_verifier_repair_stage"] = "repair_llm_unavailable"
@@ -2466,6 +2489,7 @@ async def _run_one_task(
     allow_blind_generation_on_repo_failure: bool = False,
     verifier_mode: str = _CANARY_DIFF_VERIFIER_MODE,
     repair_budget_usd: float = _DEFAULT_REPAIR_BUDGET_USD,
+    repair_tier: str = "budget",
 ) -> dict[str, Any]:
     """Run one task end-to-end. Returns a per-task summary dict."""
     instance_id = task["instance_id"]
@@ -2662,6 +2686,7 @@ async def _run_one_task(
                         repair_budget_usd=repair_budget_usd,
                         provider_allowlist=provider_allowlist,
                         provider_denylist=provider_denylist,
+                        repair_tier=repair_tier,
                     )
                 )
         finally:
@@ -2823,6 +2848,7 @@ async def run(
     allow_blind_generation_on_repo_failure: bool = False,
     verifier_mode: str = _CANARY_DIFF_VERIFIER_MODE,
     repair_budget_usd: float = _DEFAULT_REPAIR_BUDGET_USD,
+    repair_tier: str = "budget",
 ) -> int:
     if mock and claim_default_pipeline_learning_evidence:
         log.error(
@@ -2906,6 +2932,7 @@ async def run(
                     ),
                     verifier_mode=verifier_mode,
                     repair_budget_usd=repair_budget_usd,
+                    repair_tier=repair_tier,
                 ),
                 timeout=task_timeout_s,
             )
@@ -3150,6 +3177,16 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--repair-tier",
+        default="budget",
+        help=(
+            "Router tier for the repair LLM (repair mode only). "
+            "cgpro NEXT_BLOCK 2026-06-11: reasoner for the clean "
+            "re-canary; the audited provider identity must stay inside "
+            "the run's allow/denylists."
+        ),
+    )
+    parser.add_argument(
         "--repair-budget-usd",
         type=float,
         default=_DEFAULT_REPAIR_BUDGET_USD,
@@ -3297,6 +3334,7 @@ def main(argv: list[str] | None = None) -> int:
             ),
             verifier_mode=args.verifier_mode,
             repair_budget_usd=args.repair_budget_usd,
+            repair_tier=args.repair_tier,
         )
     )
 

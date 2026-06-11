@@ -3555,3 +3555,25 @@ def test_count_empty_patches_split_infra_vs_model() -> None:
     assert total == 3
     assert infra == 2
     assert model == 1
+
+
+def test_build_repair_llm_resolves_api_key_from_connector(monkeypatch) -> None:
+    """Re-canary 2026-06-11 root cause: the repair client was built WITHOUT
+    api_key (PydanticAIProvider does no self-lookup) -> 401 Authentication
+    Fails on both repair attempts. The factory must resolve the key via the
+    connector's api_key_env for the tier's provider."""
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test-repair-key")
+    llm, provider, model = arm_d._build_repair_llm()
+    assert provider == "deepseek"
+    assert model
+    assert getattr(llm, "api_key", None) == "sk-test-repair-key"
+
+
+def test_build_repair_llm_reasoner_tier(monkeypatch) -> None:
+    """cgpro NEXT_BLOCK: repair tier -> reasoner, audit intact (provider
+    identity resolved for the reasoner model, key from its api_key_env)."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "sk-test-google-key")
+    llm, provider, model = arm_d._build_repair_llm(tier="reasoner")
+    assert provider == "google"
+    assert "gemini" in model
+    assert getattr(llm, "api_key", None) == "sk-test-google-key"
