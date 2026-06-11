@@ -1159,6 +1159,7 @@ async def _run_sage_cli(
     stderr_task = asyncio.create_task(_drain_stderr())
 
     final_result_payload: Any = None
+    node_output_texts: list[str] = []
     cli_complete_payload: dict[str, Any] | None = None
     cli_complete_run_id: str | None = None
     model_id_final: str | None = None
@@ -1203,6 +1204,18 @@ async def _run_sage_cli(
                             or payload.get("provider")
                             or provider_final
                         )
+                if ev_type == "node_completed":
+                    node_text = ""
+                    if isinstance(payload, str):
+                        node_text = payload
+                    elif isinstance(payload, dict):
+                        for key in ("output", "result", "text", "content"):
+                            val = payload.get(key)
+                            if isinstance(val, str) and val.strip():
+                                node_text = val
+                                break
+                    if node_text:
+                        node_output_texts.append(node_text)
                 if ev_type == "final_result":
                     final_result_payload = payload
                 elif ev_type == "cli_complete":
@@ -1264,6 +1277,7 @@ async def _run_sage_cli(
         "exit_code": exit_code,
         "latency_ms": int(latency_s * 1000),
         "final_result_payload": final_result_payload,
+        "node_output_texts": node_output_texts,
         "cli_complete_payload": cli_complete_payload,
         "total_cost_usd": (
             (cli_complete_payload or {}).get("total_cost_usd")
@@ -1940,6 +1954,28 @@ def _resolve_total_cost(
     if cli_total is not None:
         return cli_total, "cli_complete", warning
     return 0.0, "no_cost_evidence", warning
+
+
+def _extract_patch_with_fallback(
+    final_text: str, node_output_texts: list[str]
+) -> tuple[str, str | None]:
+    """MINI_2B defect B net (forensics 2026-06-11): the runner emits the
+    LAST node's output as final_result (runner.py:2344) with no artifact
+    pass-through — observed: an upstream node produced a clean diff and
+    the synthesizer regenerated a degraded one. Until the runtime fix
+    lands (cgpro DESIGN in flight), the bench layer scans node outputs
+    LAST-first when final_result yields nothing. Provenance is recorded
+    (_patch_source) — extraction-from-candidates is standard scaffold
+    behavior (Agentless), declared not hidden.
+    """
+    patch = _swebench_extract_patch(final_text or "")
+    if patch:
+        return patch, "final_result"
+    for idx in range(len(node_output_texts) - 1, -1, -1):
+        candidate = _swebench_extract_patch(node_output_texts[idx] or "")
+        if candidate:
+            return candidate, f"node_completed[{idx}]"
+    return "", None
 
 
 def _annotate_diff_verifier(
@@ -2650,7 +2686,10 @@ async def _run_one_task(
             # rejection, Unix line-ending normalization). The local
             # ``_extract_patch_from_text`` is kept for older callers that
             # only need the dumb header-scan path.
-            patch = _swebench_extract_patch(agent_output)
+            patch, patch_source = _extract_patch_with_fallback(
+                agent_output,
+                list(cli_result.get("node_output_texts") or []),
+            )
             diff_verifier_annotation = _annotate_diff_verifier(
                 patch=patch,
                 repo_dir=repo_dir if isinstance(repo_dir, str) else None,
@@ -2760,6 +2799,7 @@ async def _run_one_task(
             "_total_cost_usd_source": nominal_cost_source,
             "cost_integrity_warning": nominal_cost_warning,
             "extracted_patch_present": bool(patch),
+            "_patch_source": patch_source,
             "extracted_patch_chars": len(patch),
             "mock": False,
             "timeout": False,

@@ -3627,3 +3627,48 @@ def test_run_enters_keep_awake_guard(monkeypatch, tmp_path) -> None:
     )
     assert rc == 0
     assert entered["n"] == 1
+
+
+def test_extract_patch_with_fallback_prefers_final_result() -> None:
+    """When final_result carries a diff, the node outputs are not consulted
+    and provenance says final_result."""
+    diff = (
+        "--- a/x.py\n+++ b/x.py\n@@ -1,1 +1,1 @@\n-a = 1\n+a = 2\n"
+    )
+    patch, source = arm_d._extract_patch_with_fallback(
+        "Here is the fix:\n```diff\n" + diff + "```",
+        ["IGNORED node output"],
+    )
+    assert patch.strip().endswith("+a = 2")
+    assert source == "final_result"
+
+
+def test_extract_patch_with_fallback_scans_nodes_last_first() -> None:
+    """MINI_2B defect B net: final_result empty/sentinel but an upstream
+    node produced the diff — the net recovers it, preferring the LATEST
+    diff-bearing node, and provenance names the node index."""
+    diff_old = (
+        "--- a/old.py\n+++ b/old.py\n@@ -1,1 +1,1 @@\n-o = 1\n+o = 2\n"
+    )
+    diff_new = (
+        "--- a/new.py\n+++ b/new.py\n@@ -1,1 +1,1 @@\n-n = 1\n+n = 2\n"
+    )
+    node_outputs = [
+        "[sage: agent exited after 5 steps with no content]",
+        "analysis text\n```diff\n" + diff_old + "```",
+        "final answer\n```diff\n" + diff_new + "```",
+    ]
+    patch, source = arm_d._extract_patch_with_fallback(
+        "[sage: agent exited after 3 steps with no content]",
+        node_outputs,
+    )
+    assert "new.py" in patch
+    assert source == "node_completed[2]"
+
+
+def test_extract_patch_with_fallback_all_empty() -> None:
+    patch, source = arm_d._extract_patch_with_fallback(
+        "no diff here", ["nothing", ""]
+    )
+    assert patch == ""
+    assert source is None
