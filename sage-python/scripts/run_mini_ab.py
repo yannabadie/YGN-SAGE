@@ -55,7 +55,6 @@ sys.path.insert(0, str(_SCRIPTS_DIR))
 
 from run_dryrun_arm_d import (  # noqa: E402
     _annotate_diff_verifier,
-    _build_prompt,
     _build_repair_llm,
     _cleanup_repo_dir,
     _repair_patch_with_feedback,
@@ -126,7 +125,105 @@ def _failure_class(
     return "APPLY_FAILED"
 
 
-# ── Arm A: controlled single-call baseline ──────────────────────────────────
+def _repo_file_tree(repo_dir: str, *, max_files: int = 400) -> str:
+    """``git ls-files`` tree for the localization call, capped."""
+    try:
+        proc = subprocess.run(  # noqa: S603
+            ["git", "-C", repo_dir, "ls-files"],
+            capture_output=True,
+            timeout=60,
+            check=False,
+        )
+        files = (proc.stdout or b"").decode(
+            "utf-8", errors="replace"
+        ).splitlines()
+    except (subprocess.TimeoutExpired, OSError):
+        return ""
+    if len(files) > max_files:
+        files = files[:max_files] + [
+            f"... (+{len(files) - max_files} more files)"
+        ]
+    return "\n".join(files)
+
+
+def _parse_file_list(
+    reply: str, repo_dir: str, *, max_files: int = 6
+) -> list[str]:
+    """Extract existing repo-relative paths from the localization reply."""
+    import re
+
+    candidates: list[str] = []
+    for raw in (reply or "").splitlines():
+        line = raw.strip().strip("`*-\u2022 ").strip()
+        if not line:
+            continue
+        if " " in line:
+            found = re.findall(r"[\w./\\-]+\.[A-Za-z0-9_]+", line)
+            line = found[0] if found else ""
+        line = line.strip("`'\"")
+        if not line:
+            continue
+        rel = line.replace("\\", "/").lstrip("./")
+        if (Path(repo_dir) / rel).is_file() and rel not in candidates:
+            candidates.append(rel)
+        if len(candidates) >= max_files:
+            break
+    return candidates
+
+
+def _files_block(
+    repo_dir: str, rel_paths: list[str], *, max_chars_total: int = 60000
+) -> str:
+    """Concatenate selected file contents with headers, capped."""
+    blocks: list[str] = []
+    budget = max_chars_total
+    for rel in rel_paths:
+        try:
+            text = (Path(repo_dir) / rel).read_text(
+                encoding="utf-8", errors="replace"
+            )
+        except OSError:
+            continue
+        chunk = (
+            f"### FILE: {rel}\n```\n{text[: max(0, budget - 40)]}\n```\n"
+        )
+        blocks.append(chunk)
+        budget -= len(chunk)
+        if budget <= 1000:
+            break
+    return "\n".join(blocks)
+
+
+_LOCALIZE_PROMPT = """You are a senior engineer. Given a bug report and the \
+repository file listing, name the files (max {max_files}) most likely \
+needing changes to fix the bug.
+Reply with ONE repo-relative path per line, nothing else.
+
+## Bug report
+{problem}
+
+## Repository files
+{tree}
+"""
+
+_PATCH_PROMPT = """You are a senior engineer fixing a bug. Produce a \
+unified diff patch.
+
+STRICT OUTPUT CONTRACT:
+- Output ONLY a unified diff (```diff fenced or raw), nothing else.
+- Use a/ and b/ path prefixes; context lines MUST match the file content
+  shown below byte-for-byte; correct @@ hunk headers.
+- Minimal change that fixes the bug.
+
+## Bug report
+{problem}
+
+## Relevant files (current content)
+{files_block}
+"""
+
+
+# ── Arm A: Agentless-lite two-call baseline ──────────────────────────────────
 
 
 def run_arm_a_task(
@@ -174,7 +271,6 @@ def run_arm_a_task(
             record["failure_class"] = "EMPTY_PATCH"
             return record
 
-        prompt, _meta = _build_prompt(instance, prompt_profile)
         try:
             llm, provider, model = (
                 llm_factory or (lambda: _build_repair_llm(tier=arm_a_tier))
@@ -192,21 +288,54 @@ def run_arm_a_task(
 
         from sage.llm.base import Message, Role
 
-        async def _one_call() -> Any:
+        async def _call(text: str) -> Any:
             return await asyncio.wait_for(
                 llm.generate(
-                    messages=[Message(role=Role.USER, content=prompt)]
+                    messages=[Message(role=Role.USER, content=text)]
                 ),
                 timeout=call_timeout_s,
             )
 
+        problem = str(instance.get("problem_statement") or "")
+        # Agentless-lite call 1: localization over the file tree. (The
+        # single-call v1 was trivially empty: the patch_focused prompt
+        # presumes repo access a bare LLM does not have — 786-token
+        # prompts, zero patches, invalid arm.)
+        tree = _repo_file_tree(repo_dir)
         try:
-            response = asyncio.run(_one_call())
-        except Exception as exc:  # noqa: BLE001 - timeout/provider errors
+            loc_response = asyncio.run(
+                _call(_LOCALIZE_PROMPT.format(
+                    max_files=6, problem=problem[:6000], tree=tree
+                ))
+            )
+        except Exception as exc:  # noqa: BLE001
             record["error"] = f"llm_call_failed: {type(exc).__name__}: {exc}"
             return record
-        usage = getattr(response, "usage", None)
-        record["usage"] = dict(usage) if isinstance(usage, dict) else None
+        selected = _parse_file_list(
+            getattr(loc_response, "content", None) or "", repo_dir
+        )
+        record["localized_files"] = selected
+        usage1 = getattr(loc_response, "usage", None)
+
+        # Call 2: strict-diff emission over the selected file contents.
+        files_block = _files_block(repo_dir, selected)
+        try:
+            response = asyncio.run(
+                _call(_PATCH_PROMPT.format(
+                    problem=problem[:6000], files_block=files_block
+                ))
+            )
+        except Exception as exc:  # noqa: BLE001
+            record["error"] = f"llm_call_failed: {type(exc).__name__}: {exc}"
+            return record
+        usage2 = getattr(response, "usage", None)
+        merged: dict[str, Any] = {}
+        for u in (usage1, usage2):
+            if isinstance(u, dict):
+                for k, v in u.items():
+                    if isinstance(v, (int, float)):
+                        merged[k] = merged.get(k, 0) + v
+        record["usage"] = merged or None
         content = getattr(response, "content", None) or ""
         patch = _swebench_extract_patch(content)
         record["patch_non_empty"] = bool(patch)
@@ -395,6 +524,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repair-budget-usd", type=float, default=0.50)
     parser.add_argument("--repair-tier", default="reasoner")
     parser.add_argument("--repair-timeout-s", type=float, default=180.0)
+    parser.add_argument("--arms", default="AD", choices=["A", "D", "AD"],
+                        help="Arms to run; the other arm's records merge "
+                             "from existing per_task pair files.")
     parser.add_argument("--log-level", default="INFO",
                         choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     args = parser.parse_args(argv)
@@ -431,64 +563,82 @@ def main(argv: list[str] | None = None) -> int:
 
     a_records: list[dict[str, Any]] = []
     d_records: list[dict[str, Any]] = []
+    run_a = "A" in args.arms
+    run_d = "D" in args.arms
     with prevent_os_sleep():
         for index, instance in enumerate(instances):
             iid = instance["instance_id"]
-            log.info("[%d/%d] %s — Arm A (single call)...",
-                     index + 1, len(instances), iid)
-            a_rec = run_arm_a_task(
-                instance,
-                arm_a_tier=args.arm_a_tier,
-                verifier_mode=args.verifier_mode,
-                repair_budget_usd=args.repair_budget_usd,
-                repair_timeout_s=args.repair_timeout_s,
-                prompt_profile=args.swebench_prompt_profile,
-                provider_allowlist=allowlist,
-                provider_denylist=denylist,
-            )
-            a_records.append(a_rec)
-            log.info("[%d/%d] %s — Arm A: %s (apply=%s)",
-                     index + 1, len(instances), iid,
-                     a_rec["failure_class"], a_rec["apply_ok"])
-
-            log.info("[%d/%d] %s — Arm D (full pipeline)...",
-                     index + 1, len(instances), iid)
-            try:
-                d_rec = asyncio.run(
-                    asyncio.wait_for(
-                        run_arm_d_task(
-                            instance,
-                            out,
-                            budget_usd=args.budget_usd,
-                            tier=args.tier,
-                            provider_allowlist=allowlist,
-                            provider_denylist=denylist,
-                            prompt_profile=args.swebench_prompt_profile,
-                            verifier_mode=args.verifier_mode,
-                            repair_budget_usd=args.repair_budget_usd,
-                            repair_tier=args.repair_tier,
-                            repair_timeout_s=args.repair_timeout_s,
-                            fmt_module=fmt_module,
-                        ),
-                        timeout=args.task_timeout_s,
+            pair_path = out / "per_task" / f"{index:02d}_{iid[:60]}.json"
+            existing: dict[str, Any] = {}
+            if pair_path.exists():
+                try:
+                    existing = json.loads(
+                        pair_path.read_text(encoding="utf-8")
                     )
-                )
-            except asyncio.TimeoutError:
-                d_rec = {
-                    "instance_id": iid,
-                    "arm": "D",
-                    "patch_non_empty": False,
-                    "apply_ok": False,
-                    "apply_detail": "task_timeout",
-                    "failure_class": "EMPTY_PATCH",
-                    "error": f"task_timeout_{args.task_timeout_s:.0f}s",
-                }
-            d_records.append(d_rec)
-            log.info("[%d/%d] %s — Arm D: %s (apply=%s)",
-                     index + 1, len(instances), iid,
-                     d_rec["failure_class"], d_rec.get("apply_ok"))
+                except (OSError, json.JSONDecodeError):
+                    existing = {}
+            a_rec = existing.get("arm_a")
+            d_rec = existing.get("arm_d")
 
-            (out / "per_task" / f"{index:02d}_{iid[:60]}.json").write_text(
+            if run_a:
+                log.info("[%d/%d] %s — Arm A (Agentless-lite 2-call)...",
+                         index + 1, len(instances), iid)
+                a_rec = run_arm_a_task(
+                    instance,
+                    arm_a_tier=args.arm_a_tier,
+                    verifier_mode=args.verifier_mode,
+                    repair_budget_usd=args.repair_budget_usd,
+                    repair_timeout_s=args.repair_timeout_s,
+                    prompt_profile=args.swebench_prompt_profile,
+                    provider_allowlist=allowlist,
+                    provider_denylist=denylist,
+                )
+                log.info("[%d/%d] %s — Arm A: %s (apply=%s)",
+                         index + 1, len(instances), iid,
+                         a_rec["failure_class"], a_rec["apply_ok"])
+            if a_rec:
+                a_records.append(a_rec)
+
+            if run_d:
+                log.info("[%d/%d] %s — Arm D (full pipeline)...",
+                         index + 1, len(instances), iid)
+                try:
+                    d_rec = asyncio.run(
+                        asyncio.wait_for(
+                            run_arm_d_task(
+                                instance,
+                                out,
+                                budget_usd=args.budget_usd,
+                                tier=args.tier,
+                                provider_allowlist=allowlist,
+                                provider_denylist=denylist,
+                                prompt_profile=args.swebench_prompt_profile,
+                                verifier_mode=args.verifier_mode,
+                                repair_budget_usd=args.repair_budget_usd,
+                                repair_tier=args.repair_tier,
+                                repair_timeout_s=args.repair_timeout_s,
+                                fmt_module=fmt_module,
+                            ),
+                            timeout=args.task_timeout_s,
+                        )
+                    )
+                except asyncio.TimeoutError:
+                    d_rec = {
+                        "instance_id": iid,
+                        "arm": "D",
+                        "patch_non_empty": False,
+                        "apply_ok": False,
+                        "apply_detail": "task_timeout",
+                        "failure_class": "EMPTY_PATCH",
+                        "error": f"task_timeout_{args.task_timeout_s:.0f}s",
+                    }
+                log.info("[%d/%d] %s — Arm D: %s (apply=%s)",
+                         index + 1, len(instances), iid,
+                         d_rec["failure_class"], d_rec.get("apply_ok"))
+            if d_rec:
+                d_records.append(d_rec)
+
+            pair_path.write_text(
                 json.dumps({"arm_a": a_rec, "arm_d": d_rec}, indent=1,
                            ensure_ascii=False),
                 encoding="utf-8",

@@ -113,9 +113,10 @@ def test_failure_class_taxonomy() -> None:
               apply_ok=False) == "APPLY_FAILED"
 
 
-def test_arm_a_single_call_task(monkeypatch, tmp_path) -> None:
-    """Arm A: ONE LLM call, same prompt builder + verifier chain as D,
-    cost recorded from usage, patch extracted via the swebench extractor."""
+def test_arm_a_two_call_task(monkeypatch, tmp_path) -> None:
+    """Arm A (Agentless-lite): call 1 localizes files from the tree,
+    call 2 emits the diff over their contents; usage summed; same
+    verifier chain and apply-check as D."""
 
     class _FakeLLM:
         def __init__(self):
@@ -125,9 +126,12 @@ def test_arm_a_single_call_task(monkeypatch, tmp_path) -> None:
             self.calls += 1
 
             class _R:
-                content = "```diff\n" + GOOD_PATCH + "```"
-                usage = {"input_tokens": 1000, "output_tokens": 200}
+                usage = {"input_tokens": 500, "output_tokens": 100}
 
+            if self.calls == 1:
+                _R.content = "mod.py"
+            else:
+                _R.content = "```diff\n" + GOOD_PATCH + "```"
             return _R()
 
     llm = _FakeLLM()
@@ -163,7 +167,8 @@ def test_arm_a_single_call_task(monkeypatch, tmp_path) -> None:
         repair_timeout_s=5.0,
         prompt_profile="patch_focused",
     )
-    assert llm.calls == 1
+    assert llm.calls == 2
+    assert result["localized_files"] == ["mod.py"]
     assert result["patch_non_empty"] is True
     assert result["apply_ok"] is True
     assert result["failure_class"] == "PLAUSIBLE_PATCH"
