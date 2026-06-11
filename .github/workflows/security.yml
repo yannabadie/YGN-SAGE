@@ -122,10 +122,18 @@ jobs:
               Path(dst).write_text("\n".join(out) + "\n", encoding="utf-8")
               print(f"wrote {dst} ({len(out)} pinned packages)")
           PY
+      # QUARANTINE (2026-06-11): PYSEC-2025-194 / CVE-2025-3000 —
+      # torch.jit.script memory corruption, LOCAL vector, user privileges
+      # required, CVSS 4.8 MEDIUM, NO fixed release published (OSV range
+      # modified 2026-06 to cover current versions). torch.jit.script on
+      # untrusted input is not in any SAGE runtime path (torch serves
+      # bench/embedder code). Re-check at every constraints regen; REMOVE
+      # this ignore as soon as a fixed torch ships. Same documented-
+      # quarantine policy as deny.toml's unmaintained entries.
       - name: Audit sage-python pinned constraints
-        run: pip-audit --strict --vulnerability-service osv --no-deps -r audit-sage-python.txt
+        run: pip-audit --strict --vulnerability-service osv --no-deps --ignore-vuln PYSEC-2025-194 -r audit-sage-python.txt
       - name: Audit sage-discover pinned constraints
-        run: pip-audit --strict --vulnerability-service osv --no-deps -r audit-sage-discover.txt
+        run: pip-audit --strict --vulnerability-service osv --no-deps --ignore-vuln PYSEC-2025-194 -r audit-sage-discover.txt
       # Also run the pypa action so the output lands in the GitHub
       # Security tab when a SARIF-capable step is wired later.
       - name: Reference pypa/gh-action-pip-audit
@@ -134,6 +142,7 @@ jobs:
           inputs: audit-sage-python.txt audit-sage-discover.txt
           no-deps: true
           vulnerability-service: OSV
+          ignore-vulns: PYSEC-2025-194
 
   cargo-audit:
     name: cargo-audit (Rust deps)
