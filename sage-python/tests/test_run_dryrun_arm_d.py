@@ -1975,6 +1975,7 @@ def test_setup_repo_targeted_fetch_recovers_clone_timeout(monkeypatch) -> None:
     script = [
         "timeout",                                   # clone times out
         _FakeCompletedProcess(0),                    # git init OK
+        _FakeCompletedProcess(0),                    # config autocrlf OK
         _FakeCompletedProcess(0),                    # remote add OK
         _FakeCompletedProcess(0),                    # targeted fetch OK
         _FakeCompletedProcess(0),                    # checkout --detach OK
@@ -1991,7 +1992,7 @@ def test_setup_repo_targeted_fetch_recovers_clone_timeout(monkeypatch) -> None:
     assert result["repo_context_status"] == "ready"
     assert result["fetch_fallback_used"] is True
     assert result["checkout_sha"] == "abc"
-    assert "fetch" in calls[3]
+    assert "fetch" in calls[4]  # shifted by the config-autocrlf step
     arm_d._cleanup_repo_dir(
         result["repo_dir"], tmp_root=os.path.dirname(result["repo_dir"])
     )
@@ -2003,6 +2004,7 @@ def test_setup_repo_targeted_fetch_recovers_clone_failure(monkeypatch) -> None:
     script = [
         _FakeCompletedProcess(128, stderr=b"early EOF"),  # clone fails
         _FakeCompletedProcess(0),                    # git init OK
+        _FakeCompletedProcess(0),                    # config autocrlf OK
         _FakeCompletedProcess(0),                    # remote add OK
         _FakeCompletedProcess(0),                    # targeted fetch OK
         _FakeCompletedProcess(0),                    # checkout --detach OK

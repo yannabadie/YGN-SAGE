@@ -293,7 +293,15 @@ def _targeted_fetch_init(
         shutil.rmtree(repo_dir, ignore_errors=True)
         os.makedirs(repo_dir, exist_ok=True)
         for step_name, argv, timeout_s in (
-            ("init", ["git", "init", repo_dir], _GIT_CHECKOUT_TIMEOUT_S),
+            # autocrlf=false: same EOL-fidelity rationale as the clone
+            # path (LF-as-committed, matching the graded Linux env).
+            ("init", ["git", "-c", "core.autocrlf=false", "init", repo_dir],
+             _GIT_CHECKOUT_TIMEOUT_S),
+            (
+                "config_autocrlf",
+                ["git", "-C", repo_dir, "config", "core.autocrlf", "false"],
+                _GIT_CHECKOUT_TIMEOUT_S,
+            ),
             (
                 "remote_add",
                 ["git", "-C", repo_dir, "remote", "add", "origin", repo_url],
@@ -388,7 +396,14 @@ def _setup_repo_for_canary(instance: dict[str, Any]) -> dict[str, Any]:
         clone_timed_out = False
         try:
             clone = subprocess.run(  # noqa: S603 — git is trusted; args validated above
-                ["git", "clone", "--no-tags", "--depth", "1", repo_url, repo_dir],
+                # core.autocrlf=false (GROUNDING replay discovery
+                # 2026-06-11): the default Windows autocrlf=true checks
+                # files out with CRLF while patches carry LF — git apply
+                # then rejects on EOL, diverging from the graded Linux
+                # environment. LF-as-committed keeps apply checks (and
+                # the bytes the grounded emitter sees) faithful.
+                ["git", "-c", "core.autocrlf=false", "clone", "--no-tags",
+                 "--depth", "1", repo_url, repo_dir],
                 capture_output=True,
                 timeout=_GIT_CLONE_TIMEOUT_S,
                 check=False,
