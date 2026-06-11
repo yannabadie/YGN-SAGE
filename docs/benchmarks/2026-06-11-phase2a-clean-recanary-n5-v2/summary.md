@@ -1,11 +1,28 @@
 # Clean re-canary N=5 — set v2, repair-mode reasoner (2026-06-11)
 
-**Decision: `GENERATION_VALID_GRADING_BLOCKED_NETWORK`** — the generation
-run is complete and gate-clean (**3/5 patches** on the health-screened v2
-set, all infra classes green); the Modal grading is BLOCKED at the current
-network location by reproducible gRPC stream resets and must be re-run
-from a clean network before any resolution verdict. The cgpro stop-rule
-CANNOT be evaluated yet (it needs real grades).
+**Decision: `CLEAN_ZERO_RESOLVED_PRODUCT_CLASS` — the cgpro "clean 0/5"
+arm is REACHED.** Real grades obtained via the new `remote-grading.yml`
+GitHub-runner workflow (run 27339674783) after the local network blocked
+Modal streams: **0/5 resolved, and for the first time EVERY failure is
+product-class, none plumbing**:
+
+| Instance | Graded verdict | Class |
+|---|---|---|
+| protonmail | **TEST_FAILED** (its first-ever patch APPLIED, tests RAN, f2p unresolved) | reasoning/patch quality |
+| NodeBB | **TEST_FAILED** (applied, tests ran, `AssertionError` in suite) | reasoning/patch quality |
+| teleport | BUILD_FAILED (count-mismatched patch broke the Go build; repair not-improved) | patch quality |
+| qutebrowser | EMPTY_PATCH | model (no patch) |
+| tutanota-db90 | EMPTY_PATCH | model (no patch) |
+
+Mechanical stop-rule (0/5 AND model-empties ≥3 AND no infra): **does NOT
+trigger** (model-empties = 2). The cgpro 2.b criterion "un 0/5 propre où
+les échecs restants sont réellement des échecs de raisonnement/test" is
+**satisfied** — the plumbing campaign is COMPLETE; the next decision
+(Phase 2.b arm A-vs-D vs product diagnosis of patch generation) is a
+cgpro/Yann strategy call, not an engineering blocker.
+
+Grading spend today (Modal, measured): $0.0939 across the blocked
+attempts + the successful GH-runner run.
 
 - **Frozen commit**: `9bd885ce20629bd18e7ca031ac48a08513361b33`
   (CI/Security/coherence/coverage/fuzz ALL green)

