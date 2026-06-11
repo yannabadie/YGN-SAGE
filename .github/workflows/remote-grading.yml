@@ -1,0 +1,80 @@
+# Remote SWE-bench Pro grading from a clean-egress GitHub runner.
+#
+# Why (2026-06-11): corporate middleboxes reset the long-lived gRPC/h2
+# streams the official grader holds against Modal sandboxes — two graded
+# runs were collection-blocked locally while short RPCs passed. GitHub
+# runners have clean egress; this workflow runs the UNMODIFIED official
+# grader there and ships the per-instance outputs back as an artifact
+# (plain HTTPS download survives any network).
+#
+# Inputs reference COMMITTED bundle paths (the canary pushes
+# grader_n5.csv + run/predictions.json before grading).
+#
+# Spend: the same Modal sandbox cost as local grading (~$0.01/instance);
+# runner minutes are free-tier. MODAL_TOKEN_ID/SECRET live in repo
+# secrets.
+name: remote-grading
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_dir:
+        description: "Committed bundle dir (contains grader_n5.csv + run/predictions.json)"
+        required: true
+        type: string
+      num_workers:
+        description: "Grader parallelism"
+        required: false
+        default: "3"
+        type: string
+      grader_commit:
+        description: "scaleapi/SWE-bench_Pro-os commit (preflight pin)"
+        required: false
+        default: "0c64e26f00b9c190432de7fc520c8ceed5c25518"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  grade:
+    name: Official Modal grading (clean egress)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
+      - uses: actions/setup-python@e348410e00f449ece8581cb8e88be8f0e7712da6 # v6
+        with:
+          python-version: "3.12"
+      - name: Clone official grader at the pinned commit
+        run: |
+          git clone https://github.com/scaleapi/SWE-bench_Pro-os.git grader
+          cd grader
+          git checkout ${{ inputs.grader_commit }}
+      - name: Install grader deps
+        run: pip install "modal>=1.0" "pandas>=1.5.0" "tqdm>=4.64.0"
+      - name: Run official grading on Modal
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+          PYTHONUTF8: "1"
+        run: |
+          cd grader
+          python swe_bench_pro_eval.py \
+            --raw_sample_path "${GITHUB_WORKSPACE}/${{ inputs.bundle_dir }}/grader_n5.csv" \
+            --patch_path "${GITHUB_WORKSPACE}/${{ inputs.bundle_dir }}/run/predictions.json" \
+            --output_dir "${GITHUB_WORKSPACE}/grading-output" \
+            --dockerhub_username jefzda \
+            --scripts_dir "${GITHUB_WORKSPACE}/grader/run_scripts" \
+            --num_workers ${{ inputs.num_workers }} \
+            --redo
+      - name: Summarize
+        run: |
+          echo "## eval_results" >> "$GITHUB_STEP_SUMMARY"
+          cat "${GITHUB_WORKSPACE}/grading-output/eval_results.json" >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: grading-output
+          path: grading-output/
+          retention-days: 30
+          if-no-files-found: error
