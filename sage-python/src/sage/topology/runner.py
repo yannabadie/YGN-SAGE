@@ -113,15 +113,9 @@ _CONTROLLER_THRESHOLD_BANDS = {"critical", "continue", "good"}
 _PLANNER_INJECTION_BUDGET = 2000
 
 
-_ARTIFACT_PROFILE_ENV = "SAGE_TASK_ARTIFACT_PROFILE"
-
-
-def _artifact_profile_active() -> bool:
-    """Verified task-profile gate for artifact-aware final selection
-    (cgpro DESIGN_LOCKED 2026-06-11 amendment #2): the override only
-    activates from an EXPLICIT operator/bench-set profile, never from an
-    LLM-inferred label. Detection itself stays universal."""
-    return os.environ.get(_ARTIFACT_PROFILE_ENV, "") == "unified_diff"
+from sage.patch_artifacts import (
+    artifact_profile_active as _artifact_profile_active,
+)
 
 
 def _is_sentinel(output: str) -> bool:

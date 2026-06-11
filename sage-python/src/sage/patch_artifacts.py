@@ -15,11 +15,23 @@ with body lines.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
+
+ARTIFACT_PROFILE_ENV = "SAGE_TASK_ARTIFACT_PROFILE"
+
+
+def artifact_profile_active() -> bool:
+    """Verified task-profile gate (cgpro DESIGN_LOCKED 2026-06-11
+    amendment #2): artifact-aware side-effects (final-output override,
+    emitter budget promotion) only activate from this EXPLICIT
+    operator/bench-set env var — never an LLM-inferred label."""
+    return os.environ.get(ARTIFACT_PROFILE_ENV, "") == "unified_diff"
+
 
 _FENCE_RE = re.compile(r"```(?:diff|patch)?\s*\n(.*?)```", re.DOTALL)
 _HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@", re.MULTILINE)

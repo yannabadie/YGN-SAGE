@@ -203,6 +203,8 @@ async def execute(
                 # Per-run AgentLoop instance - no shared mutable state. The
                 # factory propagates toolforge / evolution_memory /
                 # dangerous_tools (commit 9f7783cc).
+                from sage.patch_artifacts import artifact_profile_active
+
                 bypass_loop = create_bypass_agent_loop(
                     singleton=self._agent_loop,
                     llm_provider=selected_provider,
@@ -213,6 +215,11 @@ async def execute(
                     on_drift=on_drift_bypass,
                     run_frame_builder=run_frame_builder,
                     runtime_node_run_id=None,
+                    # F4: verified operator-set profile (env), never an
+                    # LLM-inferred label (cgpro DESIGN amendment #6).
+                    task_profile=(
+                        "unified_diff" if artifact_profile_active() else None
+                    ),
                 )
 
                 ctx.executed_model_id = active_model_id

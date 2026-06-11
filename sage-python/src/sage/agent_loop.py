@@ -16,6 +16,7 @@ from sage.memory.working import WorkingMemory
 from sage.memory.compressor import MemoryCompressor
 from sage.topology.kg_rlvr import ProcessRewardModel
 from sage.resilience import CircuitBreaker
+
 from sage.memory.relevance_gate import RelevanceGate
 from sage.monitoring.drift import DriftMonitor
 from sage.constants import (
@@ -45,6 +46,18 @@ from sage.agent_loop_utils import (  # noqa: F401
 )
 
 log = logging.getLogger(__name__)
+
+# F3 (cgpro DESIGN_LOCKED 2026-06-11): nudge injected on the forced
+# final turn — the LAST budgeted step when no content was produced yet.
+# Tools are disabled for that turn so the model cannot spend it on
+# another tool call (DESIGN trap #4).
+_FORCED_FINAL_NUDGE = (
+    "[system]: Your step budget is exhausted. Tool calls are DISABLED "
+    "for this final turn. Emit your complete final answer NOW as plain "
+    "content — if the task asked for a patch, output the full unified "
+    "diff; otherwise give your best-effort answer from what you have."
+)
+
 
 S2_MAX_RETRIES_BEFORE_ESCALATION = _S2_MAX_RETRIES_BEFORE_ESCALATION
 S2_AVR_MAX_ITERATIONS = _S2_AVR_MAX_ITERATIONS  # Max Act-Verify-Refine iterations per code block
@@ -459,6 +472,7 @@ class AgentLoop:
         result_text = ""
 
         # === Main loop: THINK -> ACT -> LEARN ===
+        self._forced_final_attempted = False
         while self.step_count < self.config.max_steps:
             self.step_count += 1
 
@@ -468,8 +482,34 @@ class AgentLoop:
                 if compressed:
                     messages = self._rebuild_messages(system_prompt)
 
+            # F3 forced-final turn (cgpro DESIGN_LOCKED 2026-06-11): the
+            # LAST budgeted step with no content yet runs with tools
+            # DISABLED + an explicit emit-now nudge. MINI_2B: 4/10 tasks
+            # ended as "[sage: agent exited after N steps with no
+            # content]" because the loop exited silently on budget
+            # exhaustion without ever forcing an answer.
+            _forced_final_turn = (
+                self.step_count >= self.config.max_steps and not result_text
+            )
+            if _forced_final_turn and not self._forced_final_attempted:
+                self._forced_final_attempted = True
+                messages.append(
+                    Message(role=Role.USER, content=_FORCED_FINAL_NUDGE)
+                )
+                log.warning(
+                    "[%s] forced final turn at step %d/%d — tools disabled, "
+                    "emit-now nudge injected",
+                    self.config.name, self.step_count, self.config.max_steps,
+                )
+
             # === THINK ===
-            t_result = await think(task, messages, system_prompt, tool_defs, self)
+            t_result = await think(
+                task,
+                messages,
+                system_prompt,
+                [] if _forced_final_turn else tool_defs,
+                self,
+            )
 
             if t_result.loop_action == "break":
                 # Topology result used — skip to final LEARN
@@ -547,6 +587,25 @@ class AgentLoop:
                 self._consecutive_tool_steps = 0
 
             _stall_cap = int(getattr(self.config, "stall_after_tool_steps", 0) or 0)
+            if (
+                _stall_cap > 0
+                and self._consecutive_tool_steps >= _stall_cap
+                and not result_text
+                and not self._forced_final_attempted
+                and self.step_count < self.config.max_steps
+            ):
+                # F3: don't bail yet — burn the remaining budget down to
+                # ONE last step so the next iteration runs the forced
+                # no-tool final turn. Internal to the node loop; does NOT
+                # add a debate round (DESIGN trap #4).
+                log.warning(
+                    "[%s] stall at step %d/%d — redirecting to forced "
+                    "final turn instead of early exhaustion",
+                    self.config.name, self.step_count, self.config.max_steps,
+                )
+                self.step_count = self.config.max_steps - 1
+                await self._maybe_run_consolidation()
+                continue
             if _stall_cap > 0 and self._consecutive_tool_steps >= _stall_cap:
                 log.warning(
                     "[%s] stall detected: %d consecutive tool steps with no "

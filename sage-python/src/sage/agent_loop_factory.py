@@ -140,6 +140,23 @@ def create_node_agent_loop(
     else:
         node_max_steps = 5
 
+    # F3 (cgpro DESIGN_LOCKED 2026-06-11): emitter/sink roles are
+    # emission-critical; on artifact-profile tasks the S1 budget of 5
+    # steps starves them (MINI_2B forensics: sentinel finals on 4/10).
+    # Promote to the S2 budget. Gated by the VERIFIED operator-set
+    # profile — non-patch tasks keep the S1 budget unchanged.
+    from sage.patch_artifacts import artifact_profile_active
+
+    if (
+        artifact_profile_active()
+        and node_max_steps < 10
+        and any(
+            r in role_lower
+            for r in ("format", "output", "aggregat", "synth")
+        )
+    ):
+        node_max_steps = 10
+
     # D8 soft-cap (2026-04-18 audit) — revised four times on empirical
     # smoke results:
     #   Rev 1 (max_steps//2): 0/5 real, coder bailed at 5/10.
@@ -212,6 +229,20 @@ def create_node_agent_loop(
     return loop
 
 
+_PATCH_PROFILE_BYPASS_PROMPT = """You are a senior software engineer \
+fixing a real bug in the repository checked out at your current working \
+directory.
+
+Workflow: use read_file / search_repo / list_files to locate and read the \
+relevant code FIRST, then emit the fix.
+
+STRICT OUTPUT CONTRACT (your FINAL message):
+- Output ONLY a unified diff (```diff fenced or raw) — no commentary.
+- Use a/ and b/ path prefixes; context lines MUST match the real file \
+content byte-for-byte; correct @@ hunk headers.
+- Minimal change that fixes the bug."""
+
+
 def create_bypass_agent_loop(
     *,
     singleton: AgentLoop,
@@ -223,6 +254,7 @@ def create_bypass_agent_loop(
     on_drift: Any = None,
     run_frame_builder: Any | None = None,
     runtime_node_run_id: str | None = None,
+    task_profile: str | None = None,
 ) -> AgentLoop:
     """Per-run AgentLoop for the single-agent bypass path (P6-A Phase A).
 
@@ -311,6 +343,15 @@ def create_bypass_agent_loop(
     # the same formula by design.
     max_steps = {1: 5, 2: 10, 3: 20}.get(system_level, 10)
 
+    # F4 (cgpro DESIGN_LOCKED 2026-06-11 amendment #6): single-node /
+    # bypass runs on patch-shaped tasks get the patch-focused emitter
+    # prompt + the S2 step floor. Activated ONLY by the explicit
+    # task_profile arg (verified operator channel) — absent profile
+    # keeps the generic singleton prompt, backward-compatible.
+    _patch_profile = task_profile == "unified_diff"
+    if _patch_profile and max_steps < 10:
+        max_steps = 10
+
     # D8 stall cap mirrors agent_loop_factory.py:155-158.
     stall_after_tool_steps = max_steps - 1 if max_steps > 5 else 0
 
@@ -321,7 +362,11 @@ def create_bypass_agent_loop(
     config = AgentConfig(
         name=base_config.name,
         llm=llm_config,
-        system_prompt=base_config.system_prompt,
+        system_prompt=(
+            _PATCH_PROFILE_BYPASS_PROMPT
+            if _patch_profile
+            else base_config.system_prompt
+        ),
         max_steps=max_steps,
         tools=base_config.tools,  # tool name list, shared
         use_docker_sandbox=base_config.use_docker_sandbox,
