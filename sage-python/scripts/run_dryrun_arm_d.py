@@ -1751,9 +1751,15 @@ def _provider_gate(
         for summary in summaries
         if (
             # RESOLUTION_UNBLOCKERS (2026-06-10): a fail-closed repo skip
-            # never executed anything — nothing to audit. Executed tasks
-            # without provider/model attribution still trip the gate.
-            not summary.get("generation_skipped")
+            # never executed anything — nothing to audit. cgpro VERIFY
+            # 2026-06-11 Q2 tightening: the exemption holds ONLY when the
+            # skip carries ZERO execution evidence and ZERO observed cost;
+            # executed tasks without attribution still trip the gate.
+            not (
+                summary.get("generation_skipped")
+                and not summary.get("_execution_model_ids")
+                and not summary.get("_observed_event_cost_usd")
+            )
             and not summary.get("_provider_policy_failure_seen")
             and (not summary.get("provider_final") or not summary.get("model_id_final"))
         )
@@ -2026,7 +2032,24 @@ def _build_repair_llm() -> Any:
     config = ModelRouter.get_config(tier="budget")
     model_id = config.model
     provider_name = get_provider_for_model(model_id) or config.provider
-    return PydanticAIProvider(provider_name, model_id)
+    return PydanticAIProvider(provider_name, model_id), provider_name, model_id
+
+
+class _RepairUsageRecorder:
+    """Pass-through LLM proxy recording response usage for the audit trail
+    (cgpro VERIFY 2026-06-11: the repair LLM is a provider spend channel —
+    it must be visible as cost/usage, not a silent side call)."""
+
+    def __init__(self, inner: Any) -> None:
+        self._inner = inner
+        self.usage: dict[str, Any] | None = None
+
+    async def generate(self, *args: Any, **kwargs: Any) -> Any:
+        response = await self._inner.generate(*args, **kwargs)
+        usage = getattr(response, "usage", None)
+        if isinstance(usage, dict):
+            self.usage = dict(usage)
+        return response
 
 
 async def _repair_patch_with_feedback(
@@ -2037,6 +2060,8 @@ async def _repair_patch_with_feedback(
     instance_id: str,
     repair_budget_usd: float,
     llm_factory: Any = None,
+    provider_allowlist: tuple[str, ...] = (),
+    provider_denylist: tuple[str, ...] = (),
 ) -> tuple[str, dict[str, Any], dict[str, Any]]:
     """Canary-side repair chain (RESOLUTION_UNBLOCKERS criteria 3-4).
 
@@ -2048,13 +2073,17 @@ async def _repair_patch_with_feedback(
        (``_fix_hunk_header_counts``), free, then re-verify;
     3. surviving content-class mismatches → ONE LLM repair pass
        (``repair_with_verifier_feedback``) under ``repair_budget_usd``,
-       then re-verify (a repaired patch is never adopted unverified);
-    4. every terminal state is an explicit stage string.
+       policy-checked against the canary provider allow/denylists and
+       usage-recorded (audited spend channel), then re-verify;
+    4. ADOPTION IS CLEAN-STRICT (cgpro VERIFY 2026-06-11 Q1): the patch
+       sent to the grader is replaced ONLY when the final verification is
+       ``outcome == "clean"`` — for the mechanical recount as for the LLM
+       pass. Anything less keeps the ORIGINAL patch; the attempt stays
+       visible as ``_diff_verifier_outcome_post_repair`` telemetry.
 
-    Returns ``(final_patch, repair_meta, final_annotation)`` where
-    ``repair_meta`` carries ``_verifier_repair_stage``,
-    ``_verifier_repair_budget_usd`` and
-    ``_diff_verifier_outcome_pre_repair``.
+    ``llm_factory`` returns ``(llm, provider_name, model_id)``.
+
+    Returns ``(final_patch, repair_meta, final_annotation)``.
     """
     from sage.bench.swebench_diff_verifier import (
         repair_with_verifier_feedback,
@@ -2070,6 +2099,10 @@ async def _repair_patch_with_feedback(
         "_verifier_repair_stage": "repair_not_needed",
         "_verifier_repair_budget_usd": repair_budget_usd,
         "_diff_verifier_outcome_pre_repair": None,
+        "_diff_verifier_outcome_post_repair": None,
+        "_verifier_repair_provider": None,
+        "_verifier_repair_model": None,
+        "_verifier_repair_usage": None,
     }
     try:
         result, annotation = _verify(patch)
@@ -2088,8 +2121,25 @@ async def _repair_patch_with_feedback(
     if not result.mismatches and not has_count_reason:
         return patch, meta, annotation
 
+    original_patch = patch
+    original_annotation = annotation
     meta["_diff_verifier_outcome_pre_repair"] = annotation["_diff_verifier_outcome"]
     work = patch
+
+    def _finalize() -> tuple[str, dict[str, Any], dict[str, Any]]:
+        """Clean-strict adoption: replace the grader-bound patch ONLY when
+        the final verification of the repaired work is 'clean'."""
+        meta["_diff_verifier_outcome_post_repair"] = annotation[
+            "_diff_verifier_outcome"
+        ]
+        if work != original_patch and annotation["_diff_verifier_outcome"] == "clean":
+            return work, meta, annotation
+        if meta["_verifier_repair_stage"] in {
+            "mechanical_counts_fix",
+            "verifier_repair",
+        }:
+            meta["_verifier_repair_stage"] = "verifier_repair_not_improved"
+        return original_patch, meta, original_annotation
 
     if has_count_reason:
         fixed = _fix_hunk_header_counts(work)
@@ -2104,20 +2154,32 @@ async def _repair_patch_with_feedback(
                     instance_id, exc,
                 )
                 meta["_verifier_repair_stage"] = "repair_verifier_crashed"
-                return work, meta, annotation
+                return original_patch, meta, original_annotation
 
     if result.mismatches:
         if repair_budget_usd <= 0.0:
             meta["_verifier_repair_stage"] = "repair_skipped_budget_exhausted"
-            return work, meta, annotation
+            return _finalize()
         try:
-            llm = (llm_factory or _build_repair_llm)()
+            llm, repair_provider, repair_model = (
+                llm_factory or _build_repair_llm
+            )()
         except Exception as exc:  # noqa: BLE001 - missing keys/deps must not kill the task
             log.warning("[%s] repair LLM unavailable: %s", instance_id, exc)
             meta["_verifier_repair_stage"] = "repair_llm_unavailable"
-            return work, meta, annotation
+            return _finalize()
+        meta["_verifier_repair_provider"] = repair_provider
+        meta["_verifier_repair_model"] = repair_model
+        # cgpro VERIFY 2026-06-11 edit 2: the repair LLM is a provider
+        # spend — it obeys the SAME allow/denylists as the run.
+        if (repair_provider in set(provider_denylist)) or (
+            provider_allowlist and repair_provider not in set(provider_allowlist)
+        ):
+            meta["_verifier_repair_stage"] = "repair_llm_provider_blocked"
+            return _finalize()
+        recorder = _RepairUsageRecorder(llm)
         new_patch, stage = await repair_with_verifier_feedback(
-            llm,
+            recorder,
             problem_statement,
             work,
             list(result.mismatches),
@@ -2125,6 +2187,7 @@ async def _repair_patch_with_feedback(
             repair_budget_usd=repair_budget_usd,
         )
         meta["_verifier_repair_stage"] = stage
+        meta["_verifier_repair_usage"] = recorder.usage
         if stage == "verifier_repair" and new_patch:
             try:
                 _, post_annotation = _verify(new_patch)
@@ -2133,29 +2196,11 @@ async def _repair_patch_with_feedback(
                     "[%s] re-verify after LLM repair crashed: %s",
                     instance_id, exc,
                 )
-                return work, meta, annotation
-            # Adopt only when re-verification confirms improvement
-            # (research trap: fuzzy/LLM repairs can mis-place hunks —
-            # never count a patch repaired without re-running the
-            # verifier). Review MAJOR 2026-06-10: a structurally broken
-            # reply (e.g. not_unified_diff) verifies with ZERO mismatches
-            # and would win the naive count comparison — reject any
-            # structural-class outcome outright.
-            post_outcome = post_annotation["_diff_verifier_outcome"]
-            structurally_broken = post_outcome in {
-                "not_unified_diff",
-                "malformed_hunk_header",
-                "hunk_body_count_mismatch",
-                "unsupported_no_opinion",
-            }
-            if not structurally_broken and len(
-                post_annotation["_diff_verifier_mismatches"] or []
-            ) < len(annotation["_diff_verifier_mismatches"] or []):
-                return new_patch, meta, post_annotation
-            meta["_verifier_repair_stage"] = "verifier_repair_not_improved"
-            return work, meta, annotation
+                return _finalize()
+            work = new_patch
+            annotation = post_annotation
 
-    return work, meta, annotation
+    return _finalize()
 
 
 def _timeout_task_result(
@@ -2289,6 +2334,25 @@ def _timeout_task_result(
         "summary": summary,
         "record": fmt_module.format_patch(instance_id, "", prefix=prefix),
     }
+
+
+def _count_empty_patches(
+    summaries: list[dict[str, Any]],
+) -> tuple[int, int, int]:
+    """``(total, infra, model)`` empty-patch counts (cgpro Q3 2026-06-11):
+    infra = fail-closed repo skips (``patch_empty_reason ==
+    'repo_unavailable'``), model = every other empty patch. Repo skips stay
+    in the total — a run with several dead repos must not scale up — but
+    the split lets the N=50 decision re-classify on the non-infra
+    threshold."""
+    total = sum(1 for s in summaries if not s.get("extracted_patch_present"))
+    infra = sum(
+        1
+        for s in summaries
+        if not s.get("extracted_patch_present")
+        and s.get("patch_empty_reason") == "repo_unavailable"
+    )
+    return total, infra, total - infra
 
 
 def _repo_unavailable_task_result(
@@ -2596,6 +2660,8 @@ async def _run_one_task(
                         ),
                         instance_id=instance_id,
                         repair_budget_usd=repair_budget_usd,
+                        provider_allowlist=provider_allowlist,
+                        provider_denylist=provider_denylist,
                     )
                 )
         finally:
@@ -2689,6 +2755,14 @@ async def _run_one_task(
             "_diff_verifier_outcome_pre_repair": repair_meta[
                 "_diff_verifier_outcome_pre_repair"
             ],
+            "_diff_verifier_outcome_post_repair": repair_meta.get(
+                "_diff_verifier_outcome_post_repair"
+            ),
+            "_verifier_repair_provider": repair_meta.get(
+                "_verifier_repair_provider"
+            ),
+            "_verifier_repair_model": repair_meta.get("_verifier_repair_model"),
+            "_verifier_repair_usage": repair_meta.get("_verifier_repair_usage"),
             "_diff_verifier_mismatches": diff_verifier_annotation[
                 "_diff_verifier_mismatches"
             ],
@@ -2890,9 +2964,13 @@ async def run(
         "patches_extracted": sum(
             1 for s in summaries if s["extracted_patch_present"]
         ),
-        "patches_empty": sum(
-            1 for s in summaries if not s["extracted_patch_present"]
-        ),
+        "patches_empty": _count_empty_patches(summaries)[0],
+        # cgpro VERIFY 2026-06-11 Q3: repo-skips STAY in patches_empty
+        # (a run with several dead repos must not scale to N=50/2.b), but
+        # the reporting splits infra from model-quality so the N=50
+        # decision can re-classify on the non-infra threshold.
+        "patches_empty_infra": _count_empty_patches(summaries)[1],
+        "patches_empty_model": _count_empty_patches(summaries)[2],
         "task_summaries": summaries,
     }
     evidence_items = [

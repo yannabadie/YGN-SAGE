@@ -134,8 +134,12 @@ exit criteria before any re-canary:
 - [ ] repair path actually invoked in the canary (not env-only)
 - [ ] `hunk_body_count_mismatch` ⇒ actionable repair feedback or explicit
       non-repairable outcome
-- [ ] `first_compiler_error` / `first_test_error` captured per instance and
-      fed to the repair loop alongside verifier feedback
+- [ ] `first_compiler_error` / `first_test_error` captured per instance —
+      **scope note (cgpro VERIFY 2026-06-11 edit 3)**: these are
+      POST-GRADER advisory fields (extracted by
+      `swebench_pro_post_grader_parse.py`), inputs to a FUTURE
+      grading-feedback regenerate loop; the generation-time repair chain
+      of this block consumes diff-verifier feedback only
 - [ ] all negative grading cases write machine-readable output
 
 Then: re-canary N=5 (paid, same sha-pinned instances, ~$0.50, fresh GO

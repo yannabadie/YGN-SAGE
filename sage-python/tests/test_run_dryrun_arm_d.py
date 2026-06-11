@@ -3198,7 +3198,7 @@ def test_repair_chain_llm_repairs_content_mismatch(tmp_path) -> None:
             problem_statement="fix y",
             instance_id="t-content",
             repair_budget_usd=0.5,
-            llm_factory=lambda: llm,
+            llm_factory=lambda: (llm, "deepseek", "deepseek-v4-flash"),
         )
     )
     assert llm.calls == 1
@@ -3230,7 +3230,7 @@ def test_repair_chain_non_repairable_is_explicit(tmp_path) -> None:
             problem_statement="fix y",
             instance_id="t-bad",
             repair_budget_usd=0.5,
-            llm_factory=lambda: llm,
+            llm_factory=lambda: (llm, "deepseek", "deepseek-v4-flash"),
         )
     )
     assert meta["_verifier_repair_stage"] == "verifier_repair_empty"
@@ -3347,9 +3347,211 @@ def test_repair_adoption_rejects_structurally_broken_llm_patch(tmp_path) -> None
             problem_statement="fix y",
             instance_id="t-structural",
             repair_budget_usd=0.5,
-            llm_factory=lambda: llm,
+            llm_factory=lambda: (llm, "deepseek", "deepseek-v4-flash"),
         )
     )
     assert final_patch == broken
     assert meta["_verifier_repair_stage"] == "verifier_repair_not_improved"
     assert annotation["_diff_verifier_mismatches"]
+
+
+# ---------------------------------------------------------------------------
+# cgpro VERIFY EDIT_REQUIRED (2026-06-11) — clean-strict adoption + audited
+# repair LLM channel + tightened gate exemption
+# ---------------------------------------------------------------------------
+
+def test_repair_adoption_requires_clean_outcome(tmp_path) -> None:
+    """cgpro Q1: adopt a repaired patch ONLY when post-repair verification
+    is outcome=='clean'. A partial improvement (2 mismatches -> 1) keeps the
+    ORIGINAL patch; the attempt stays visible as telemetry."""
+    (tmp_path / "mod.py").write_text("x = 10\ny = 20\nz = 30\n", encoding="utf-8")
+    (tmp_path / "other.py").write_text("k = 1\nl = 2\nm = 3\n", encoding="utf-8")
+    broken = (
+        "--- a/mod.py\n"
+        "+++ b/mod.py\n"
+        "@@ -1,3 +1,3 @@\n"
+        " a = 1\n"
+        "-b = 2\n"
+        "+b = 5\n"
+        " c = 3\n"
+        "--- a/other.py\n"
+        "+++ b/other.py\n"
+        "@@ -1,3 +1,3 @@\n"
+        " wrong = 0\n"
+        "-also = 0\n"
+        "+also = 9\n"
+        " still = 0\n"
+    )
+    half_fixed = (
+        "--- a/mod.py\n"
+        "+++ b/mod.py\n"
+        "@@ -1,3 +1,3 @@\n"
+        " x = 10\n"
+        "-y = 20\n"
+        "+y = 50\n"
+        " z = 30\n"
+        "--- a/other.py\n"
+        "+++ b/other.py\n"
+        "@@ -1,3 +1,3 @@\n"
+        " wrong = 0\n"
+        "-also = 0\n"
+        "+also = 9\n"
+        " still = 0\n"
+    )
+    llm = _FakeCanaryRepairLLM(reply=half_fixed)
+    final_patch, meta, annotation = asyncio.run(
+        arm_d._repair_patch_with_feedback(
+            patch=broken,
+            repo_dir=str(tmp_path),
+            problem_statement="fix",
+            instance_id="t-partial",
+            repair_budget_usd=0.5,
+            llm_factory=lambda: (llm, "deepseek", "deepseek-v4-flash"),
+        )
+    )
+    assert final_patch == broken
+    assert meta["_verifier_repair_stage"] == "verifier_repair_not_improved"
+    assert meta["_diff_verifier_outcome_post_repair"] is not None
+    assert len(annotation["_diff_verifier_mismatches"]) == 2
+
+
+def test_mechanical_fix_alone_not_clean_keeps_original(tmp_path) -> None:
+    """cgpro Q1 'mecanique comme LLM': a counts recount that does not reach
+    outcome=='clean' must not replace the patch sent to the grader."""
+    (tmp_path / "mod.py").write_text("x = 10\ny = 20\nz = 30\n", encoding="utf-8")
+    broken = (
+        "--- a/mod.py\n"
+        "+++ b/mod.py\n"
+        "@@ -1,2 +1,2 @@\n"
+        " a = 1\n"
+        "-b = 2\n"
+        "+b = 5\n"
+        " c = 3\n"
+    )
+
+    def _no_llm():
+        raise AssertionError("no LLM with zero budget")
+
+    final_patch, meta, annotation = asyncio.run(
+        arm_d._repair_patch_with_feedback(
+            patch=broken,
+            repo_dir=str(tmp_path),
+            problem_statement="fix",
+            instance_id="t-mech-dirty",
+            repair_budget_usd=0.0,
+            llm_factory=_no_llm,
+        )
+    )
+    assert final_patch == broken
+    assert meta["_verifier_repair_stage"] == "repair_skipped_budget_exhausted"
+    assert meta["_diff_verifier_outcome_post_repair"] is not None
+
+
+def test_repair_llm_provider_blocked_by_policy(tmp_path) -> None:
+    """cgpro edit 2: the repair LLM is a provider spend — it must obey the
+    canary allowlist/denylist. A blocked provider means NO call and an
+    explicit stage."""
+    (tmp_path / "mod.py").write_text("x = 10\ny = 20\nz = 30\n", encoding="utf-8")
+    broken = (
+        "--- a/mod.py\n"
+        "+++ b/mod.py\n"
+        "@@ -1,3 +1,3 @@\n"
+        " a = 1\n"
+        "-b = 2\n"
+        "+b = 5\n"
+        " c = 3\n"
+    )
+    llm = _FakeCanaryRepairLLM(reply="anything")
+    final_patch, meta, annotation = asyncio.run(
+        arm_d._repair_patch_with_feedback(
+            patch=broken,
+            repo_dir=str(tmp_path),
+            problem_statement="fix",
+            instance_id="t-blocked",
+            repair_budget_usd=0.5,
+            llm_factory=lambda: (llm, "openai", "gpt-5.4"),
+            provider_allowlist=("google", "deepseek"),
+            provider_denylist=("openai",),
+        )
+    )
+    assert llm.calls == 0
+    assert meta["_verifier_repair_stage"] == "repair_llm_provider_blocked"
+    assert final_patch == broken
+
+
+def test_repair_meta_records_provider_model_usage(tmp_path) -> None:
+    """cgpro edit 2: the repair spend channel is auditable — provider,
+    model and usage tokens land in the meta."""
+    (tmp_path / "mod.py").write_text("x = 10\ny = 20\nz = 30\n", encoding="utf-8")
+    broken = (
+        "--- a/mod.py\n"
+        "+++ b/mod.py\n"
+        "@@ -1,3 +1,3 @@\n"
+        " a = 1\n"
+        "-b = 2\n"
+        "+b = 5\n"
+        " c = 3\n"
+    )
+    repaired = (
+        "--- a/mod.py\n"
+        "+++ b/mod.py\n"
+        "@@ -1,3 +1,3 @@\n"
+        " x = 10\n"
+        "-y = 20\n"
+        "+y = 50\n"
+        " z = 30\n"
+    )
+    llm = _FakeCanaryRepairLLM(reply=repaired)
+    final_patch, meta, annotation = asyncio.run(
+        arm_d._repair_patch_with_feedback(
+            patch=broken,
+            repo_dir=str(tmp_path),
+            problem_statement="fix",
+            instance_id="t-audit",
+            repair_budget_usd=0.5,
+            llm_factory=lambda: (llm, "deepseek", "deepseek-v4-flash"),
+            provider_allowlist=("google", "deepseek"),
+        )
+    )
+    assert meta["_verifier_repair_provider"] == "deepseek"
+    assert meta["_verifier_repair_model"] == "deepseek-v4-flash"
+    assert meta["_verifier_repair_usage"] == {"input_tokens": 100, "output_tokens": 50}
+    assert meta["_verifier_repair_stage"] == "verifier_repair"
+    assert "y = 50" in final_patch
+
+
+def test_provider_gate_skip_exemption_requires_no_execution() -> None:
+    """cgpro Q2: the generation_skipped exemption holds ONLY with zero LLM
+    execution evidence and zero observed cost — a 'skipped' summary that
+    somehow carries execution evidence still trips the missing check."""
+    fake_skip_with_execution = {
+        "instance_id": "weird",
+        "generation_skipped": True,
+        "provider_final": None,
+        "model_id_final": None,
+        "_execution_model_ids": ["deepseek-v4-flash"],
+        "_observed_event_cost_usd": 0.01,
+    }
+    gate = arm_d._provider_gate(
+        [fake_skip_with_execution],
+        mock=False,
+        provider_allowlist=("google", "deepseek"),
+        provider_denylist=(),
+    )
+    assert gate["status"] == "NO_GO"
+    assert gate["missing_provider_or_model"] == ["weird"]
+
+
+def test_count_empty_patches_split_infra_vs_model() -> None:
+    """cgpro Q3: keep repo-skips in patches_empty_total but report the
+    infra/model split."""
+    summaries = [
+        {"extracted_patch_present": True},
+        {"extracted_patch_present": False, "patch_empty_reason": "repo_unavailable"},
+        {"extracted_patch_present": False},
+        {"extracted_patch_present": False, "patch_empty_reason": "repo_unavailable"},
+    ]
+    total, infra, model = arm_d._count_empty_patches(summaries)
+    assert total == 3
+    assert infra == 2
+    assert model == 1
