@@ -60,6 +60,10 @@ class PipelineContext:
     tool_turn_count: int = 0
     executed_commands: list[str] = field(default_factory=list)
     executed_tools: list[str] = field(default_factory=list)
+    # G1 GroundingEnvelope telemetry (cgpro GROUNDING DESIGN_LOCKED
+    # 2026-06-11): localizer_valid_paths / dropped / truncated_files /
+    # file_count / total_bytes / skipped_reason, set by the bypass path.
+    grounding_telemetry: "Mapping[str, Any] | None" = None
     cost_tracker: Any = None
     oracle_verdict: "OracleVerdict | None" = None
     bench_result: "Mapping[str, Any] | None" = None

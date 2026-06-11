@@ -923,6 +923,48 @@ class TopologyRunner:
 
         return [(t, r) for t, r, _ in deduplicated]
 
+    async def _ensure_grounding_block(self, task: str) -> str:
+        """Build the G1 GroundingEnvelope ONCE per run (lazy, cached).
+
+        repo_dir is the runtime cwd (the canary spawns the SAGE CLI with
+        cwd=worktree); without a git checkout there, grounding is
+        skipped. The localizer uses the runner's base provider — one
+        light call per run, shared by every emitter node."""
+        cached = getattr(self, "_grounding_block_cache", None)
+        if cached is not None:
+            return cached
+        self._grounding_block_cache = ""
+        self.last_grounding_telemetry: dict | None = None
+        import os as _os
+
+        from sage.grounding import build_grounding_block
+        from sage.patch_artifacts import artifact_profile_active
+
+        repo_dir = _os.getcwd()
+        if not artifact_profile_active() or not _os.path.isdir(
+            _os.path.join(repo_dir, ".git")
+        ):
+            return ""
+        try:
+            block, telemetry = await build_grounding_block(
+                repo_dir, task, self._llm
+            )
+        except Exception as exc:  # noqa: BLE001 - grounding is best-effort
+            log.warning("topology.runner: grounding build failed: %s", exc)
+            return ""
+        self._grounding_block_cache = block
+        self.last_grounding_telemetry = telemetry
+        log.info(
+            "topology.runner: grounding %s (files=%s, dropped=%s, "
+            "truncated=%s)",
+            "attached" if block else
+            f"skipped ({telemetry.get('skipped_reason')})",
+            telemetry.get("localizer_valid_paths"),
+            telemetry.get("localizer_dropped_paths"),
+            telemetry.get("grounding_truncated_files"),
+        )
+        return block
+
     async def _execute_node_via_agent_loop(
         self,
         node_idx: int,
@@ -1061,6 +1103,19 @@ class TopologyRunner:
             sections.append(f"## StateCore frame:\n{state_block}")
         sections.append(f"## Task:\n{task}" if sections else task)
         full_task = "\n\n".join(sections)
+
+        # G1 GroundingEnvelope (cgpro GROUNDING DESIGN_LOCKED 2026-06-11):
+        # emitter-class nodes get the verbatim localized file bytes as a
+        # dedicated section ahead of the task — composed fresh here, so
+        # it is structurally EXEMPT from predecessor truncation, the
+        # similarity dedup and S-MMU compression. Non-emitters (planner /
+        # verifier / synthesizer) never receive the FILE blocks.
+        from sage.grounding import compose_grounded_task, is_emitter_role
+
+        if is_emitter_role(role):
+            grounding_block = await self._ensure_grounding_block(task)
+            if grounding_block:
+                full_task = compose_grounded_task(grounding_block, full_task)
 
         # Execute. Before Apr 18 2026 the agent-loop path had no provider
         # circuit-breaker wiring: if the per-node loop raised because of

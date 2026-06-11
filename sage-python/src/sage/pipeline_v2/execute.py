@@ -224,7 +224,33 @@ async def execute(
 
                 ctx.executed_model_id = active_model_id
                 ctx.executed_template = "single_agent"
-                ctx.result = await bypass_loop.run(ctx.task)
+                # G1 GroundingEnvelope for the bypass emitter (cgpro
+                # GROUNDING DESIGN_LOCKED 2026-06-11): verbatim localized
+                # file bytes ahead of the task; compose_grounded_task's
+                # marker guard prevents bypass/topology double-injection.
+                bypass_task = ctx.task
+                if artifact_profile_active():
+                    import os as _os
+
+                    from sage.grounding import (
+                        build_grounding_block,
+                        compose_grounded_task,
+                    )
+
+                    _repo_dir = _os.getcwd()
+                    if _os.path.isdir(_os.path.join(_repo_dir, ".git")):
+                        try:
+                            _g_block, _g_tel = await build_grounding_block(
+                                _repo_dir, ctx.task, selected_provider
+                            )
+                        except Exception:  # noqa: BLE001 - best-effort
+                            _g_block, _g_tel = "", {}
+                        if _g_block:
+                            bypass_task = compose_grounded_task(
+                                _g_block, ctx.task
+                            )
+                        ctx.grounding_telemetry = _g_tel
+                ctx.result = await bypass_loop.run(bypass_task)
                 ctx.cost = bypass_loop.total_cost_usd
                 ctx.tool_call_count = getattr(bypass_loop, "tool_call_count", 0)
                 ctx.tool_turn_count = getattr(bypass_loop, "tool_turn_count", 0)
