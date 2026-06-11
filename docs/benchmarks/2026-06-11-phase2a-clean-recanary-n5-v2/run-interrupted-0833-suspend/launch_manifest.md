@@ -35,8 +35,7 @@ context, or a cheap ungraded mini Arm-A-vs-D).
 
 | Parameter | Value |
 |-----------|-------|
-| Commit SHA | `9bd885ce20629bd18e7ca031ac48a08513361b33` |
-| Relaunch note | First v2 attempt (frozen `97fff357`) was killed mid-task-3 by Windows Modern Standby (~$0.16 partial spend, archived at `run-interrupted-0833-suspend/`); this refreeze adds the keep-awake guard + `--repair-timeout-s 180` (reasoner repair timed out at the budget-derived 60s in the partial) |
+| Commit SHA | `97fff357115a7f14e02a39dfe30ac97bd32460cd` |
 | Dataset | SWE-bench Pro test split; **set v2** (health-screened) — 5 records via `--limit 5` from `docs/benchmarks/phase2a-n5-v2-instances/instances.json` (sha256 `35ddf390…`; v1 file at `docs/benchmarks/2026-05-11-canary-n5-graded/instances/instances.json` retired for resolution metrics after the tutanota-219 baseline failure) |
 | Seed | 42 |
 | Provider allowlist | `google`, `deepseek` |

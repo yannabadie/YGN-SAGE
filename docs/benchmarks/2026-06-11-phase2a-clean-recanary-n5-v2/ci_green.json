@@ -1,0 +1,54 @@
+{
+ "schema_version": "ygn_sage_ci_green_artifact_v0",
+ "head_sha": "9bd885ce20629bd18e7ca031ac48a08513361b33",
+ "commit": "9bd885ce20629bd18e7ca031ac48a08513361b33",
+ "branch": "main",
+ "status": "success",
+ "conclusion": "success",
+ "source": "github_actions",
+ "generated_at_utc": "2026-06-11T08:51:21.788211Z",
+ "workflow_runs": [
+  {
+   "workflow_name": "CI",
+   "workflow_run_id": 27331985138,
+   "workflow_run_url": "https://github.com/yannabadie/YGN-SAGE/actions/runs/27331985138",
+   "conclusion": "success",
+   "created_at_utc": "2026-06-11T07:47:08Z"
+  },
+  {
+   "workflow_name": "Doc counters coherence",
+   "workflow_run_id": 27331985098,
+   "workflow_run_url": "https://github.com/yannabadie/YGN-SAGE/actions/runs/27331985098",
+   "conclusion": "success",
+   "created_at_utc": "2026-06-11T07:47:08Z"
+  },
+  {
+   "workflow_name": "Security",
+   "workflow_run_id": 27331985116,
+   "workflow_run_url": "https://github.com/yannabadie/YGN-SAGE/actions/runs/27331985116",
+   "conclusion": "success",
+   "created_at_utc": "2026-06-11T07:47:08Z"
+  },
+  {
+   "workflow_name": "Strict current.json coherence",
+   "workflow_run_id": 27331985113,
+   "workflow_run_url": "https://github.com/yannabadie/YGN-SAGE/actions/runs/27331985113",
+   "conclusion": "success",
+   "created_at_utc": "2026-06-11T07:47:08Z"
+  },
+  {
+   "workflow_name": "fuzz-smoke",
+   "workflow_run_id": 27331985101,
+   "workflow_run_url": "https://github.com/yannabadie/YGN-SAGE/actions/runs/27331985101",
+   "conclusion": "success",
+   "created_at_utc": "2026-06-11T07:47:08Z"
+  },
+  {
+   "workflow_name": "rust-core-coverage",
+   "workflow_run_id": 27331985090,
+   "workflow_run_url": "https://github.com/yannabadie/YGN-SAGE/actions/runs/27331985090",
+   "conclusion": "success",
+   "created_at_utc": "2026-06-11T07:47:08Z"
+  }
+ ]
+}

