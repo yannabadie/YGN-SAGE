@@ -702,6 +702,26 @@ def _format_mismatch_report(mismatches: list[HunkMismatch]) -> str:
     return "\n\n".join(sections) if sections else "(no mismatches)"
 
 
+def _effective_repair_timeout(
+    timeout: float, repair_budget_usd: float | None
+) -> float:
+    """Effective wall-clock ceiling for the ONE repair LLM call.
+
+    The budget-derived component keeps the original Block D cost-proxy
+    (~$0.50/min, calibrated for flash-tier models). 2026-06-11 clean
+    re-canary partial: a reasoner-tier repair (gemini-3.1-pro thinking)
+    structurally needs >60s, so a LARGER explicit ``timeout`` now wins
+    over the derived value instead of being silently overwritten — the
+    real cost of one 180s reasoner repair (~$0.05-0.15) stays far under
+    the $0.50 cap the proxy models. Minimum 30s so budget>0 always allows
+    one attempt; ``repair_budget_usd=None`` leaves ``timeout`` unchanged.
+    """
+    if repair_budget_usd is None or repair_budget_usd <= 0:
+        return timeout
+    derived = repair_budget_usd / 0.50 * 60.0
+    return max(derived, timeout, 30.0)
+
+
 async def repair_with_verifier_feedback(
     llm: Any,
     problem_statement: str,
@@ -734,13 +754,7 @@ async def repair_with_verifier_feedback(
     if repair_budget_usd == 0 or timeout == 0:
         return broken_patch, "verifier_repair_skipped"
 
-    # Translate repair_budget_usd to a bounded timeout so the cap is
-    # enforced at the call site.  Rough cost model: ~$0.50/min for code
-    # repair with a flash-tier model.  Minimum 30 s so budget>0 always
-    # allows at least one repair attempt; None leaves timeout unchanged.
-    if repair_budget_usd is not None and repair_budget_usd > 0:
-        derived_timeout = repair_budget_usd / 0.50 * 60.0
-        timeout = max(derived_timeout, 30.0)
+    timeout = _effective_repair_timeout(timeout, repair_budget_usd)
 
     try:
         from sage.bench.swebench_bench import _extract_patch

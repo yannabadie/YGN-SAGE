@@ -2084,6 +2084,7 @@ async def _repair_patch_with_feedback(
     provider_allowlist: tuple[str, ...] = (),
     provider_denylist: tuple[str, ...] = (),
     repair_tier: str = "budget",
+    repair_timeout_s: float = 60.0,
 ) -> tuple[str, dict[str, Any], dict[str, Any]]:
     """Canary-side repair chain (RESOLUTION_UNBLOCKERS criteria 3-4).
 
@@ -2207,6 +2208,7 @@ async def _repair_patch_with_feedback(
             work,
             list(result.mismatches),
             instance_id=instance_id,
+            timeout=repair_timeout_s,
             repair_budget_usd=repair_budget_usd,
         )
         meta["_verifier_repair_stage"] = stage
@@ -2490,6 +2492,7 @@ async def _run_one_task(
     verifier_mode: str = _CANARY_DIFF_VERIFIER_MODE,
     repair_budget_usd: float = _DEFAULT_REPAIR_BUDGET_USD,
     repair_tier: str = "budget",
+    repair_timeout_s: float = 60.0,
 ) -> dict[str, Any]:
     """Run one task end-to-end. Returns a per-task summary dict."""
     instance_id = task["instance_id"]
@@ -2687,6 +2690,7 @@ async def _run_one_task(
                         provider_allowlist=provider_allowlist,
                         provider_denylist=provider_denylist,
                         repair_tier=repair_tier,
+                        repair_timeout_s=repair_timeout_s,
                     )
                 )
         finally:
@@ -2849,6 +2853,7 @@ async def run(
     verifier_mode: str = _CANARY_DIFF_VERIFIER_MODE,
     repair_budget_usd: float = _DEFAULT_REPAIR_BUDGET_USD,
     repair_tier: str = "budget",
+    repair_timeout_s: float = 60.0,
 ) -> int:
     if mock and claim_default_pipeline_learning_evidence:
         log.error(
@@ -2858,6 +2863,16 @@ async def run(
         return 2
 
     fmt_module = _load_format_patch_module()
+
+    # 2026-06-11: two paid runs were killed mid-task by Windows Modern
+    # Standby (the A3 N=50 class from cycle-9). The keep-awake guard
+    # built for exactly this (SetThreadExecutionState, diagnostic-grade)
+    # now wraps the whole paid loop. No-op off Windows.
+    from sage.bench.keep_awake import prevent_os_sleep
+
+    _keep_awake_ctx = prevent_os_sleep()
+    _keep_awake_ctx.__enter__()
+    atexit.register(lambda: _keep_awake_ctx.__exit__(None, None, None))
 
     instances_text = instances_json.read_text(encoding="utf-8")
     instances = json.loads(instances_text)
@@ -2933,6 +2948,7 @@ async def run(
                     verifier_mode=verifier_mode,
                     repair_budget_usd=repair_budget_usd,
                     repair_tier=repair_tier,
+                    repair_timeout_s=repair_timeout_s,
                 ),
                 timeout=task_timeout_s,
             )
@@ -3187,6 +3203,17 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--repair-timeout-s",
+        type=float,
+        default=60.0,
+        help=(
+            "Wall-clock ceiling for the ONE repair LLM call. 60s suits "
+            "flash-tier; reasoner-tier (thinking) structurally needs "
+            "120-180s (2026-06-11 partial: gemini repair timed out at "
+            "60s). The budget-derived floor still applies."
+        ),
+    )
+    parser.add_argument(
         "--repair-budget-usd",
         type=float,
         default=_DEFAULT_REPAIR_BUDGET_USD,
@@ -3335,6 +3362,7 @@ def main(argv: list[str] | None = None) -> int:
             verifier_mode=args.verifier_mode,
             repair_budget_usd=args.repair_budget_usd,
             repair_tier=args.repair_tier,
+            repair_timeout_s=args.repair_timeout_s,
         )
     )
 

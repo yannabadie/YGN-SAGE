@@ -3577,3 +3577,53 @@ def test_build_repair_llm_reasoner_tier(monkeypatch) -> None:
     assert provider == "google"
     assert "gemini" in model
     assert getattr(llm, "api_key", None) == "sk-test-google-key"
+
+
+def test_effective_repair_timeout_respects_larger_explicit() -> None:
+    """2026-06-11 partial: reasoner repair timed out at the budget-derived
+    60s — a LARGER explicit timeout must win; the derived value stays the
+    floor; budget None leaves timeout unchanged."""
+    from sage.bench.swebench_diff_verifier import _effective_repair_timeout
+
+    assert _effective_repair_timeout(180.0, 0.50) == 180.0
+    assert _effective_repair_timeout(60.0, 0.50) == 60.0
+    assert _effective_repair_timeout(10.0, 0.50) == 60.0   # derived floor wins
+    assert _effective_repair_timeout(180.0, None) == 180.0
+    assert _effective_repair_timeout(5.0, None) == 5.0
+    assert _effective_repair_timeout(0.0, 0.01) == 30.0    # 30s minimum
+
+
+def test_run_enters_keep_awake_guard(monkeypatch, tmp_path) -> None:
+    """2026-06-11: two paid runs died to Windows Modern Standby mid-task.
+    run() must enter the cycle-9 keep-awake guard before the task loop."""
+    import contextlib
+    import sage.bench.keep_awake as ka
+
+    entered = {"n": 0}
+
+    @contextlib.contextmanager
+    def _fake_guard(*, force: bool = False):
+        entered["n"] += 1
+        yield True
+
+    monkeypatch.setattr(ka, "prevent_os_sleep", _fake_guard)
+    monkeypatch.setattr(arm_d, "_load_format_patch_module", _FakeFormatModule)
+
+    instances_json = tmp_path / "instances.json"
+    instances_json.write_text(
+        json.dumps([{"instance_id": "task-1", "problem_statement": "x"}]),
+        encoding="utf-8",
+    )
+    rc = asyncio.run(
+        arm_d.run(
+            instances_json,
+            tmp_path / "out",
+            mock=True,
+            limit=1,
+            budget_usd=5.0,
+            tier="budget",
+            prefix="t",
+        )
+    )
+    assert rc == 0
+    assert entered["n"] == 1
