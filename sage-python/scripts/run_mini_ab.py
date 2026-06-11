@@ -297,84 +297,83 @@ def run_arm_a_task(
             )
 
         problem = str(instance.get("problem_statement") or "")
-        # Agentless-lite call 1: localization over the file tree. (The
-        # single-call v1 was trivially empty: the patch_focused prompt
-        # presumes repo access a bare LLM does not have — 786-token
-        # prompts, zero patches, invalid arm.)
-        tree = _repo_file_tree(repo_dir)
-        try:
-            loc_response = asyncio.run(
-                _call(_LOCALIZE_PROMPT.format(
-                    max_files=6, problem=problem[:6000], tree=tree
-                ))
-            )
-        except Exception as exc:  # noqa: BLE001
-            record["error"] = f"llm_call_failed: {type(exc).__name__}: {exc}"
-            return record
-        selected = _parse_file_list(
-            getattr(loc_response, "content", None) or "", repo_dir
-        )
-        record["localized_files"] = selected
-        usage1 = getattr(loc_response, "usage", None)
 
-        # Call 2: strict-diff emission over the selected file contents.
-        files_block = _files_block(repo_dir, selected)
-        try:
-            response = asyncio.run(
-                _call(_PATCH_PROMPT.format(
-                    problem=problem[:6000], files_block=files_block
-                ))
+        async def _flow() -> tuple[str, dict[str, Any]]:
+            """ALL awaits on this llm share ONE loop: the provider's
+            underlying client binds connections to the loop of its first
+            call — a second asyncio.run() raised 'Event loop is closed'
+            (arm-A v2 first attempt, 10/10)."""
+            # Agentless-lite call 1: localization over the file tree (the
+            # single-call v1 was trivially empty: the patch_focused
+            # prompt presumes repo access a bare LLM does not have).
+            tree = _repo_file_tree(repo_dir)
+            loc_response = await _call(_LOCALIZE_PROMPT.format(
+                max_files=6, problem=problem[:6000], tree=tree
+            ))
+            selected = _parse_file_list(
+                getattr(loc_response, "content", None) or "", repo_dir
             )
-        except Exception as exc:  # noqa: BLE001
-            record["error"] = f"llm_call_failed: {type(exc).__name__}: {exc}"
-            return record
-        usage2 = getattr(response, "usage", None)
-        merged: dict[str, Any] = {}
-        for u in (usage1, usage2):
-            if isinstance(u, dict):
-                for k, v in u.items():
-                    if isinstance(v, (int, float)):
-                        merged[k] = merged.get(k, 0) + v
-        record["usage"] = merged or None
-        content = getattr(response, "content", None) or ""
-        patch = _swebench_extract_patch(content)
-        record["patch_non_empty"] = bool(patch)
+            record["localized_files"] = selected
+            usage1 = getattr(loc_response, "usage", None)
 
-        annotation = _annotate_diff_verifier(
-            patch=patch, repo_dir=repo_dir, mode=verifier_mode
-        )
-        if (
-            verifier_mode == "repair"
-            and patch
-            and annotation["_diff_verifier_outcome"]
-            not in {
-                "skipped_no_patch",
-                "skipped_no_repo_dir",
-                "skipped_mode_off",
-                "unsupported_no_opinion",
-            }
-        ):
-            patch, repair_meta, annotation = asyncio.run(
-                _repair_patch_with_feedback(
-                    patch=patch,
-                    repo_dir=repo_dir,
-                    problem_statement=str(
-                        instance.get("problem_statement") or ""
-                    ),
-                    instance_id=instance_id,
-                    repair_budget_usd=repair_budget_usd,
-                    llm_factory=lambda: (llm, provider, model),
-                    provider_allowlist=provider_allowlist,
-                    provider_denylist=provider_denylist,
-                    repair_timeout_s=repair_timeout_s,
+            # Call 2: strict-diff emission over the selected contents.
+            files_block = _files_block(repo_dir, selected)
+            response = await _call(_PATCH_PROMPT.format(
+                problem=problem[:6000], files_block=files_block
+            ))
+            usage2 = getattr(response, "usage", None)
+            merged: dict[str, Any] = {}
+            for u in (usage1, usage2):
+                if isinstance(u, dict):
+                    for k, v in u.items():
+                        if isinstance(v, (int, float)):
+                            merged[k] = merged.get(k, 0) + v
+            record["usage"] = merged or None
+
+            content = getattr(response, "content", None) or ""
+            inner_patch = _swebench_extract_patch(content)
+            record["patch_non_empty"] = bool(inner_patch)
+
+            inner_annotation = _annotate_diff_verifier(
+                patch=inner_patch, repo_dir=repo_dir, mode=verifier_mode
+            )
+            if (
+                verifier_mode == "repair"
+                and inner_patch
+                and inner_annotation["_diff_verifier_outcome"]
+                not in {
+                    "skipped_no_patch",
+                    "skipped_no_repo_dir",
+                    "skipped_mode_off",
+                    "unsupported_no_opinion",
+                }
+            ):
+                inner_patch, repair_meta, inner_annotation = (
+                    await _repair_patch_with_feedback(
+                        patch=inner_patch,
+                        repo_dir=repo_dir,
+                        problem_statement=problem,
+                        instance_id=instance_id,
+                        repair_budget_usd=repair_budget_usd,
+                        llm_factory=lambda: (llm, provider, model),
+                        provider_allowlist=provider_allowlist,
+                        provider_denylist=provider_denylist,
+                        repair_timeout_s=repair_timeout_s,
+                    )
                 )
-            )
-            record["_verifier_repair_stage"] = repair_meta[
-                "_verifier_repair_stage"
-            ]
-            record["_diff_verifier_outcome_pre_repair"] = repair_meta[
-                "_diff_verifier_outcome_pre_repair"
-            ]
+                record["_verifier_repair_stage"] = repair_meta[
+                    "_verifier_repair_stage"
+                ]
+                record["_diff_verifier_outcome_pre_repair"] = repair_meta[
+                    "_diff_verifier_outcome_pre_repair"
+                ]
+            return inner_patch, inner_annotation
+
+        try:
+            patch, annotation = asyncio.run(_flow())
+        except Exception as exc:  # noqa: BLE001
+            record["error"] = f"llm_call_failed: {type(exc).__name__}: {exc}"
+            return record
         record["_diff_verifier_outcome"] = annotation["_diff_verifier_outcome"]
 
         apply_ok, apply_detail = _git_apply_check(patch, repo_dir)
