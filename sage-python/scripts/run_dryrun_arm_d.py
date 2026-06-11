@@ -1063,6 +1063,13 @@ def _task_subprocess_env(
     env["SAGE_LLM_TIER"] = tier
     env["SAGE_DIFF_VERIFIER_MODE"] = verifier_mode
     env["SAGE_OTEL_EXPORTER"] = "none"
+    # F2/F3/F4 activation (cgpro DESIGN_LOCKED 2026-06-11): the canary
+    # IS the operator-set verified channel for the patch-shaped task
+    # profile — the runner's artifact-aware final selection, the
+    # emitter budget promotion and the bypass patch prompt all key off
+    # this env var inside the SAGE subprocess. Without it the runtime
+    # emission fixes are dormant.
+    env["SAGE_TASK_ARTIFACT_PROFILE"] = "unified_diff"
     return env
 
 
@@ -1956,6 +1963,27 @@ def _resolve_total_cost(
     return 0.0, "no_cost_evidence", warning
 
 
+def _rescue_apply_failed_patch(
+    raw_final_patch: str, node_output_texts: list[str], repo_dir: str
+) -> tuple[str, int | None]:
+    """cgpro DESIGN amendment #1: when the final patch exists but fails
+    ``git apply --check``, scan node outputs LAST-first for a DIFFERENT
+    candidate that actually applies (ground-truth check the runner-level
+    scorer cannot perform — element-web's regenerated diff was
+    structurally complete but count-mismatched). Returns ("", None)
+    when no applying candidate exists."""
+    from sage.patch_artifacts import git_apply_check
+
+    for idx in range(len(node_output_texts) - 1, -1, -1):
+        candidate = _swebench_extract_patch(node_output_texts[idx] or "")
+        if not candidate or candidate == raw_final_patch:
+            continue
+        ok, _detail = git_apply_check(candidate, repo_dir)
+        if ok:
+            return candidate, idx
+    return "", None
+
+
 def _extract_patch_with_fallback(
     final_text: str, node_output_texts: list[str]
 ) -> tuple[str, str | None]:
@@ -2690,6 +2718,37 @@ async def _run_one_task(
                 agent_output,
                 list(cli_result.get("node_output_texts") or []),
             )
+            # cgpro DESIGN amendment #1 (2026-06-11): rescue also when
+            # the final patch EXISTS but fails git apply --check —
+            # element-web's failure was 'extractable but COUNT_MISMATCH',
+            # not 'no patch'. Raw-final telemetry is preserved so F1
+            # cannot hide that the runtime emission (F2) still failed
+            # (DESIGN trap #1).
+            raw_final_patch = patch if patch_source == "final_result" else ""
+            raw_final_patch_status = None
+            rescue_reason = (
+                None if patch_source in (None, "final_result")
+                else "no_final_patch"
+            )
+            if raw_final_patch and isinstance(repo_dir, str):
+                from sage.patch_artifacts import git_apply_check
+
+                _apply_ok, _apply_detail = git_apply_check(
+                    raw_final_patch, repo_dir
+                )
+                raw_final_patch_status = (
+                    "applies" if _apply_ok else "apply_failed"
+                )
+                if not _apply_ok:
+                    _rescued, _ridx = _rescue_apply_failed_patch(
+                        raw_final_patch,
+                        list(cli_result.get("node_output_texts") or []),
+                        repo_dir,
+                    )
+                    if _rescued:
+                        patch = _rescued
+                        patch_source = f"node_completed[{_ridx}]"
+                        rescue_reason = "final_apply_failed"
             diff_verifier_annotation = _annotate_diff_verifier(
                 patch=patch,
                 repo_dir=repo_dir if isinstance(repo_dir, str) else None,
@@ -2800,6 +2859,9 @@ async def _run_one_task(
             "cost_integrity_warning": nominal_cost_warning,
             "extracted_patch_present": bool(patch),
             "_patch_source": patch_source,
+            "_raw_final_patch_present": bool(raw_final_patch),
+            "_raw_final_patch_status": raw_final_patch_status,
+            "_rescue_reason": rescue_reason,
             "extracted_patch_chars": len(patch),
             "mock": False,
             "timeout": False,
