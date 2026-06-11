@@ -3159,7 +3159,12 @@ def test_repair_chain_mechanical_counts_fix_no_llm(tmp_path) -> None:
         )
     )
     assert factory_calls["n"] == 0
-    assert meta["_verifier_repair_stage"] == "mechanical_counts_fix"
+    # G2 (2026-06-11): the positional reground sits BEFORE the recount in
+    # the locked chain and rewrites counts while repositioning — grounded
+    # count-mismatch patches now repair at the reground stage, still
+    # mechanically and with zero LLM calls.
+    assert meta["_verifier_repair_stage"] == "positional_reground"
+    assert meta["_reground_status"] == "reground_applied"
     assert meta["_verifier_repair_budget_usd"] == 0.5
     assert "@@ -1,3 +1,3 @@" in final_patch
     assert annotation["_diff_verifier_mismatches"] == []

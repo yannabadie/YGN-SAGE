@@ -2228,6 +2228,37 @@ async def _repair_patch_with_feedback(
             meta["_verifier_repair_stage"] = "verifier_repair_not_improved"
         return original_patch, meta, original_annotation
 
+    # G2 positional reground (cgpro GROUNDING DESIGN_LOCKED 2026-06-11):
+    # strict repositioning BEFORE the recount per the locked chain order
+    # (validate paths -> reground -> recount -> apply-check -> LLM).
+    # Exact+unique old-side match only — rejects (missing path / no or
+    # ambiguous match / truncated hunk / incoherent order) leave the
+    # patch untouched and are telemetered.
+    if repo_dir:
+        from sage.patch_artifacts import positional_reground_exact
+
+        reground_fixed, reground_status = positional_reground_exact(
+            work, str(repo_dir)
+        )
+        meta["_reground_status"] = reground_status
+        if reground_status == "reground_applied":
+            work = reground_fixed
+            meta["_verifier_repair_stage"] = "positional_reground"
+            try:
+                result, annotation = _verify(work)
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "[%s] re-verify after reground crashed: %s",
+                    instance_id, exc,
+                )
+                meta["_verifier_repair_stage"] = "repair_verifier_crashed"
+                return original_patch, meta, original_annotation
+            if annotation["_diff_verifier_outcome"] == "clean":
+                return _finalize()
+            has_count_reason = "hunk_body_count_mismatch" in (
+                annotation["_diff_verifier_reasons"] or []
+            )
+
     if has_count_reason:
         fixed = _fix_hunk_header_counts(work)
         if fixed != work:

@@ -143,6 +143,112 @@ def select_best_artifact(
     return best
 
 
+_FILE_HEADER_RE = re.compile(r"^--- (?:a/(?P<old>\S+)|/dev/null)$")
+
+
+def positional_reground_exact(
+    patch: str, repo_dir: str
+) -> tuple[str, str]:
+    """G2 strict mechanical reground (cgpro GROUNDING DESIGN_LOCKED
+    2026-06-11): REPOSITION hunks whose old-side sequence (context ' '
+    + removed '-' lines) matches the real file EXACTLY and UNIQUELY;
+    rewrite @@ positions and recount from the body. Never invents:
+    0 matches, >1 matches, missing path, truncated hunk or incoherent
+    hunk order → ``reground_rejected:<reason>`` with the patch
+    untouched. Built for the openlibrary class (100% grounded context,
+    wrong positions) — useless by design against hallucinated context.
+
+    Returns ``(patch_or_fixed, status)`` where status is
+    ``reground_applied`` | ``reground_not_needed`` |
+    ``reground_rejected:<reason>``.
+    """
+    if not patch.strip():
+        return patch, "reground_rejected:empty_patch"
+    lines = patch.splitlines()
+    out: list[str] = []
+    i = 0
+    current_file: str | None = None
+    file_lines: list[str] | None = None
+    cumulative_delta = 0
+    last_old_start = 0
+    changed = False
+    while i < len(lines):
+        line = lines[i]
+        header = _FILE_HEADER_RE.match(line)
+        if line.startswith("diff --git") or header or line.startswith("+++ "):
+            if header is not None:
+                rel = header.group("old")
+                if rel is None:
+                    # /dev/null = new file: positions are fixed (@@ -0,0)
+                    current_file, file_lines = None, None
+                else:
+                    target = Path(repo_dir) / rel
+                    if not target.is_file():
+                        return patch, "reground_rejected:missing_path"
+                    current_file = rel
+                    file_lines = target.read_text(
+                        encoding="utf-8", errors="replace"
+                    ).splitlines()
+                    cumulative_delta = 0
+                    last_old_start = 0
+            out.append(line)
+            i += 1
+            continue
+        if _HUNK_RE.match(line):
+            # Collect the hunk body.
+            body: list[str] = []
+            j = i + 1
+            while j < len(lines) and lines[j][:1] in (" ", "+", "-", "\\"):
+                if lines[j].startswith(("--- ", "+++ ")):
+                    break
+                body.append(lines[j])
+                j += 1
+            old_side = [b[1:] for b in body if b[:1] in (" ", "-")]
+            new_count = sum(1 for b in body if b[:1] in (" ", "+"))
+            old_count = len(old_side)
+            if not body or not old_side:
+                return patch, "reground_rejected:truncated_hunk"
+            if current_file is None or file_lines is None:
+                # new-file hunk: pass through untouched
+                out.append(line)
+                out.extend(body)
+                i = j
+                continue
+            # Exact-match the old-side sequence in the real file.
+            matches = [
+                idx
+                for idx in range(len(file_lines) - old_count + 1)
+                if file_lines[idx : idx + old_count] == old_side
+            ]
+            if len(matches) == 0:
+                return patch, "reground_rejected:no_exact_match"
+            if len(matches) > 1:
+                return patch, "reground_rejected:ambiguous_match"
+            old_start = matches[0] + 1  # 1-based
+            if old_start <= last_old_start:
+                return patch, "reground_rejected:incoherent_hunk_order"
+            last_old_start = old_start
+            new_start = old_start + cumulative_delta
+            new_header = (
+                f"@@ -{old_start},{old_count} +{new_start},{new_count} @@"
+            )
+            if new_header != line:
+                changed = True
+            out.append(new_header)
+            out.extend(body)
+            cumulative_delta += new_count - old_count
+            i = j
+            continue
+        out.append(line)
+        i += 1
+    if not changed:
+        return patch, "reground_not_needed"
+    fixed = "\n".join(out)
+    if not fixed.endswith("\n"):
+        fixed += "\n"
+    return fixed, "reground_applied"
+
+
 def git_apply_check(patch: str, repo_dir: str) -> tuple[bool, str]:
     """``git apply --check`` against a worktree. Shared by the canary
     rescue (F1) and the mini bench. Empty patch short-circuits."""
