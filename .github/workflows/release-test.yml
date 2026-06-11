@@ -85,7 +85,7 @@ jobs:
             manylinux: "auto"
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.3
         with:
           submodules: recursive
 
@@ -162,7 +162,7 @@ jobs:
     name: Build sdist
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.3
         with:
           submodules: recursive
 
@@ -263,7 +263,7 @@ jobs:
           - runner: windows-latest
             python: "3.13"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.3
         # Cycle-13 B Q2 follow-up: the manifest-contract smoke step
         # below runs `pip install --no-deps -e sage-python` to make
         # `python -m sage.ops.wheel_smoke` available. That requires
