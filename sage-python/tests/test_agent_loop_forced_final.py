@@ -264,3 +264,56 @@ def test_bypass_domain_and_task_profile_forwarded() -> None:
 def test_repo_tools_remain_registered_for_patch_bypass() -> None:
     singleton, loop = _bypass(task_profile="unified_diff")
     assert loop._tools is singleton._tools  # shared registry, not stripped
+
+
+def test_patch_emitter_uses_artifact_output_token_floor(monkeypatch) -> None:
+    """GROUNDING Q3: a low router max_tokens cannot cut a diff."""
+    monkeypatch.setenv("SAGE_TASK_ARTIFACT_PROFILE", "unified_diff")
+    from sage.agent_loop_factory import create_node_agent_loop
+    from sage.tools.registry import ToolRegistry
+
+    low = LLMConfig(provider="mock", model="mock", max_tokens=1024)
+    loop = create_node_agent_loop(
+        node_role="coder",
+        node_name="coder-0",
+        llm_provider=MockProvider(responses=["x"]),
+        llm_config=low,
+        tool_registry=ToolRegistry(),
+        system_prompt="emit",
+        system_level=2,
+    )
+    assert loop.config.llm.max_tokens == 8192
+    assert low.max_tokens == 1024  # original config untouched
+
+
+def test_non_patch_tasks_keep_default_output_budget(monkeypatch) -> None:
+    monkeypatch.delenv("SAGE_TASK_ARTIFACT_PROFILE", raising=False)
+    from sage.agent_loop_factory import create_node_agent_loop
+    from sage.tools.registry import ToolRegistry
+
+    low = LLMConfig(provider="mock", model="mock", max_tokens=1024)
+    loop = create_node_agent_loop(
+        node_role="coder",
+        node_name="coder-0",
+        llm_provider=MockProvider(responses=["x"]),
+        llm_config=low,
+        tool_registry=ToolRegistry(),
+        system_prompt="emit",
+        system_level=2,
+    )
+    assert loop.config.llm.max_tokens == 1024
+
+
+def test_bypass_patch_profile_floors_output_tokens() -> None:
+    from sage.agent_loop_factory import create_bypass_agent_loop
+
+    singleton = _loop(max_steps=5)
+    low = LLMConfig(provider="mock", model="mock", max_tokens=2048)
+    loop = create_bypass_agent_loop(
+        singleton=singleton,
+        llm_provider=MockProvider(responses=["x"]),
+        llm_config=low,
+        system_level=1,
+        task_profile="unified_diff",
+    )
+    assert loop.config.llm.max_tokens == 8192

@@ -157,6 +157,18 @@ def create_node_agent_loop(
     ):
         node_max_steps = 10
 
+    # GROUNDING Q3 (cgpro DESIGN_LOCKED 2026-06-11): floor the output
+    # token budget on patch-shaped tasks — a unified diff must never be
+    # cut by a low-tier max_tokens override. min(provider_cap,
+    # max(configured, 8192)) per the locked reco; LLMConfig.max_tokens
+    # already defaults to 8192, this guards router/cards overrides.
+    if artifact_profile_active() and getattr(
+        llm_config, "max_tokens", 0
+    ) < 8192:
+        import dataclasses as _dc
+
+        llm_config = _dc.replace(llm_config, max_tokens=8192)
+
     # D8 soft-cap (2026-04-18 audit) — revised four times on empirical
     # smoke results:
     #   Rev 1 (max_steps//2): 0/5 real, coder bailed at 5/10.
@@ -351,6 +363,12 @@ def create_bypass_agent_loop(
     _patch_profile = task_profile == "unified_diff"
     if _patch_profile and max_steps < 10:
         max_steps = 10
+    # GROUNDING Q3: same output-token floor as the node factory — the
+    # bypass IS the emitter on patch-shaped tasks.
+    if _patch_profile and getattr(llm_config, "max_tokens", 0) < 8192:
+        import dataclasses as _dc
+
+        llm_config = _dc.replace(llm_config, max_tokens=8192)
 
     # D8 stall cap mirrors agent_loop_factory.py:155-158.
     stall_after_tool_steps = max_steps - 1 if max_steps > 5 else 0
