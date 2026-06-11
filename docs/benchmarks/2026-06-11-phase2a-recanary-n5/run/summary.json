@@ -1,0 +1,979 @@
+{
+  "run_started_at_utc": "2026-06-11T04:27:00.269178+00:00",
+  "run_ended_at_utc": "2026-06-11T04:48:39.831004+00:00",
+  "mode": "real",
+  "tier": "reasoner",
+  "tasks_run": 5,
+  "tasks_in_set": 10,
+  "cumulative_cost_usd": 0.7317802740900498,
+  "cumulative_latency_ms": 809130,
+  "budget": {
+    "budget_usd_per_task": 5.0,
+    "global_budget_usd": 30.0,
+    "task_timeout_s": 900.0,
+    "effective_profile": "graded_patch_generation",
+    "profile_timeout_default_s": 900.0,
+    "profile_timeout_override": false,
+    "stop_reasons": []
+  },
+  "prompt": {
+    "swebench_prompt_profile": "patch_focused",
+    "topology_override_used": false,
+    "system_hint_forced": false
+  },
+  "predictions_path": "predictions.json",
+  "predictions_jsonl_path": "predictions.jsonl",
+  "events_path": "events.jsonl",
+  "per_task_dir": "per_task/",
+  "patches_extracted": 2,
+  "patches_empty": 3,
+  "patches_empty_infra": 0,
+  "patches_empty_model": 3,
+  "task_summaries": [
+    {
+      "instance_id": "instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858",
+      "exit_code": 1,
+      "latency_ms": 168201,
+      "total_cost_usd": 0.051727820268526674,
+      "_total_cost_usd_source": "cli_complete",
+      "cost_integrity_warning": null,
+      "extracted_patch_present": false,
+      "extracted_patch_chars": 0,
+      "mock": false,
+      "timeout": false,
+      "events_path": "per_task\\instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858.events.jsonl",
+      "model_id_final": "deepseek-v4-flash",
+      "provider_final": "deepseek",
+      "_observed_model_ids": [
+        "deepseek-v4-flash",
+        "gemini-3-flash-preview",
+        "gpt-5.4-pro"
+      ],
+      "_observed_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_assigned_model_ids": [
+        "deepseek-v4-flash",
+        "gemini-3-flash-preview"
+      ],
+      "_assigned_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_execution_model_ids": [
+        "deepseek-v4-flash",
+        "gemini-3-flash-preview"
+      ],
+      "_execution_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_provider_policy_failure_seen": false,
+      "_observed_event_cost_usd": 0.051727820268526674,
+      "_verifier_repair_budget_usd": null,
+      "_verifier_repair_stage": null,
+      "_diff_verifier_outcome_pre_repair": null,
+      "_diff_verifier_outcome_post_repair": null,
+      "_verifier_repair_provider": null,
+      "_verifier_repair_model": null,
+      "_verifier_repair_usage": null,
+      "_diff_verifier_mismatches": null,
+      "_diff_verifier_outcome": "skipped_no_patch",
+      "_diff_verifier_reasons": null,
+      "stderr_chars": 5121,
+      "learning_evidence_boundary": {
+        "claimed": true,
+        "status": "pass",
+        "reason_code": "validated",
+        "mode": "evidence-boundary",
+        "expect_default_pipeline_learn": true,
+        "run_id": "01KTTF4872CWNNDK4EQ7XQ63H5",
+        "source_trace_dir": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_cli_run_9pg8tf81",
+        "trace_dir": "docs\\benchmarks\\2026-06-11-phase2a-recanary-n5\\run\\per_task\\instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858.trace",
+        "validator_exit_code": 0,
+        "validator_command": [
+          "C:\\ProgramData\\miniforge3\\python.exe",
+          "-m",
+          "sage.runtime.credit_assignment.validate",
+          "docs\\benchmarks\\2026-06-11-phase2a-recanary-n5\\run\\per_task\\instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858.trace",
+          "--run-id",
+          "01KTTF4872CWNNDK4EQ7XQ63H5",
+          "--mode",
+          "evidence-boundary",
+          "--expect-default-pipeline-learn"
+        ],
+        "validator_stdout": "{\"ok\":true,\"mode\":\"evidence-boundary\",\"records\":5}\n",
+        "validator_stderr": ""
+      },
+      "repo_context": {
+        "status": "ready",
+        "repo_url": "https://github.com/protonmail/webclients.git",
+        "base_commit": "373580e2fc209cdf010f5f14d08bed546adb8a92",
+        "checkout_sha": "373580e2fc209cdf010f5f14d08bed546adb8a92",
+        "clone_elapsed_ms": 206450,
+        "fetch_fallback_used": true,
+        "subprocess_cwd": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_canary_repo_9jkm4hm6\\webclients",
+        "repo_dir_cleanup_status": "failed",
+        "failure_reason": null
+      },
+      "prompt_metadata": {
+        "prompt_profile": "patch_focused",
+        "prompt_sha256": "f6c9d8d54fe1a45c6a79f3287620fffa7decc02747c3bc5d4fa6d157d178ec78",
+        "topology_override_used": false,
+        "system_hint_forced": false
+      },
+      "topology_audit": {
+        "topology_template": "debate",
+        "topology_id": "01KR1V28D4G5DV13JFE3N5GAWF",
+        "node_count": 4,
+        "edge_count": 4,
+        "routing_model_id": "gpt-5.4-pro",
+        "routing_confidence": 0.8788,
+        "routing_source": "rust_system_router",
+        "routing_system": 3,
+        "routing_domain": "code",
+        "nodes": [
+          {
+            "node_id": "0",
+            "assigned_role": "topic_setter",
+            "assigned_model_id": "deepseek-v4-flash",
+            "assigned_provider_id": "deepseek",
+            "completed_role": "topic_setter",
+            "completed_model_id": "deepseek-v4-flash",
+            "completed_provider_id": "deepseek",
+            "latency_ms": 49318.83039999957,
+            "cost_usd": 0.0036880200157016515,
+            "output_length": 50,
+            "is_sentinel": true
+          },
+          {
+            "node_id": "1",
+            "assigned_role": "formatter",
+            "assigned_model_id": "gemini-3-flash-preview",
+            "assigned_provider_id": "google",
+            "completed_role": "formatter",
+            "completed_model_id": "gemini-3-flash-preview",
+            "completed_provider_id": "google",
+            "latency_ms": 36464.83280000393,
+            "cost_usd": 0.0023320000085234644,
+            "output_length": 1391,
+            "is_sentinel": false
+          },
+          {
+            "node_id": "2",
+            "assigned_role": "debater_b",
+            "assigned_model_id": "deepseek-v4-flash",
+            "assigned_provider_id": "deepseek",
+            "completed_role": "debater_b",
+            "completed_model_id": "deepseek-v4-flash",
+            "completed_provider_id": "deepseek",
+            "latency_ms": 36464.83280000393,
+            "cost_usd": 0.00959140004083514,
+            "output_length": 51,
+            "is_sentinel": true
+          },
+          {
+            "node_id": "3",
+            "assigned_role": "judge",
+            "assigned_model_id": "gemini-3-flash-preview",
+            "assigned_provider_id": "google",
+            "completed_role": "judge",
+            "completed_model_id": "gemini-3-flash-preview",
+            "completed_provider_id": "google",
+            "latency_ms": 49318.83039999957,
+            "cost_usd": 0.03611640020346642,
+            "output_length": 1924,
+            "is_sentinel": false
+          }
+        ],
+        "oracle": {
+          "trainable": false,
+          "verdict_source": "abstain",
+          "quality_label": "unknown",
+          "score": null,
+          "reason_codes": [
+            "hierarchy_exhausted"
+          ]
+        },
+        "control_surface": {
+          "routing_decision_emitted": true,
+          "topology_selected_emitted": true,
+          "model_assigned_for_all_nodes": true,
+          "oracle_verdict_emitted": true,
+          "cli_complete_emitted": true
+        },
+        "provider_policy_substitution_detected": true
+      }
+    },
+    {
+      "instance_id": "instance_gravitational__teleport-6eaaf3a27e64f4ef4ef855bd35d7ec338cf17460-v626ec2a48416b10a88641359a169d99e935ff037",
+      "exit_code": 1,
+      "latency_ms": 218178,
+      "total_cost_usd": 0.10781053049202263,
+      "_total_cost_usd_source": "cli_complete",
+      "cost_integrity_warning": null,
+      "extracted_patch_present": false,
+      "extracted_patch_chars": 0,
+      "mock": false,
+      "timeout": false,
+      "events_path": "per_task\\instance_gravitational__teleport-6eaaf3a27e64f4ef4ef855bd35d7ec338cf17460-v626ec2a48416b10a88641359a169d99e935ff037.events.jsonl",
+      "model_id_final": "deepseek-v4-flash",
+      "provider_final": "deepseek",
+      "_observed_model_ids": [
+        "deepseek-v4-flash",
+        "gemini-3-flash-preview",
+        "gpt-5.4-pro"
+      ],
+      "_observed_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_assigned_model_ids": [
+        "deepseek-v4-flash",
+        "gemini-3-flash-preview"
+      ],
+      "_assigned_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_execution_model_ids": [
+        "deepseek-v4-flash",
+        "gemini-3-flash-preview"
+      ],
+      "_execution_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_provider_policy_failure_seen": false,
+      "_observed_event_cost_usd": 0.10781053049202263,
+      "_verifier_repair_budget_usd": null,
+      "_verifier_repair_stage": null,
+      "_diff_verifier_outcome_pre_repair": null,
+      "_diff_verifier_outcome_post_repair": null,
+      "_verifier_repair_provider": null,
+      "_verifier_repair_model": null,
+      "_verifier_repair_usage": null,
+      "_diff_verifier_mismatches": null,
+      "_diff_verifier_outcome": "skipped_no_patch",
+      "_diff_verifier_reasons": null,
+      "stderr_chars": 5779,
+      "learning_evidence_boundary": {
+        "claimed": true,
+        "status": "pass",
+        "reason_code": "validated",
+        "mode": "evidence-boundary",
+        "expect_default_pipeline_learn": true,
+        "run_id": "01KTTFEKR45RJYEJYP315TH306",
+        "source_trace_dir": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_cli_run_xsd3djfa",
+        "trace_dir": "docs\\benchmarks\\2026-06-11-phase2a-recanary-n5\\run\\per_task\\instance_gravitational__teleport-6eaaf3a27e64f4ef4ef855bd35d7ec338cf17460-v626ec2a48416b10a88641359a169d99e935ff037.trace",
+        "validator_exit_code": 0,
+        "validator_command": [
+          "C:\\ProgramData\\miniforge3\\python.exe",
+          "-m",
+          "sage.runtime.credit_assignment.validate",
+          "docs\\benchmarks\\2026-06-11-phase2a-recanary-n5\\run\\per_task\\instance_gravitational__teleport-6eaaf3a27e64f4ef4ef855bd35d7ec338cf17460-v626ec2a48416b10a88641359a169d99e935ff037.trace",
+          "--run-id",
+          "01KTTFEKR45RJYEJYP315TH306",
+          "--mode",
+          "evidence-boundary",
+          "--expect-default-pipeline-learn"
+        ],
+        "validator_stdout": "{\"ok\":true,\"mode\":\"evidence-boundary\",\"records\":5}\n",
+        "validator_stderr": ""
+      },
+      "repo_context": {
+        "status": "ready",
+        "repo_url": "https://github.com/gravitational/teleport.git",
+        "base_commit": "a51596d8d779935e1dfa8d0fabce39d9edd91457",
+        "checkout_sha": "a51596d8d779935e1dfa8d0fabce39d9edd91457",
+        "clone_elapsed_ms": 168526,
+        "fetch_fallback_used": true,
+        "subprocess_cwd": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_canary_repo_vig2h7zg\\teleport",
+        "repo_dir_cleanup_status": "failed",
+        "failure_reason": null
+      },
+      "prompt_metadata": {
+        "prompt_profile": "patch_focused",
+        "prompt_sha256": "c7d3524d59d855200c84c9b75efd0cffd3f2731c15d49d548c0ca47b3f3d5cae",
+        "topology_override_used": false,
+        "system_hint_forced": false
+      },
+      "topology_audit": {
+        "topology_template": "debate",
+        "topology_id": "01KR1V28D4G5DV13JFE3N5GAWF",
+        "node_count": 4,
+        "edge_count": 5,
+        "routing_model_id": "gpt-5.4-pro",
+        "routing_confidence": 0.8788,
+        "routing_source": "rust_system_router",
+        "routing_system": 3,
+        "routing_domain": "code",
+        "nodes": [
+          {
+            "node_id": "0",
+            "assigned_role": "coder",
+            "assigned_model_id": "deepseek-v4-flash",
+            "assigned_provider_id": "deepseek",
+            "completed_role": "coder",
+            "completed_model_id": "deepseek-v4-flash",
+            "completed_provider_id": "deepseek",
+            "latency_ms": 28639.41079999495,
+            "cost_usd": 0.003839780016347766,
+            "output_length": 50,
+            "is_sentinel": true
+          },
+          {
+            "node_id": "1",
+            "assigned_role": "debater_a",
+            "assigned_model_id": "gemini-3-flash-preview",
+            "assigned_provider_id": "google",
+            "completed_role": "debater_a",
+            "completed_model_id": "gemini-3-flash-preview",
+            "completed_provider_id": "google",
+            "latency_ms": 97501.53439999849,
+            "cost_usd": 0.07369975026592612,
+            "output_length": 50,
+            "is_sentinel": true
+          },
+          {
+            "node_id": "2",
+            "assigned_role": "debater_b",
+            "assigned_model_id": "deepseek-v4-flash",
+            "assigned_provider_id": "deepseek",
+            "completed_role": "debater_b",
+            "completed_model_id": "deepseek-v4-flash",
+            "completed_provider_id": "deepseek",
+            "latency_ms": 25129.23679999949,
+            "cost_usd": 0.008176000034809113,
+            "output_length": 51,
+            "is_sentinel": true
+          },
+          {
+            "node_id": "3",
+            "assigned_role": "judge",
+            "assigned_model_id": "gemini-3-flash-preview",
+            "assigned_provider_id": "google",
+            "completed_role": "judge",
+            "completed_model_id": "gemini-3-flash-preview",
+            "completed_provider_id": "google",
+            "latency_ms": 28639.41079999495,
+            "cost_usd": 0.022095000174939632,
+            "output_length": 2211,
+            "is_sentinel": false
+          },
+          {
+            "node_id": "4",
+            "assigned_role": "dispatcher",
+            "assigned_model_id": "deepseek-v4-flash",
+            "assigned_provider_id": "deepseek"
+          }
+        ],
+        "oracle": {
+          "trainable": false,
+          "verdict_source": "abstain",
+          "quality_label": "unknown",
+          "score": null,
+          "reason_codes": [
+            "hierarchy_exhausted"
+          ]
+        },
+        "control_surface": {
+          "routing_decision_emitted": true,
+          "topology_selected_emitted": true,
+          "model_assigned_for_all_nodes": true,
+          "oracle_verdict_emitted": true,
+          "cli_complete_emitted": true
+        },
+        "provider_policy_substitution_detected": true
+      }
+    },
+    {
+      "instance_id": "instance_tutao__tutanota-219bc8f05d7b980e038bc1524cb021bf56397a1b-vee878bb72091875e912c52fc32bc60ec3760227b",
+      "exit_code": 1,
+      "latency_ms": 204237,
+      "total_cost_usd": 0.30194595168813876,
+      "_total_cost_usd_source": "event_audit_observed_event_cost_usd",
+      "cost_integrity_warning": {
+        "reason_code": "cli_complete_cost_underreport",
+        "detail": "cli_complete reported total_cost_usd=0.160353 but the event audit observed 0.301946 — using the larger event-derived figure (2.6x under-report class caught by cgpro on the 2026-05-12 N=5).",
+        "cli_complete_total_cost_usd": 0.1603534509120863,
+        "observed_event_cost_usd": 0.30194595168813876
+      },
+      "extracted_patch_present": true,
+      "extracted_patch_chars": 1726,
+      "mock": false,
+      "timeout": false,
+      "events_path": "per_task\\instance_tutao__tutanota-219bc8f05d7b980e038bc1524cb021bf56397a1b-vee878bb72091875e912c52fc32bc60ec3760227b.events.jsonl",
+      "model_id_final": "gemini-2.5-flash",
+      "provider_final": "google",
+      "_observed_model_ids": [
+        "deepseek-v4-pro",
+        "gemini-2.5-flash",
+        "gemini-3-flash-preview",
+        "gpt-5.4-pro"
+      ],
+      "_observed_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_assigned_model_ids": [
+        "deepseek-v4-pro",
+        "gemini-2.5-flash",
+        "gemini-3-flash-preview"
+      ],
+      "_assigned_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_execution_model_ids": [
+        "deepseek-v4-pro",
+        "gemini-2.5-flash",
+        "gemini-3-flash-preview"
+      ],
+      "_execution_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_provider_policy_failure_seen": false,
+      "_observed_event_cost_usd": 0.30194595168813876,
+      "_verifier_repair_budget_usd": 0.5,
+      "_verifier_repair_stage": "verifier_repair_empty",
+      "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+      "_diff_verifier_outcome_post_repair": "content_mismatch",
+      "_verifier_repair_provider": "deepseek",
+      "_verifier_repair_model": "deepseek-v4-flash",
+      "_verifier_repair_usage": null,
+      "_diff_verifier_mismatches": [],
+      "_diff_verifier_outcome": "hunk_body_count_mismatch",
+      "_diff_verifier_reasons": [
+        "hunk_body_count_mismatch",
+        "hunk_body_count_mismatch"
+      ],
+      "stderr_chars": 3466,
+      "learning_evidence_boundary": {
+        "claimed": true,
+        "status": "pass",
+        "reason_code": "validated",
+        "mode": "evidence-boundary",
+        "expect_default_pipeline_learn": true,
+        "run_id": "01KTTFPTZZJWQJPZPP2RS5C0K3",
+        "source_trace_dir": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_cli_run_8hsnjuhh",
+        "trace_dir": "docs\\benchmarks\\2026-06-11-phase2a-recanary-n5\\run\\per_task\\instance_tutao__tutanota-219bc8f05d7b980e038bc1524cb021bf56397a1b-vee878bb72091875e912c52fc32bc60ec3760227b.trace",
+        "validator_exit_code": 0,
+        "validator_command": [
+          "C:\\ProgramData\\miniforge3\\python.exe",
+          "-m",
+          "sage.runtime.credit_assignment.validate",
+          "docs\\benchmarks\\2026-06-11-phase2a-recanary-n5\\run\\per_task\\instance_tutao__tutanota-219bc8f05d7b980e038bc1524cb021bf56397a1b-vee878bb72091875e912c52fc32bc60ec3760227b.trace",
+          "--run-id",
+          "01KTTFPTZZJWQJPZPP2RS5C0K3",
+          "--mode",
+          "evidence-boundary",
+          "--expect-default-pipeline-learn"
+        ],
+        "validator_stdout": "{\"ok\":true,\"mode\":\"evidence-boundary\",\"records\":5}\n",
+        "validator_stderr": ""
+      },
+      "repo_context": {
+        "status": "ready",
+        "repo_url": "https://github.com/tutao/tutanota.git",
+        "base_commit": "9dfb7c231f98a2d3bf48a99577d8a55cfdb2480b",
+        "checkout_sha": "9dfb7c231f98a2d3bf48a99577d8a55cfdb2480b",
+        "clone_elapsed_ms": 48723,
+        "fetch_fallback_used": true,
+        "subprocess_cwd": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_canary_repo_ae83yzoa\\tutanota",
+        "repo_dir_cleanup_status": "failed",
+        "failure_reason": null
+      },
+      "prompt_metadata": {
+        "prompt_profile": "patch_focused",
+        "prompt_sha256": "c1f38c855777eb448b2b693033c9393d116cabb0db17c71bf1d08f6f9829635a",
+        "topology_override_used": false,
+        "system_hint_forced": false
+      },
+      "topology_audit": {
+        "topology_template": "avr",
+        "topology_id": "01KTTFSNXYVW1GY84NWT1NKVJM",
+        "node_count": 2,
+        "edge_count": 1,
+        "routing_model_id": "gpt-5.4-pro",
+        "routing_confidence": 0.8788,
+        "routing_source": "rust_system_router",
+        "routing_system": 3,
+        "routing_domain": "code",
+        "nodes": [
+          {
+            "node_id": "0",
+            "assigned_role": "actor",
+            "assigned_model_id": "deepseek-v4-pro",
+            "assigned_provider_id": "deepseek",
+            "completed_role": "actor",
+            "completed_model_id": "deepseek-v4-pro",
+            "completed_provider_id": "deepseek",
+            "latency_ms": 102082.4042000022,
+            "cost_usd": 0.1592952608730793,
+            "output_length": 8350,
+            "is_sentinel": false
+          },
+          {
+            "node_id": "1",
+            "assigned_role": "output",
+            "assigned_model_id": "gemini-2.5-flash",
+            "assigned_provider_id": "google",
+            "completed_role": "output",
+            "completed_model_id": "gemini-2.5-flash",
+            "completed_provider_id": "google",
+            "latency_ms": 8224.923200003104,
+            "cost_usd": 0.0010581900390069933,
+            "output_length": 4415,
+            "is_sentinel": false
+          },
+          {
+            "node_id": "2",
+            "assigned_role": "output",
+            "assigned_model_id": "gemini-2.5-flash",
+            "assigned_provider_id": "google"
+          }
+        ],
+        "oracle": {
+          "trainable": false,
+          "verdict_source": "abstain",
+          "quality_label": "unknown",
+          "score": null,
+          "reason_codes": [
+            "hierarchy_exhausted"
+          ]
+        },
+        "control_surface": {
+          "routing_decision_emitted": true,
+          "topology_selected_emitted": true,
+          "model_assigned_for_all_nodes": true,
+          "oracle_verdict_emitted": true,
+          "cli_complete_emitted": true
+        },
+        "provider_policy_substitution_detected": true
+      }
+    },
+    {
+      "instance_id": "instance_NodeBB__NodeBB-76c6e30282906ac664f2c9278fc90999b27b1f48-vd59a5728dfc977f44533186ace531248c2917516",
+      "exit_code": 1,
+      "latency_ms": 94911,
+      "total_cost_usd": 0.23150377132639288,
+      "_total_cost_usd_source": "cli_complete",
+      "cost_integrity_warning": null,
+      "extracted_patch_present": true,
+      "extracted_patch_chars": 678,
+      "mock": false,
+      "timeout": false,
+      "events_path": "per_task\\instance_NodeBB__NodeBB-76c6e30282906ac664f2c9278fc90999b27b1f48-vd59a5728dfc977f44533186ace531248c2917516.events.jsonl",
+      "model_id_final": "gemini-3-flash-preview",
+      "provider_final": "google",
+      "_observed_model_ids": [
+        "deepseek-v4-pro",
+        "gemini-3-flash-preview",
+        "gpt-5.4-pro"
+      ],
+      "_observed_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_assigned_model_ids": [
+        "deepseek-v4-pro",
+        "gemini-3-flash-preview"
+      ],
+      "_assigned_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_execution_model_ids": [
+        "deepseek-v4-pro",
+        "gemini-3-flash-preview"
+      ],
+      "_execution_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_provider_policy_failure_seen": false,
+      "_observed_event_cost_usd": 0.23150377132639288,
+      "_verifier_repair_budget_usd": 0.5,
+      "_verifier_repair_stage": "verifier_repair_empty",
+      "_diff_verifier_outcome_pre_repair": "content_mismatch",
+      "_diff_verifier_outcome_post_repair": "content_mismatch",
+      "_verifier_repair_provider": "deepseek",
+      "_verifier_repair_model": "deepseek-v4-flash",
+      "_verifier_repair_usage": null,
+      "_diff_verifier_mismatches": [
+        {
+          "file": "src/plugins/index.js",
+          "hunk_index": 0,
+          "old_start": 10,
+          "old_count": 6,
+          "kind": "content_mismatch",
+          "match_ratio": 0.5031446540880503
+        },
+        {
+          "file": "src/plugins/index.js",
+          "hunk_index": 1,
+          "old_start": 175,
+          "old_count": 6,
+          "kind": "content_mismatch",
+          "match_ratio": 0.2597402597402597
+        }
+      ],
+      "_diff_verifier_outcome": "content_mismatch",
+      "_diff_verifier_reasons": [
+        "content_mismatch",
+        "content_mismatch"
+      ],
+      "stderr_chars": 2504,
+      "learning_evidence_boundary": {
+        "claimed": true,
+        "status": "pass",
+        "reason_code": "validated",
+        "mode": "evidence-boundary",
+        "expect_default_pipeline_learn": true,
+        "run_id": "01KTTFXGF8KWGRB56KCB8KDMY3",
+        "source_trace_dir": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_cli_run_fdbwg_o4",
+        "trace_dir": "docs\\benchmarks\\2026-06-11-phase2a-recanary-n5\\run\\per_task\\instance_NodeBB__NodeBB-76c6e30282906ac664f2c9278fc90999b27b1f48-vd59a5728dfc977f44533186ace531248c2917516.trace",
+        "validator_exit_code": 0,
+        "validator_command": [
+          "C:\\ProgramData\\miniforge3\\python.exe",
+          "-m",
+          "sage.runtime.credit_assignment.validate",
+          "docs\\benchmarks\\2026-06-11-phase2a-recanary-n5\\run\\per_task\\instance_NodeBB__NodeBB-76c6e30282906ac664f2c9278fc90999b27b1f48-vd59a5728dfc977f44533186ace531248c2917516.trace",
+          "--run-id",
+          "01KTTFXGF8KWGRB56KCB8KDMY3",
+          "--mode",
+          "evidence-boundary",
+          "--expect-default-pipeline-learn"
+        ],
+        "validator_stdout": "{\"ok\":true,\"mode\":\"evidence-boundary\",\"records\":5}\n",
+        "validator_stderr": ""
+      },
+      "repo_context": {
+        "status": "ready",
+        "repo_url": "https://github.com/NodeBB/NodeBB.git",
+        "base_commit": "a3e1a666b876e0b3ccbb5284dd826c8c90c113b4",
+        "checkout_sha": "a3e1a666b876e0b3ccbb5284dd826c8c90c113b4",
+        "clone_elapsed_ms": 11796,
+        "fetch_fallback_used": true,
+        "subprocess_cwd": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_canary_repo_pcthwk8p\\NodeBB",
+        "repo_dir_cleanup_status": "failed",
+        "failure_reason": null
+      },
+      "prompt_metadata": {
+        "prompt_profile": "patch_focused",
+        "prompt_sha256": "be14c22890f9c9dededb564b69e999dfbe134e89748aa26f39e2dae705c8310b",
+        "topology_override_used": false,
+        "system_hint_forced": false
+      },
+      "topology_audit": {
+        "topology_template": "avr",
+        "topology_id": "01KTTFXJ7NEP9PZWQRSR2E1Y4R",
+        "node_count": 2,
+        "edge_count": 1,
+        "routing_model_id": "gpt-5.4-pro",
+        "routing_confidence": 0.8788,
+        "routing_source": "rust_system_router",
+        "routing_system": 3,
+        "routing_domain": "code",
+        "nodes": [
+          {
+            "node_id": "0",
+            "assigned_role": "actor",
+            "assigned_model_id": "deepseek-v4-pro",
+            "assigned_provider_id": "deepseek",
+            "completed_role": "actor",
+            "completed_model_id": "deepseek-v4-pro",
+            "completed_provider_id": "deepseek",
+            "latency_ms": 68445.03129999794,
+            "cost_usd": 0.22037622120785713,
+            "output_length": 999,
+            "is_sentinel": false
+          },
+          {
+            "node_id": "1",
+            "assigned_role": "reviewer",
+            "assigned_model_id": "gemini-3-flash-preview",
+            "assigned_provider_id": "google",
+            "completed_role": "reviewer",
+            "completed_model_id": "gemini-3-flash-preview",
+            "completed_provider_id": "google",
+            "latency_ms": 13991.949099996418,
+            "cost_usd": 0.011127550118535758,
+            "output_length": 1184,
+            "is_sentinel": false
+          }
+        ],
+        "oracle": {
+          "trainable": false,
+          "verdict_source": "abstain",
+          "quality_label": "unknown",
+          "score": null,
+          "reason_codes": [
+            "hierarchy_exhausted"
+          ]
+        },
+        "control_surface": {
+          "routing_decision_emitted": true,
+          "topology_selected_emitted": true,
+          "model_assigned_for_all_nodes": true,
+          "oracle_verdict_emitted": true,
+          "cli_complete_emitted": true
+        },
+        "provider_policy_substitution_detected": true
+      }
+    },
+    {
+      "instance_id": "instance_tutao__tutanota-db90ac26ab78addf72a8efaff3c7acc0fbd6d000-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf",
+      "exit_code": 1,
+      "latency_ms": 123603,
+      "total_cost_usd": 0.03879220031496882,
+      "_total_cost_usd_source": "cli_complete",
+      "cost_integrity_warning": null,
+      "extracted_patch_present": false,
+      "extracted_patch_chars": 0,
+      "mock": false,
+      "timeout": false,
+      "events_path": "per_task\\instance_tutao__tutanota-db90ac26ab78addf72a8efaff3c7acc0fbd6d000-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf.events.jsonl",
+      "model_id_final": "deepseek-v4-flash",
+      "provider_final": "deepseek",
+      "_observed_model_ids": [
+        "deepseek-v4-flash",
+        "gemini-3-flash-preview",
+        "gpt-5.4-pro"
+      ],
+      "_observed_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_assigned_model_ids": [
+        "deepseek-v4-flash",
+        "gemini-3-flash-preview"
+      ],
+      "_assigned_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_execution_model_ids": [
+        "deepseek-v4-flash",
+        "gemini-3-flash-preview"
+      ],
+      "_execution_providers": [
+        "deepseek",
+        "google"
+      ],
+      "_provider_policy_failure_seen": false,
+      "_observed_event_cost_usd": 0.03879220031496882,
+      "_verifier_repair_budget_usd": null,
+      "_verifier_repair_stage": null,
+      "_diff_verifier_outcome_pre_repair": null,
+      "_diff_verifier_outcome_post_repair": null,
+      "_verifier_repair_provider": null,
+      "_verifier_repair_model": null,
+      "_verifier_repair_usage": null,
+      "_diff_verifier_mismatches": null,
+      "_diff_verifier_outcome": "skipped_no_patch",
+      "_diff_verifier_reasons": null,
+      "stderr_chars": 4958,
+      "learning_evidence_boundary": {
+        "claimed": true,
+        "status": "pass",
+        "reason_code": "validated",
+        "mode": "evidence-boundary",
+        "expect_default_pipeline_learn": true,
+        "run_id": "01KTTG1SPWC24NVREFY1PZAANT",
+        "source_trace_dir": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_cli_run_p9iolcbs",
+        "trace_dir": "docs\\benchmarks\\2026-06-11-phase2a-recanary-n5\\run\\per_task\\instance_tutao__tutanota-db90ac26ab78addf72a8efaff3c7acc0fbd6d000-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf.trace",
+        "validator_exit_code": 0,
+        "validator_command": [
+          "C:\\ProgramData\\miniforge3\\python.exe",
+          "-m",
+          "sage.runtime.credit_assignment.validate",
+          "docs\\benchmarks\\2026-06-11-phase2a-recanary-n5\\run\\per_task\\instance_tutao__tutanota-db90ac26ab78addf72a8efaff3c7acc0fbd6d000-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf.trace",
+          "--run-id",
+          "01KTTG1SPWC24NVREFY1PZAANT",
+          "--mode",
+          "evidence-boundary",
+          "--expect-default-pipeline-learn"
+        ],
+        "validator_stdout": "{\"ok\":true,\"mode\":\"evidence-boundary\",\"records\":5}\n",
+        "validator_stderr": ""
+      },
+      "repo_context": {
+        "status": "ready",
+        "repo_url": "https://github.com/tutao/tutanota.git",
+        "base_commit": "d9e1c91e933cf66ec9660231f9e19f66bb8e58e1",
+        "checkout_sha": "d9e1c91e933cf66ec9660231f9e19f66bb8e58e1",
+        "clone_elapsed_ms": 43597,
+        "fetch_fallback_used": true,
+        "subprocess_cwd": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_canary_repo_w5r6pcfy\\tutanota",
+        "repo_dir_cleanup_status": "failed",
+        "failure_reason": null
+      },
+      "prompt_metadata": {
+        "prompt_profile": "patch_focused",
+        "prompt_sha256": "16f64ea20f4e9455cee1a9746567b4d5fa27564211df1f142a2948229d5e0ff1",
+        "topology_override_used": false,
+        "system_hint_forced": false
+      },
+      "topology_audit": {
+        "topology_template": "debate",
+        "topology_id": "01KTTG47QEN405XVDYKZ7MRAMB",
+        "node_count": 3,
+        "edge_count": 2,
+        "routing_model_id": "gpt-5.4-pro",
+        "routing_confidence": 0.8788,
+        "routing_source": "rust_system_router",
+        "routing_system": 3,
+        "routing_domain": "code",
+        "nodes": [
+          {
+            "node_id": "0",
+            "assigned_role": "topic_setter",
+            "assigned_model_id": "deepseek-v4-flash",
+            "assigned_provider_id": "deepseek",
+            "completed_role": "topic_setter",
+            "completed_model_id": "deepseek-v4-flash",
+            "completed_provider_id": "deepseek",
+            "latency_ms": 8014.300800001365,
+            "cost_usd": 0.003582180015251041,
+            "output_length": 50,
+            "is_sentinel": true
+          },
+          {
+            "node_id": "1",
+            "assigned_role": "debater_a",
+            "assigned_model_id": "gemini-3-flash-preview",
+            "assigned_provider_id": "google",
+            "completed_role": "debater_a",
+            "completed_model_id": "gemini-3-flash-preview",
+            "completed_provider_id": "google",
+            "latency_ms": 34976.450100002694,
+            "cost_usd": 0.02745640026670694,
+            "output_length": 50,
+            "is_sentinel": true
+          },
+          {
+            "node_id": "2",
+            "assigned_role": "debater_b",
+            "assigned_model_id": "deepseek-v4-flash",
+            "assigned_provider_id": "deepseek",
+            "completed_role": "debater_b",
+            "completed_model_id": "deepseek-v4-flash",
+            "completed_provider_id": "deepseek",
+            "latency_ms": 34976.450100002694,
+            "cost_usd": 0.00775362003301084,
+            "output_length": 51,
+            "is_sentinel": true
+          },
+          {
+            "node_id": "3",
+            "assigned_role": "judge",
+            "assigned_model_id": "gemini-3-flash-preview",
+            "assigned_provider_id": "google"
+          }
+        ],
+        "oracle": {
+          "trainable": false,
+          "verdict_source": "abstain",
+          "quality_label": "unknown",
+          "score": null,
+          "reason_codes": [
+            "hierarchy_exhausted"
+          ]
+        },
+        "control_surface": {
+          "routing_decision_emitted": true,
+          "topology_selected_emitted": true,
+          "model_assigned_for_all_nodes": true,
+          "oracle_verdict_emitted": true,
+          "cli_complete_emitted": true
+        },
+        "provider_policy_substitution_detected": true
+      }
+    }
+  ],
+  "learning_evidence_gate": {
+    "claimed": true,
+    "status": "PASS",
+    "expect_default_pipeline_learn": true,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0
+  },
+  "budget_gate": {
+    "status": "PASS",
+    "cumulative_cost_usd": 0.7317802740900498,
+    "global_budget_usd": 30.0,
+    "stop_reasons": []
+  },
+  "timeout_gate": {
+    "status": "PASS",
+    "timeouts": 0
+  },
+  "launch_manifest_path": "launch_manifest.json",
+  "acceptance_gate_results": {
+    "manifest_gate": {
+      "status": "PASS",
+      "reasons": []
+    },
+    "budget_gate": {
+      "status": "PASS",
+      "cumulative_cost_usd": 0.7317802740900498,
+      "global_budget_usd": 30.0,
+      "stop_reasons": []
+    },
+    "timeout_gate": {
+      "status": "PASS",
+      "timeouts": 0
+    },
+    "provider_gate": {
+      "status": "PASS",
+      "reason": null,
+      "observed_providers": [
+        "deepseek",
+        "google"
+      ],
+      "assigned_providers": [
+        "deepseek",
+        "google"
+      ],
+      "execution_providers": [
+        "deepseek",
+        "google"
+      ],
+      "provider_policy_failure_seen": false,
+      "missing_provider_or_model": [],
+      "assigned_denied_providers": [],
+      "execution_denied_providers": [],
+      "assigned_outside_allowlist": [],
+      "execution_outside_allowlist": [],
+      "provider_allowlist": [
+        "google",
+        "deepseek"
+      ],
+      "provider_denylist": [
+        "openai"
+      ]
+    },
+    "grading_gate": {
+      "status": "PASS",
+      "reason": null,
+      "path": "docs\\benchmarks\\2026-06-11-phase2a-recanary-n5\\grader_preflight.json",
+      "sha256": "f034df4141bb6ab10c212288cac18e32b02d0b304385a9b59995c5408ec368c6",
+      "decision": "READY_MODAL",
+      "blockers": []
+    },
+    "ci_gate": {
+      "status": "PASS",
+      "reason": null,
+      "path": "docs\\benchmarks\\2026-06-11-phase2a-recanary-n5\\ci_green.json",
+      "sha256": "0b24c1507edc79acf86d3cca6a657d951f0b7c9a70b4c207ebe075ee8fc01e72",
+      "commit": "64fb986fd38610486323e60c5b234d999c4517c0",
+      "reported_status": "success"
+    }
+  },
+  "canary_decision": "PENDING_REVIEW"
+}

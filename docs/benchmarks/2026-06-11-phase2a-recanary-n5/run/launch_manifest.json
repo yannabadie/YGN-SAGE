@@ -1,0 +1,60 @@
+{
+  "schema_version": "swebench_pro_canary_launch_v1",
+  "generated_at_utc": "2026-06-11T04:27:00.265826+00:00",
+  "repo": {
+    "path": "C:\\Code\\YGN-SAGE",
+    "head": "64fb986fd38610486323e60c5b234d999c4517c0",
+    "dirty": true,
+    "status_short": " M docs/benchmarks/cycle-13-canary-manifest.md\n?? Amelioration-fable.md\n?? docs/benchmarks/2026-06-11-phase2a-recanary-n5/\n"
+  },
+  "inputs": {
+    "instances_json": {
+      "path": "docs\\benchmarks\\2026-05-11-canary-n5-graded\\instances\\instances.json",
+      "sha256": "b0ea91c4e5e827f9a4ded796bd78bb945ba0d571694f5629a86a2ca72a015c90"
+    },
+    "manifest": {
+      "path": "C:\\Code\\YGN-SAGE\\docs\\benchmarks\\cycle-13-canary-manifest.md",
+      "exists": true,
+      "sha256": "7cff258499dfc02c948b401830fea7850bf52f6323102aa24aed43c64e9f71d7",
+      "declared_commit": "64fb986fd38610486323e60c5b234d999c4517c0",
+      "copied_to": "launch_manifest.md"
+    }
+  },
+  "budget": {
+    "budget_usd_per_task": 5.0,
+    "global_budget_usd": 30.0,
+    "task_timeout_s": 900.0,
+    "effective_profile": "graded_patch_generation",
+    "profile_timeout_default_s": 900.0,
+    "profile_timeout_override": false
+  },
+  "providers": {
+    "allowlist": [
+      "google",
+      "deepseek"
+    ],
+    "denylist": [
+      "openai"
+    ]
+  },
+  "manifest_gate": {
+    "status": "PASS",
+    "reasons": []
+  },
+  "grading_gate": {
+    "status": "PASS",
+    "reason": null,
+    "path": "docs\\benchmarks\\2026-06-11-phase2a-recanary-n5\\grader_preflight.json",
+    "sha256": "f034df4141bb6ab10c212288cac18e32b02d0b304385a9b59995c5408ec368c6",
+    "decision": "READY_MODAL",
+    "blockers": []
+  },
+  "ci_gate": {
+    "status": "PASS",
+    "reason": null,
+    "path": "docs\\benchmarks\\2026-06-11-phase2a-recanary-n5\\ci_green.json",
+    "sha256": "0b24c1507edc79acf86d3cca6a657d951f0b7c9a70b4c207ebe075ee8fc01e72",
+    "commit": "64fb986fd38610486323e60c5b234d999c4517c0",
+    "reported_status": "success"
+  }
+}

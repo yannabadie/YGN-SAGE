@@ -1,0 +1,27 @@
+[
+  {
+    "instance_id": "instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858",
+    "patch": "",
+    "prefix": "ygn-sage-arm-d-smoke"
+  },
+  {
+    "instance_id": "instance_gravitational__teleport-6eaaf3a27e64f4ef4ef855bd35d7ec338cf17460-v626ec2a48416b10a88641359a169d99e935ff037",
+    "patch": "",
+    "prefix": "ygn-sage-arm-d-smoke"
+  },
+  {
+    "instance_id": "instance_tutao__tutanota-219bc8f05d7b980e038bc1524cb021bf56397a1b-vee878bb72091875e912c52fc32bc60ec3760227b",
+    "patch": "diff --git a/src/api/worker/EventBusClient.ts b/src/api/worker/EventBusClient.ts\n--- a/src/api/worker/EventBusClient.ts\n+++ b/src/api/worker/EventBusClient.ts\n@@ -1,10 +1,15 @@\n import {WorkerClient} from \"./WorkerClient\"\n \n+export const EventBusMessageType = Object.freeze({\n+\tEntityUpdate: \"EntityUpdate\",\n+\tUnreadCounterUpdate: \"UnreadCounterUpdate\",\n+} as const)\n+\n export class EventBusClient {\n \tprivate _ws: WebSocket | null = null\n \tprivate _reconnectTimeout: TimeoutID | null = null\n+\tprivate _entityUpdateQueue: Promise<void> = Promise.resolve()\n \n \tconstructor(\n \t\tprivate readonly _worker: WorkerClient,\n@@ -12,16 +17,20 @@ export class EventBusClient {\n \t) {}\n \n-\tprivate handleMessage(event: MessageEvent): void {\n+\thandleEntityEvent(event: MessageEvent): void {\n \t\tconst msg: any = JSON.parse(event.data)\n-\t\tif (msg.type === \"EntityUpdate\") {\n-\t\t\tthis._worker.entityEvent(msg.data)\n-\t\t} else if (msg.type === \"UnreadCounterUpdate\") {\n+\t\tif (msg.type === EventBusMessageType.EntityUpdate) {\n+\t\t\tthis._entityUpdateQueue = this._entityUpdateQueue\n+\t\t\t\t.then(() => this._worker.entityEvent(msg.data))\n+\t\t\t\t.catch(e => console.log(\"entity update failed\", e))\n+\t\t} else if (msg.type === EventBusMessageType.UnreadCounterUpdate) {\n \t\t\tthis._worker.unreadCounterUpdate(msg.data)\n \t\t}\n \t}\n \n \tconnect(): Promise<void> {\n \t\treturn new Promise((resolve, reject) => {\n \t\t\tthis._ws = new WebSocket(this._url)\n-\t\t\tthis._ws.onmessage = (event: MessageEvent) => this.handleMessage(event)\n+\t\t\tthis._ws.onmessage = (event: MessageEvent) => this.handleEntityEvent(event)\n \t\t\tthis._ws.onopen = () => resolve()\n \t\t\tthis._ws.onclose = (event: CloseEvent) => this.onClose(event)\n \t\t\tthis._ws.onerror = (event: Event) => reject(event)\n",
+    "prefix": "ygn-sage-arm-d-smoke"
+  },
+  {
+    "instance_id": "instance_NodeBB__NodeBB-76c6e30282906ac664f2c9278fc90999b27b1f48-vd59a5728dfc977f44533186ace531248c2917516",
+    "patch": "diff --git a/src/plugins/index.js b/src/plugins/index.js\nindex 1234567..890abcd 100644\n--- a/src/plugins/index.js\n+++ b/src/plugins/index.js\n@@ -10,6 +10,8 @@ var db = require('../database');\n var emitter = require('../emitter');\n var meta = require('../meta');\n \n+var pluginNameRegex = /^(@[a-z0-9-~][a-z0-9-._~]*\\/)?[a-z0-9-~][a-z0-9-._~]*$/;\n+\n var Plugins = module.exports;\n \n require('./install')(Plugins);\n@@ -175,6 +177,11 @@ Plugins.toggleActive = function (id, callback) {\n \t}\n \n \tcallback = callback || function () {};\n+\n+\tif (!pluginNameRegex.test(id)) {\n+\t\treturn callback(new Error('[[error:invalid-plugin-id]]'));\n+\t}\n+\n \tvar active = false;\n \n \tasync.waterfall([\n",
+    "prefix": "ygn-sage-arm-d-smoke"
+  },
+  {
+    "instance_id": "instance_tutao__tutanota-db90ac26ab78addf72a8efaff3c7acc0fbd6d000-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf",
+    "patch": "",
+    "prefix": "ygn-sage-arm-d-smoke"
+  }
+]
