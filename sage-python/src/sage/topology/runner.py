@@ -90,6 +90,7 @@ class _BudgetExceededEvent:
 class _TopologyDoneEvent:
     final_output: str
     node_count: int
+    artifact_provenance: dict | None = None
 
 
 _RunEvent = (
@@ -110,6 +111,17 @@ _CONTROLLER_THRESHOLD_BANDS = {"critical", "continue", "good"}
 # Max characters of planner output injected into downstream system prompt.
 # Keeps the prompt bounded regardless of how verbose the planner is.
 _PLANNER_INJECTION_BUDGET = 2000
+
+
+_ARTIFACT_PROFILE_ENV = "SAGE_TASK_ARTIFACT_PROFILE"
+
+
+def _artifact_profile_active() -> bool:
+    """Verified task-profile gate for artifact-aware final selection
+    (cgpro DESIGN_LOCKED 2026-06-11 amendment #2): the override only
+    activates from an EXPLICIT operator/bench-set profile, never from an
+    LLM-inferred label. Detection itself stays universal."""
+    return os.environ.get(_ARTIFACT_PROFILE_ENV, "") == "unified_diff"
 
 
 def _is_sentinel(output: str) -> bool:
@@ -396,6 +408,96 @@ class TopologyRunner:
             return output
         return output[:budget] + "..."
 
+    def _capture_node_artifacts(
+        self, idx: int, role: str, output: str
+    ) -> None:
+        """F2 (cgpro DESIGN_LOCKED 2026-06-11): record each node's best
+        unified-diff artifact at completion. Detection is universal and
+        side-effect-free; selection/override is gated elsewhere by the
+        verified task profile. MINI_2B forensics: an upstream node's
+        clean diff was lost to last-node emission + a synthesizer
+        regeneration (element-web COUNT_MISMATCH)."""
+        if not output or _is_sentinel(output):
+            return
+        from sage.patch_artifacts import (
+            extract_unified_diff_artifacts,
+            select_best_artifact,
+        )
+
+        artifacts = extract_unified_diff_artifacts(
+            output, node_idx=idx, role=role
+        )
+        best = select_best_artifact(artifacts)
+        if best is not None:
+            if not hasattr(self, "_node_artifacts"):
+                self._node_artifacts: list = []
+            self._node_artifacts.append(best)
+
+    def _select_final_output(
+        self, last_output: str
+    ) -> tuple[str, dict | None]:
+        """Artifact-aware final selection. Without the verified profile
+        (or without any valid artifact) this is the identity on
+        ``last_output``. With it, the best artifact payload is emitted
+        VERBATIM (synthesizer demoted to advisory: its own artifact only
+        wins under the deterministic scorer — strictly better, or last
+        on equal score per the locked tiebreak)."""
+        self.last_artifact_provenance: dict | None = None
+        artifacts = getattr(self, "_node_artifacts", [])
+        if not artifacts or not _artifact_profile_active():
+            return last_output, None
+        from sage.patch_artifacts import select_best_artifact
+
+        best = select_best_artifact(artifacts)
+        if best is None:
+            return last_output, None
+        provenance = {
+            "node_idx": best.node_idx,
+            "role": best.role,
+            "sha256": best.sha256,
+            "score": best.score,
+            "parse_status": best.parse_status,
+            "hunk_count": best.hunk_count,
+        }
+        self.last_artifact_provenance = provenance
+        log.info(
+            "topology.runner: artifact-aware final selection — node %s "
+            "(%s, %s, score=%.1f) over last-node output",
+            best.node_idx, best.role, best.parse_status, best.score,
+        )
+        return best.payload, provenance
+
+    def _artifact_context_block(
+        self, predecessor_indices: list[int]
+    ) -> str:
+        """ArtifactEnvelope side-channel (DESIGN amendment #4): carries
+        predecessor diffs VERBATIM, exempt from the prose budget
+        truncation and the similarity dedup. Size-capped per artifact as
+        a hard safety only."""
+        if not _artifact_profile_active():
+            return ""
+        artifacts = getattr(self, "_node_artifacts", [])
+        if not artifacts:
+            return ""
+        from sage.patch_artifacts import select_best_artifact
+
+        parts: list[str] = []
+        for idx in predecessor_indices:
+            cands = [a for a in artifacts if a.node_idx == idx]
+            best = select_best_artifact(cands)
+            if best is None:
+                continue
+            node = self.graph.get_node(idx)
+            role = getattr(node, "role", f"node-{idx}")
+            parts.append(
+                f"### ARTIFACT (verbatim unified diff from [{role}], "
+                f"sha256={best.sha256[:12]}, {best.parse_status}) — if "
+                "you adopt this patch, reproduce it byte-for-byte; do "
+                "NOT regenerate it from memory:\n"
+                + best.payload[:100_000]
+            )
+        return "\n\n".join(parts)
+
     def _format_predecessor_context(
         self,
         node_idx: int,
@@ -440,6 +542,14 @@ class TopologyRunner:
             _fmt.format(role=role, text=text, node_idx=0, model_id="")
             for text, role in deduplicated
         )
+
+        artifact_block = self._artifact_context_block(predecessor_indices)
+        if artifact_block:
+            formatted = (
+                formatted + "\n\n" + artifact_block
+                if formatted
+                else artifact_block
+            )
 
         # Wrap with injection template if harness provides one
         if self._harness and formatted:
@@ -2172,6 +2282,7 @@ class TopologyRunner:
                 self._node_state_deltas.setdefault(node_idx, StateDelta())
                 last_output = self._node_outputs.get(node_idx, result)
                 nodes_executed += 1
+                self._capture_node_artifacts(node_idx, role, last_output)
                 self._runtime_emit_node_completed(
                     node_idx,
                     role,
@@ -2326,6 +2437,7 @@ class TopologyRunner:
                     last_output = self._node_outputs.get(idx, output)
                     nodes_executed += 1
                     role = getattr(node, "role", f"node-{idx}")
+                    self._capture_node_artifacts(idx, role, last_output)
                     self._runtime_emit_node_completed(
                         idx,
                         role,
@@ -2341,7 +2453,12 @@ class TopologyRunner:
                         model_id=getattr(node, "model_id", "") or "",
                     )
 
-        yield _TopologyDoneEvent(final_output=last_output, node_count=nodes_executed)
+        final_output, artifact_provenance = self._select_final_output(last_output)
+        yield _TopologyDoneEvent(
+            final_output=final_output,
+            node_count=nodes_executed,
+            artifact_provenance=artifact_provenance,
+        )
 
     async def run(self, task: str) -> str:
         """Execute the full topology, returning the final node's output.
