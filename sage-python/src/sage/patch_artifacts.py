@@ -249,6 +249,52 @@ def positional_reground_exact(
     return fixed, "reground_applied"
 
 
+ALLOW_NEW_FILES_ENV = "SAGE_ARTIFACT_ALLOW_NEW_FILES"
+
+
+def patch_path_coverage(patch: str, repo_dir: str) -> dict:
+    """Post-emission path-coverage guard (cgpro GROUNDING amendment #5:
+    with 10/21 paths invented, this guard matters as much as the
+    injection). A path referenced by the patch but absent from the repo
+    is MISSING — except a true file creation (``--- /dev/null``), and
+    only when the profile explicitly allows new files
+    (``SAGE_ARTIFACT_ALLOW_NEW_FILES=1``; default blocked for SWE-style
+    bugfixes).
+
+    Returns ``{referenced, missing, new_files, coverage}`` where
+    coverage = grounded/(referenced or 1).
+    """
+    referenced: list[str] = []
+    missing: list[str] = []
+    new_files: list[str] = []
+    allow_new = os.environ.get(ALLOW_NEW_FILES_ENV, "") == "1"
+    lines = (patch or "").splitlines()
+    for i, line in enumerate(lines):
+        m = re.match(r"^\+\+\+ b/(\S+)", line)
+        if not m:
+            continue
+        rel = m.group(1)
+        if rel in referenced or rel in new_files:
+            continue
+        is_new = i > 0 and lines[i - 1].startswith("--- /dev/null")
+        if is_new:
+            new_files.append(rel)
+            if not allow_new:
+                missing.append(rel)
+            continue
+        referenced.append(rel)
+        if not (Path(repo_dir) / rel).is_file():
+            missing.append(rel)
+    total = len(referenced) + len(new_files)
+    grounded = total - len(missing)
+    return {
+        "referenced": referenced,
+        "missing": missing,
+        "new_files": new_files,
+        "coverage": (grounded / total) if total else 0.0,
+    }
+
+
 def git_apply_check(patch: str, repo_dir: str) -> tuple[bool, str]:
     """``git apply --check`` against a worktree. Shared by the canary
     rescue (F1) and the mini bench. Empty patch short-circuits."""

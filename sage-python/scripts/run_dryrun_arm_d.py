@@ -2780,6 +2780,16 @@ async def _run_one_task(
                         patch = _rescued
                         patch_source = f"node_completed[{_ridx}]"
                         rescue_reason = "final_apply_failed"
+            # Post-emission grounding guard (cgpro GROUNDING amendment
+            # #5): telemeter path coverage; invented paths surface as
+            # _grounding_path_coverage < 1.0 with the missing list.
+            grounding_path_coverage = None
+            if patch and isinstance(repo_dir, str):
+                from sage.patch_artifacts import patch_path_coverage
+
+                grounding_path_coverage = patch_path_coverage(
+                    patch, repo_dir
+                )
             diff_verifier_annotation = _annotate_diff_verifier(
                 patch=patch,
                 repo_dir=repo_dir if isinstance(repo_dir, str) else None,
@@ -2893,6 +2903,7 @@ async def _run_one_task(
             "_raw_final_patch_present": bool(raw_final_patch),
             "_raw_final_patch_status": raw_final_patch_status,
             "_rescue_reason": rescue_reason,
+            "_grounding_path_coverage": grounding_path_coverage,
             "extracted_patch_chars": len(patch),
             "mock": False,
             "timeout": False,
