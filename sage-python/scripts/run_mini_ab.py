@@ -402,6 +402,17 @@ def main(argv: list[str] | None = None) -> int:
         level=getattr(logging, args.log_level),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
+    # 2026-06-11 invalid first run: arm A's IN-PROCESS LLM calls died with
+    # SSL CERTIFICATE_VERIFY_FAILED on the corporate MITM CA (Python 3.13
+    # strict). The SAGE subprocess is immune via boot.py's truststore
+    # injection; launcher-side callers must inject too. No-op on clean
+    # networks.
+    try:
+        import truststore
+
+        truststore.inject_into_ssl()
+    except Exception:  # noqa: BLE001
+        pass
 
     from run_dryrun_arm_d import _load_format_patch_module
     from sage.bench.keep_awake import prevent_os_sleep
