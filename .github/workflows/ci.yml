@@ -178,6 +178,9 @@ jobs:
     name: OTel bridge (B1.b Windows MSVC compile-check)
     runs-on: windows-latest
     steps:
+      # Bundle trace paths (ULID jsonl under per_task/*.trace/) exceed
+      # MAX_PATH on Windows runners (2026-06-11 checkout failure class).
+      - run: git config --system core.longpaths true
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - name: cargo check --features otel
@@ -416,6 +419,9 @@ jobs:
         python-version: ["3.12", "3.13"]
 
     steps:
+      # Bundle trace paths (ULID jsonl under per_task/*.trace/) exceed
+      # MAX_PATH on Windows runners (2026-06-11 checkout failure class).
+      - run: git config --system core.longpaths true
       - uses: actions/checkout@v6
 
       - uses: actions/setup-python@v6

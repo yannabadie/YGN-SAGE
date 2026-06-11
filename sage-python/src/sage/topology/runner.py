@@ -13,6 +13,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from sage.patch_artifacts import (
+    artifact_profile_active as _artifact_profile_active,
+)
 import subprocess
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Callable
@@ -111,11 +114,6 @@ _CONTROLLER_THRESHOLD_BANDS = {"critical", "continue", "good"}
 # Max characters of planner output injected into downstream system prompt.
 # Keeps the prompt bounded regardless of how verbose the planner is.
 _PLANNER_INJECTION_BUDGET = 2000
-
-
-from sage.patch_artifacts import (
-    artifact_profile_active as _artifact_profile_active,
-)
 
 
 def _is_sentinel(output: str) -> bool:
