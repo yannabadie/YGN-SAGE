@@ -96,7 +96,7 @@ a2a = [
     # `RequestContext.task`, `EventQueue.put`, camelCase AgentCard
     # kwargs (all 0.3.x names). Migrating to 1.0.x is a separate
     # initiative with runtime smoke tests, not a CI-debt cleanup.
-    "a2a-sdk[http-server]>=0.3.25,<1.0",
+    "a2a-sdk[http-server]>=1.1.0,<2.0",
 ]
 protocols = ["ygn-sage[mcp,a2a]"]
 training = [
