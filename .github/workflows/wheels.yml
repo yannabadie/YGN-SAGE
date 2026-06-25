@@ -59,7 +59,7 @@ jobs:
             manylinux: "auto"
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7.0.0
         with:
           submodules: recursive  # external/rustpython-wasm-target
 
