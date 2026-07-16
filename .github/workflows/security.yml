@@ -189,7 +189,7 @@ jobs:
         # Re-pinned 2026-06-10: the old 5bb39ff5 commit was orphaned by an
         # upstream re-tag (workflows could still fetch it by SHA, Dependabot
         # could not — its updater job errored with "no such commit").
-        uses: EmbarkStudios/cargo-deny-action@bb137d7af7e4fb67e5f82a49c4fce4fad40782fe # v2.0.20
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           manifest-path: sage-core/Cargo.toml
           command: check
